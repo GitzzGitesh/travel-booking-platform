@@ -1,0 +1,27 @@
+# Normalise line endings: LF in the repository and on all platforms by default.
+* text=auto eol=lf
+
+# Windows-only scripts and Visual Studio solution files keep CRLF.
+*.sln   text eol=crlf
+*.slnx  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binary files
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
+*.dll   binary
+*.exe   binary
+*.pfx   binary
+*.p12   binary

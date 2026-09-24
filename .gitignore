@@ -1,0 +1,62 @@
+# ---- Secrets (never commit) ----
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key
+secrets.json
+appsettings.*.local.json
+**/Properties/launchSettings.local.json
+
+# ---- .NET ----
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+TestResults/
+*.user
+*.suo
+*.userprefs
+.vs/
+*.rsuser
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage/
+*.trx
+artifacts/
+BenchmarkDotNet.Artifacts/
+
+# ---- Node / Angular ----
+node_modules/
+dist/
+tmp/
+out-tsc/
+.angular/
+.nx/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# ---- Playwright ----
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+
+# ---- IDE / OS ----
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ---- Claude Code (personal, not shared) ----
+.claude/settings.local.json
+CLAUDE.local.md

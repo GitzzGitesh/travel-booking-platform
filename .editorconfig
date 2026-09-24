@@ -1,0 +1,51 @@
+# Baseline formatting conventions. Analyzer rule severities are added when the
+# .NET solution and Angular workspace are scaffolded (see docs/progress.md).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{cs,csx}]
+indent_size = 4
+max_line_length = 140
+dotnet_sort_system_directives_first = true
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_prefer_braces = true:warning
+csharp_new_line_before_open_brace = all
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_readonly_field = true:warning
+# Private fields: _camelCase
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+[*.{csproj,props,targets,slnx,xml,config}]
+indent_size = 2
+
+[*.{sln}]
+end_of_line = crlf
+indent_style = tab
+
+[*.{cmd,bat,ps1}]
+end_of_line = crlf
+
+[*.{ts,js,mjs,html,scss,css}]
+indent_size = 2
+quote_type = single
+
+[*.{json,yml,yaml}]
+indent_size = 2

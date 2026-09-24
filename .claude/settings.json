@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)"
+    ],
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(npm install:*)",
+      "Bash(npm i:*)",
+      "Bash(npx:*)",
+      "Bash(dotnet add:*)",
+      "Bash(dotnet new:*)",
+      "Bash(dotnet ef database update:*)",
+      "Bash(az:*)",
+      "Bash(sqlcmd:*)"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/secrets.json)",
+      "Read(**/*.pfx)",
+      "Read(**/*.p12)",
+      "Read(**/*.key)",
+      "Read(**/*.pem)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git clean -xfd:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secrets.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
