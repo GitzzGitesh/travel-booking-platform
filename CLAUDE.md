@@ -15,7 +15,7 @@ No build yet (foundation phase). When the .NET solution and Angular workspace ar
 Available now:
 - Test the secret-guard hook: `echo '{"tool_name":"Write","tool_input":{"file_path":"x.txt","content":"hello"}}' | node .claude/hooks/guard-secrets.mjs` (exit 0 = allowed, 2 = blocked)
 
-## Target architecture (see ADRs; all currently *Proposed*)
+## Target architecture (defined by the ADRs in `docs/adr/`; each ADR states its own status, Proposed or Accepted)
 
 - **Backend**: ASP.NET Core on .NET 10, **modular monolith**. Two hosts from one codebase: `Api` and `Worker` (outbox dispatch, webhooks, reconciliation, expiry jobs). Each module = `Modules.X` (Domain/Application/Infrastructure *folders*) + `Modules.X.Contracts` (the only thing other modules may reference). Boundaries are enforced by architecture tests. See ADR 0002 and 0007.
 - **Suppliers**: `IFlightProvider`, `IHotelProvider`, `IPaymentProvider` ports live in the core; each supplier is a separate `Integrations.*` project mapping supplier DTOs to domain types (anti-corruption layer). Deterministic, scenario-driven mock providers come first. See ADR 0004 and `docs/architecture/provider-integration.md`.

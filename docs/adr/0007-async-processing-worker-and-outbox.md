@@ -1,6 +1,6 @@
 # 0007. Async processing: Worker host and SQL transactional outbox
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-24
 - **Related:** [0002](0002-modular-monolith-and-module-boundaries.md), [0005](0005-order-aggregate-and-booking-orchestration.md), [0006](0006-payments-stripe-manual-capture.md)
 

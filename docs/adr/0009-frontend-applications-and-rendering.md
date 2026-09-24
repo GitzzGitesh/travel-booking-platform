@@ -1,6 +1,6 @@
 # 0009. Frontend applications and rendering
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-24
 - **Related:** [0003](0003-baseline-technology-stack.md), [0008](0008-identity-and-permissions.md), `.claude/rules/frontend-angular.md`
 
