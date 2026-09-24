@@ -1,6 +1,6 @@
 # 0002. Modular monolith and module boundaries
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-24
 - **Related:** [0004](0004-supplier-provider-abstraction.md), [0007](0007-async-processing-worker-and-outbox.md), `docs/architecture/overview.md`, `.claude/rules/architecture.md`
 
