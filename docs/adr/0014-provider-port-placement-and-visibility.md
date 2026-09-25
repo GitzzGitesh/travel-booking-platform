@@ -1,6 +1,6 @@
 # 0014. Provider port placement and visibility
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-25
 - **Related:** [0002](0002-modular-monolith-and-module-boundaries.md), [0004](0004-supplier-provider-abstraction.md), `docs/architecture/provider-integration.md`, `.claude/rules/architecture.md`
 
