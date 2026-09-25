@@ -1,6 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Committed API contract snapshot (see OpenApiContractTests). Not part of the deployed app. -->
+    <Content Remove="openapi.v1.json" />
+    <None Include="openapi.v1.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Modules\Sample\Modules.Sample\Modules.Sample.csproj" />
   </ItemGroup>
 

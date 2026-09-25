@@ -47,6 +47,18 @@ public sealed class SampleValidationTests(WebApplicationFactory<Program> factory
     }
 
     [Fact]
+    public async Task Numbers_sent_as_strings_are_rejected()
+    {
+        using var client = factory.CreateClient();
+        using var content = new StringContent("""{ "name": "spike", "quantity": "2" }""", System.Text.Encoding.UTF8, "application/json");
+
+        using var response = await client.PostAsync(_url, content, TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.ShouldBe("application/problem+json");
+    }
+
+    [Fact]
     public async Task Sample_module_is_not_exposed_outside_development()
     {
         using var production = factory.WithWebHostBuilder(b => b.UseEnvironment("Production"));

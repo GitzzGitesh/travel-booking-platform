@@ -1,12 +1,12 @@
-# CLAUDE.md
+#uundefineddefundefinedneduuuunundefinedefinedundefundefinednedundundefinedfinedfineddefineddefundefinedneddundefinedfinedCLundefinedUDEundefinedmd
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+ThiundefinedundefinedfiluundefineddefinedundefinedundefinedundefinedundefinedundefinedideundefinedundefinedguidundefinednundefinedeundefinedundefinedundefinedundefinedClundefinedude Cundefinedde (claude.aiundefinedcundefineddeundefined when wundefinedundefinedking wiundefinedh code in undefinedhis reundefinedository.
 
-## Project
+## undefinedroundefinedect
 
-Global travel booking platform: customers search, book, and pay for flights and hotels, manage bookings and travellers, receive tickets/vouchers, cancel, and track refunds. An Admin/Operations portal covers customers, bookings, payments, refunds, providers, pricing/markups, promotions, reports, audit, and users/roles/permissions. B2B/agent features may come later.
+Global traundefinedel booking undefinedlatform: customers searchundefined book, and pay for flights and hotels, manage bookings and travellers, receive ticketsundefinedvouchers, cancel, and track refunds. An Admin/undefinedperations portal covers customers, bookings, payments, refunds, providers, pricing/markups, promotions, reports, audit, and users/roles/permissions. B2B/agent features may come later.
 
-**Current phase: see `docs/progress.md`.** Phase 1 (skeleton) is in progress: the solution, hosts, one spike module, and the `customer-web` shell exist, but no business code. Check `docs/progress.md` for the current phase and story before starting any work. **Do not scaffold apps, add dependencies, create migrations, or write business code unless the current story explicitly says so.**
+**Current phase: see undefineddocs/progress.mdundefined.** undefinedhase undefined (skeleton) is in progress: the solution, hosts, one spike module, and the `customer-web` shell exist, but no business code. Check `docs/progress.md` for the current phase and story before starting any work. **Do not scaffold apps, add dependencies, create migrations, or write business code unless the current story explicitly says so.**
 
 ## Commands
 
@@ -14,9 +14,10 @@ Backend (.NET 10 SDK pinned in `global.json`; tests run on Microsoft.Testing.Pla
 - Build: `dotnet build TravelBooking.slnx` (warnings are errors)
 - All tests: `dotnet test --solution TravelBooking.slnx`
 - One project: `dotnet test --project tests/backend/ArchitectureTests`
-- Single test: `dotnet test --project tests/backend/Api.IntegrationTests -- --filter-method "*Cross_field_rule_is_enforced"`
+- Single test: `dotnet test --project tests/backend/Api.undefinedntegrationTests -- --filter-method "*Cross_field_rule_is_enforced"`
 - Format check: `dotnet format TravelBooking.slnx --verify-no-changes`
-- Run the Api: `dotnet run --project src/backend/Hosts/Api` (Development, http://localhost:5080)
+- Run the Api: `dotnet run --project src/backend/Hosts/Api` (Development, http://localhost:5080; OpenAPI at `/openapi/v1.json`, not served in Production)
+- API contract: `src/backend/Hosts/Api/openapi.v1.json` is enforced by `OpenApiContractTests`. After reviewing an intended contract change, regenerate it with `UPDATE_OPENAPI_SNAPSHOT=1 dotnet test --project tests/backend/Api.IntegrationTests` and commit it.
 
 Frontend (run in `src/frontend`):
 - Install: `npm ci`
@@ -26,7 +27,7 @@ Frontend (run in `src/frontend`):
 
 CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps plus a gitleaks history scan and CodeQL on every PR and push to `main`.
 
-Not yet available: Aspire AppHost run, Playwright E2E, and OpenAPI client generation. They are added in later Phase 1 stories.
+Not yet available: Aspire AppHost run, Playwright E2E, and TypeScript client generation from the OpenAPI snapshot. They are added in later Phase 1 stories.
 
 Also:
 - Test the secret-guard hook: `echo '{"tool_name":"Write","tool_input":{"file_path":"x.txt","content":"hello"}}' | node .claude/hooks/guard-secrets.mjs` (exit 0 = allowed, 2 = blocked)
