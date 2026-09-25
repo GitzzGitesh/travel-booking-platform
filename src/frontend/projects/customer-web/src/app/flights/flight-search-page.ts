@@ -6,6 +6,7 @@ import {
   afterNextRender,
   computed,
   inject,
+  linkedSignal,
   Injector,
   signal,
   viewChild,
@@ -20,9 +21,14 @@ import {
 } from '@angular/forms';
 import {
   Api,
+  acceptSelectedFlightOfferPrice,
+  revalidateSelectedFlightOffer,
   searchFlights,
   selectFlightOffer,
   type CabinClass,
+  type ConfirmedFlightOfferResponse,
+  type MoneyResponse,
+  type SelectedOfferProblemResponse,
   type FlightOfferResponse,
   type FlightSearchRequest,
   type HttpValidationProblemDetails,
@@ -72,6 +78,24 @@ type SelectionState =
   | { readonly kind: 'saving'; readonly offerId: string }
   | { readonly kind: 'saved'; readonly selection: SelectedFlightOfferResponse }
   | { readonly kind: 'expired' }
+  | { readonly kind: 'soldOut' }
+  | { readonly kind: 'error' };
+
+/**
+ * Revalidating the saved selection with the airline (F-01..F-03). A changed price is shown and must be accepted by
+ * its quote id; it is never applied without the customer's decision.
+ */
+type PriceCheckState =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'checking' }
+  | { readonly kind: 'confirmed'; readonly confirmed: ConfirmedFlightOfferResponse }
+  | {
+      readonly kind: 'changed' | 'accepting';
+      readonly previous: MoneyResponse;
+      readonly next: MoneyResponse;
+      readonly quoteId: string;
+    }
+  | { readonly kind: 'stale' }
   | { readonly kind: 'error' };
 
 export const cabins: readonly { value: CabinClass; label: string }[] = [
@@ -158,6 +182,13 @@ export class FlightSearchPage {
   protected readonly selection = signal<SelectionState>({ kind: 'none' });
   protected readonly formatMoney = formatMoney;
   private readonly selectionHeading = viewChild<ElementRef<HTMLElement>>('selectionHeading');
+  private readonly priceCheckHeading = viewChild<ElementRef<HTMLElement>>('priceCheckHeading');
+
+  /** Belongs to one saved selection: a new selection (or a new search) starts unchecked. */
+  protected readonly priceCheck = linkedSignal<SelectionState, PriceCheckState>({
+    source: this.selection,
+    computation: () => ({ kind: 'idle' }),
+  });
 
   protected readonly selectedOfferId = computed(() => {
     const selection = this.selection();
@@ -334,15 +365,120 @@ export class FlightSearchPage {
     return selection.slices.length > 1 ? `${route}, round trip` : route;
   }
 
+  /**
+   * Revalidates the saved selection with the airline before any booking step. Only the selection id is sent; the
+   * server compares the airline's current price with the one the customer agreed to.
+   */
+  protected async confirmPrice(): Promise<void> {
+    const chosen = this.selection();
+    const check = this.priceCheck().kind;
+    if (chosen.kind !== 'saved' || check === 'checking' || check === 'accepting') {
+      return;
+    }
+
+    const selectedOfferId = chosen.selection.selectedOfferId;
+    this.priceCheck.set({ kind: 'checking' });
+    try {
+      const confirmed = await this.api.invoke(revalidateSelectedFlightOffer, { selectedOfferId });
+      this.applyPriceCheck(selectedOfferId, { kind: 'confirmed', confirmed });
+    } catch (error) {
+      this.applyPriceProblem(selectedOfferId, error);
+    }
+  }
+
+  /** F-01: the customer accepts the new price they were shown, by its quote id (never by amount). */
+  protected async acceptNewPrice(): Promise<void> {
+    const chosen = this.selection();
+    const check = this.priceCheck();
+    if (chosen.kind !== 'saved' || check.kind !== 'changed') {
+      return;
+    }
+
+    const selectedOfferId = chosen.selection.selectedOfferId;
+    this.priceCheck.set({ ...check, kind: 'accepting' });
+    try {
+      const confirmed = await this.api.invoke(acceptSelectedFlightOfferPrice, {
+        selectedOfferId,
+        body: { priceQuoteId: check.quoteId },
+      });
+      this.applyPriceCheck(selectedOfferId, { kind: 'confirmed', confirmed });
+    } catch (error) {
+      this.applyPriceProblem(selectedOfferId, error);
+    }
+  }
+
+  protected chooseAnotherFlight(): void {
+    this.resultsHeading()?.nativeElement.focus();
+  }
+
+  /** The price the customer has agreed to: the confirmed price once checked, otherwise the selected one. */
+  protected agreedPrice(selection: SelectedFlightOfferResponse): MoneyResponse {
+    const check = this.priceCheck();
+    return check.kind === 'confirmed' ? check.confirmed.totalPrice : selection.totalPrice;
+  }
+
+  protected expiresAt(selection: SelectedFlightOfferResponse): string {
+    const check = this.priceCheck();
+    return check.kind === 'confirmed' ? check.confirmed.offerExpiresAt : selection.offerExpiresAt;
+  }
+
+  private applyPriceProblem(selectedOfferId: string, error: unknown): void {
+    const problem =
+      error instanceof HttpErrorResponse
+        ? (error.error as SelectedOfferProblemResponse | null)
+        : null;
+    if (
+      isProblem(error, 422, 'price-changed') &&
+      problem?.previousTotalPrice &&
+      problem.newTotalPrice &&
+      problem.priceQuoteId
+    ) {
+      this.applyPriceCheck(selectedOfferId, {
+        kind: 'changed',
+        previous: problem.previousTotalPrice,
+        next: problem.newTotalPrice,
+        quoteId: problem.priceQuoteId,
+      });
+    } else if (isProblem(error, 422, 'offer-expired') || isProblem(error, 422, 'sold-out')) {
+      // F-02 / F-03: this offer can no longer be booked; the customer searches again.
+      if (this.isCurrentSelection(selectedOfferId)) {
+        this.selection.set({ kind: isProblem(error, 422, 'sold-out') ? 'soldOut' : 'expired' });
+        afterNextRender(() => this.selectionHeading()?.nativeElement.focus(), {
+          injector: this.injector,
+        });
+      }
+    } else {
+      this.applyPriceCheck(selectedOfferId, {
+        kind: isProblem(error, 409, 'price-quote-stale') ? 'stale' : 'error',
+      });
+    }
+  }
+
+  // A late answer for a selection the customer has since replaced is ignored.
+  private applyPriceCheck(selectedOfferId: string, check: PriceCheckState): void {
+    if (!this.isCurrentSelection(selectedOfferId)) {
+      return;
+    }
+    this.priceCheck.set(check);
+    afterNextRender(() => this.priceCheckHeading()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  private isCurrentSelection(selectedOfferId: string): boolean {
+    const chosen = this.selection();
+    return chosen.kind === 'saved' && chosen.selection.selectedOfferId === selectedOfferId;
+  }
+
   /** The instant the held offer expires, in the customer's own time zone, labelled with that zone. */
-  protected heldUntil(selection: SelectedFlightOfferResponse): string {
+  protected heldUntil(offerExpiresAt: string): string {
     return new Intl.DateTimeFormat(undefined, {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
       timeZoneName: 'short',
-    }).format(new Date(selection.offerExpiresAt));
+    }).format(new Date(offerExpiresAt));
   }
 
   // Take keyboard and screen-reader users to the first field that needs attention.

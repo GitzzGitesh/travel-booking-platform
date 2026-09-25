@@ -5,3 +5,7 @@ export type { SearchFlights$Params as SearchFlights$Params } from './fn/flights/
 export { searchFlights as searchFlights } from './fn/flights/search-flights';
 export type { SelectFlightOffer$Params as SelectFlightOffer$Params } from './fn/flights/select-flight-offer';
 export { selectFlightOffer as selectFlightOffer } from './fn/flights/select-flight-offer';
+export type { RevalidateSelectedFlightOffer$Params as RevalidateSelectedFlightOffer$Params } from './fn/flights/revalidate-selected-flight-offer';
+export { revalidateSelectedFlightOffer as revalidateSelectedFlightOffer } from './fn/flights/revalidate-selected-flight-offer';
+export type { AcceptSelectedFlightOfferPrice$Params as AcceptSelectedFlightOfferPrice$Params } from './fn/flights/accept-selected-flight-offer-price';
+export { acceptSelectedFlightOfferPrice as acceptSelectedFlightOfferPrice } from './fn/flights/accept-selected-flight-offer-price';

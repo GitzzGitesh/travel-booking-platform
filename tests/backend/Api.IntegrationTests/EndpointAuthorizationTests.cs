@@ -33,4 +33,31 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
 
         undeclared.ShouldBeEmpty();
     }
+
+    // Anonymous access is a deliberate decision per route: a new anonymous endpoint fails here until it is added.
+    // Every /api/v1 entry must be rate limited before it is mapped outside Development (docs/progress.md).
+    private static readonly string[] _anonymousRoutes =
+    [
+        "/api/v1/flights/searches",
+        "/api/v1/flights/selected-offers",
+        "/api/v1/flights/selected-offers/{selectedOfferId:guid}/revalidations",
+        "/api/v1/flights/selected-offers/{selectedOfferId:guid}/price-acceptances",
+    ];
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Staging")]
+    [InlineData("Production")]
+    public void Only_allow_listed_api_routes_are_anonymous(string environment)
+    {
+        using var host = factory.WithWebHostBuilder(b => b.UseEnvironment(environment));
+
+        var anonymous = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+            .Where(e => e.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+            .Select(e => e.RoutePattern.RawText!)
+            .Where(route => route.StartsWith("/api/", StringComparison.Ordinal))
+            .Distinct();
+
+        anonymous.ShouldBeSubsetOf(_anonymousRoutes);
+    }
 }

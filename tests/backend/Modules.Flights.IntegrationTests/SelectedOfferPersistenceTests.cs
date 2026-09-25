@@ -74,6 +74,77 @@ public sealed class SelectedOfferPersistenceTests(SqlServerFixture sql)
         (await check.SelectedOffers.CountAsync(o => o.SearchId == searchId, TestContext.Current.CancellationToken)).ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Revalidation_state_and_quoted_prices_round_trip()
+    {
+        var offer = NewSelection();
+        await using (var write = sql.CreateContext())
+        {
+            await new SqlSelectedOfferStore(write).TryAddAsync(offer, TestContext.Current.CancellationToken);
+        }
+
+        await using (var update = sql.CreateContext())
+        {
+            var store = new SqlSelectedOfferStore(update);
+            var tracked = (await store.FindForUpdateAsync(offer.Id, TestContext.Current.CancellationToken))!;
+            tracked.Revalidate(Offer(1419.7m), _now);
+            (await store.TrySaveAsync(TestContext.Current.CancellationToken)).ShouldBeTrue();
+        }
+
+        await using var read = sql.CreateContext();
+        var stored = (await new SqlSelectedOfferStore(read).FindForUpdateAsync(offer.Id, TestContext.Current.CancellationToken))!;
+        stored.Status.ShouldBe(SelectedOfferStatus.PriceChanged);
+        stored.QuotedPrice.ShouldBe(new Money(1419.7m, new CurrencyCode("XTS")));
+        stored.TotalPrice.ShouldBe(new Money(1234.5678m, new CurrencyCode("XTS")));
+        stored.ConfirmedPrice.ShouldBeNull();
+        stored.RevalidatedAt.ShouldBe(_now);
+
+        stored.AcceptPrice(stored.PriceQuoteId!.Value, _now).IsSuccess.ShouldBeTrue();
+        (await new SqlSelectedOfferStore(read).TrySaveAsync(TestContext.Current.CancellationToken)).ShouldBeTrue();
+        await using var check = sql.CreateContext();
+        var confirmed = (await new SqlSelectedOfferStore(check).FindForUpdateAsync(offer.Id, TestContext.Current.CancellationToken))!;
+        confirmed.Status.ShouldBe(SelectedOfferStatus.Confirmed);
+        confirmed.ConfirmedPrice.ShouldBe(new Money(1419.7m, new CurrencyCode("XTS")));
+        confirmed.QuotedPrice.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Concurrent_changes_to_one_selection_cannot_both_be_saved()
+    {
+        var offer = NewSelection();
+        await using (var write = sql.CreateContext())
+        {
+            await new SqlSelectedOfferStore(write).TryAddAsync(offer, TestContext.Current.CancellationToken);
+        }
+
+        await using var first = sql.CreateContext();
+        await using var second = sql.CreateContext();
+        var firstStore = new SqlSelectedOfferStore(first);
+        var secondStore = new SqlSelectedOfferStore(second);
+        (await firstStore.FindForUpdateAsync(offer.Id, TestContext.Current.CancellationToken))!.Revalidate(Offer(1300m), _now);
+        (await secondStore.FindForUpdateAsync(offer.Id, TestContext.Current.CancellationToken))!.MarkUnavailable(SelectedOfferStatus.SoldOut);
+
+        (await firstStore.TrySaveAsync(TestContext.Current.CancellationToken)).ShouldBeTrue();
+        (await secondStore.TrySaveAsync(TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_database_rejects_an_unknown_status()
+    {
+        var offer = NewSelection();
+        await using var db = sql.CreateContext();
+        db.SelectedOffers.Add(offer);
+        db.Entry(offer).Property(o => o.Status).CurrentValue = (SelectedOfferStatus)42;
+
+        await Should.ThrowAsync<DbUpdateException>(() => db.SaveChangesAsync(TestContext.Current.CancellationToken));
+    }
+
+    private static FlightOffer Offer(decimal amount) => new(
+        new ProviderOfferRef("mock", "mock-0-LHRJFK-20270214--Business-2A1C1I"),
+        new Money(amount, new CurrencyCode("XTS")),
+        _now.AddMinutes(30),
+        [new FlightSlice([new FlightSegment("ZZ", "ZZ123", new AirportCode("LHR"), new AirportCode("JFK"), new DateTime(2027, 2, 14, 7, 5, 0), new DateTime(2027, 2, 14, 9, 20, 0))])]);
+
     private static SelectedOffer NewSelection(Guid? searchId = null, Guid? offerId = null)
     {
         var criteria = new FlightSearchCriteria(
