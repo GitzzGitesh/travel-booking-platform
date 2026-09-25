@@ -1,0 +1,61 @@
+# Weekly version updates (ADR 0012). Security updates come from Dependabot alerts independently of this file.
+# Framework majors are deliberate upgrades, not bot PRs: a .NET major changes the target framework (ADR 0003),
+# Angular majors need `ng update` migrations, and TypeScript and @types/node follow Angular and the Node runtime.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      aspnetcore:
+        patterns:
+          - Microsoft.AspNetCore.*
+          - Microsoft.Extensions.*
+      test-tooling:
+        patterns:
+          - xunit.*
+          - Shouldly
+          - TngTech.ArchUnitNET*
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: Microsoft.AspNetCore.*
+        update-types: ["version-update:semver-major"]
+      - dependency-name: Microsoft.Extensions.*
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /src/frontend
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      angular:
+        patterns:
+          - "@angular/*"
+          - "@angular-devkit/*"
+    ignore:
+      - dependency-name: "@angular/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@angular-devkit/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
