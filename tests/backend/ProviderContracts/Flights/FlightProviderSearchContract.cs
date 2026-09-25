@@ -130,6 +130,125 @@ public abstract class FlightProviderSearchContract
         await Should.ThrowAsync<OperationCanceledException>(() => Provider.RevalidateAsync(offer.Reference, cancelled.Token));
     }
 
+    [Fact]
+    public async Task Booking_a_revalidated_offer_is_found_again_by_our_reference()
+    {
+        var (request, _) = await BookableOffer();
+
+        var booked = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+        var lookup = await Provider.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken);
+
+        booked.IsSuccess.ShouldBeTrue(booked.IsSuccess ? string.Empty : $"Booking failed: {booked.Error}");
+        booked.Value.ClientReference.ShouldBe(request.ClientReference);
+        booked.Value.Booking.ProviderId.ShouldBe(Provider.Id);
+        booked.Value.Booking.Value.ShouldNotBeNullOrWhiteSpace();
+        booked.Value.TotalPrice.ShouldBe(request.ExpectedTotalPrice);
+        lookup.Value.Booking.ShouldNotBeNull().Booking.ShouldBe(booked.Value.Booking);
+    }
+
+    [Fact]
+    public async Task Booking_again_with_the_same_reference_never_creates_a_second_booking()
+    {
+        var (request, _) = await BookableOffer();
+
+        var first = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+        var second = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+
+        first.IsSuccess.ShouldBeTrue();
+        if (second.IsSuccess)
+        {
+            second.Value.Booking.ShouldBe(first.Value.Booking);
+        }
+
+        var lookup = await Provider.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken);
+        lookup.Value.Booking.ShouldNotBeNull().Booking.ShouldBe(first.Value.Booking);
+    }
+
+    [Fact]
+    public async Task Parallel_bookings_with_one_reference_make_exactly_one_booking()
+    {
+        var (request, _) = await BookableOffer();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Provider.BookAsync(request, TestContext.Current.CancellationToken)));
+
+        var lookup = await Provider.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken);
+        var booking = lookup.Value.Booking.ShouldNotBeNull().Booking;
+        results.Where(r => r.IsSuccess).ShouldAllBe(r => r.Value.Booking == booking);
+    }
+
+    [Fact]
+    public async Task The_same_reference_with_other_details_never_books_the_new_details()
+    {
+        var (request, _) = await BookableOffer();
+        var first = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+        var (other, _) = await BookableOffer();
+
+        var replay = await Provider.BookAsync(other with { ClientReference = request.ClientReference, Passengers = [Passenger(PassengerType.Adult, "Someone")] }, TestContext.Current.CancellationToken);
+
+        if (replay.IsSuccess)
+        {
+            replay.Value.Booking.ShouldBe(first.Value.Booking);
+            replay.Value.TotalPrice.ShouldBe(first.Value.TotalPrice);
+        }
+    }
+
+    [Fact]
+    public async Task A_booking_at_a_price_other_than_the_agreed_one_is_not_made()
+    {
+        var (request, _) = await BookableOffer();
+        var wrongPrice = request with { ExpectedTotalPrice = request.ExpectedTotalPrice with { Amount = request.ExpectedTotalPrice.Amount + 1m } };
+
+        var booked = await Provider.BookAsync(wrongPrice, TestContext.Current.CancellationToken);
+
+        booked.IsSuccess.ShouldBeFalse();
+        booked.Error.Kind.ShouldBe(ProviderErrorKind.PriceChanged);
+        (await Provider.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken)).Value.Found.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Passengers_that_do_not_match_the_offer_are_an_invalid_request()
+    {
+        var (request, _) = await BookableOffer();
+        var extraAdult = request with { Passengers = [.. request.Passengers, Passenger(PassengerType.Adult, "Second")] };
+
+        var booked = await Provider.BookAsync(extraAdult, TestContext.Current.CancellationToken);
+
+        booked.Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest);
+    }
+
+    [Fact]
+    public async Task Looking_up_an_unknown_reference_is_a_definite_not_found()
+    {
+        var lookup = await Provider.RetrieveBookingAsync(NewReference(), TestContext.Current.CancellationToken);
+
+        lookup.IsSuccess.ShouldBeTrue(lookup.IsSuccess ? string.Empty : $"Lookup failed: {lookup.Error}");
+        lookup.Value.Found.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Booking_and_lookup_honour_cancellation()
+    {
+        var (request, _) = await BookableOffer();
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => Provider.BookAsync(request, cancelled.Token));
+        await Should.ThrowAsync<OperationCanceledException>(() => Provider.RetrieveBookingAsync(request.ClientReference, cancelled.Token));
+    }
+
+    /// <summary>A freshly searched and revalidated one-adult offer, with a booking request at its current price.</summary>
+    protected async Task<(FlightBookingDetails Request, FlightOffer Offer)> BookableOffer(string familyName = "Traveller")
+    {
+        var offer = (await SearchOffers(OneWay()))[0];
+        var current = (await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken)).Value;
+        return (new FlightBookingDetails(NewReference(), current.Reference, current.TotalPrice, [Passenger(PassengerType.Adult, familyName)]), current);
+    }
+
+    // Synthetic travellers only (testing rules: no real PII).
+    protected static FlightPassenger Passenger(PassengerType type, string familyName) => new(type, "Test", familyName);
+
+    protected static ClientReference NewReference() => new($"test-{Guid.NewGuid():N}");
+
     protected static string Itinerary(FlightOffer offer) =>
         string.Join(" | ", offer.Slices.Select(slice =>
             string.Join(" ", slice.Segments.Select(s => $"{s.FlightNumber} {s.Origin}-{s.Destination} {s.DepartureLocal:O} {s.ArrivalLocal:O}"))));

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
@@ -45,20 +46,105 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (options.Value.Scenario is MockFlightScenario.Unavailable or MockFlightScenario.RateLimited)
+        if (ConfiguredFailure() is { } failure)
         {
-            var kind = options.Value.Scenario is MockFlightScenario.Unavailable ? ProviderErrorKind.Unavailable : ProviderErrorKind.RateLimited;
-            return Task.FromResult(RevalidationFailure(kind, "Mock provider unavailable (scenario)."));
+            return Task.FromResult(Result<FlightOffer, ProviderError>.Failure(failure));
         }
 
-        if (offer.ProviderId != ProviderId || !TryParseReference(offer.Value, out var index, out var criteria))
+        var current = Reprice(offer, out _);
+        return Task.FromResult(current);
+    }
+
+    public Task<Result<FlightBookingConfirmation, ProviderError>> BookAsync(FlightBookingDetails details, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // "Unavailable" here means the details certainly was not processed (circuit open): nothing is booked.
+        if (ConfiguredFailure() is { } failure)
         {
-            return Task.FromResult(RevalidationFailure(ProviderErrorKind.InvalidRequest, "Unrecognised mock offer reference."));
+            return Task.FromResult(BookingFailure(failure.Kind, failure.Message));
         }
 
-        // Stateless: the reference carries everything that prices the offer, so it is repriced exactly as searched.
-        var current = CreateOffers(criteria)[index];
-        var result = criteria.Destination.Value switch
+        // Idempotent by our reference, as a supplier with client-reference support is: never a second booking.
+        if (_bookings.TryGetValue(details.ClientReference.Value, out var existing))
+        {
+            return Task.FromResult(Result<FlightBookingConfirmation, ProviderError>.Success(existing));
+        }
+
+        var current = Reprice(details.Offer, out var criteria);
+        if (!current.IsSuccess)
+        {
+            return Task.FromResult(BookingFailure(current.Error.Kind, current.Error.Message));
+        }
+
+        if (!MatchesPassengerMix(details.Passengers, criteria!.Passengers))
+        {
+            return Task.FromResult(BookingFailure(ProviderErrorKind.InvalidRequest, "Passengers do not match the offer's passenger mix."));
+        }
+
+        if (current.Value.TotalPrice != details.ExpectedTotalPrice)
+        {
+            return Task.FromResult(BookingFailure(ProviderErrorKind.PriceChanged, "Mock offer price differs from the expected price."));
+        }
+
+        var confirmation = new FlightBookingConfirmation(details.ClientReference, new ProviderBookingRef(ProviderId, Locator(details.ClientReference)), current.Value.TotalPrice);
+        var scenario = details.Passengers.Select(p => p.FamilyName.ToUpperInvariant()).FirstOrDefault(MockBookingScenarios.All.Contains);
+        var result = scenario switch
+        {
+            MockBookingScenarios.RejectedFamilyName => BookingFailure(ProviderErrorKind.Rejected, "Mock booking rejected (scenario)."),
+            MockBookingScenarios.TimeoutNotBookedFamilyName => BookingFailure(ProviderErrorKind.Unknown, "Mock booking timed out; nothing was booked (scenario)."),
+            MockBookingScenarios.TimeoutBookedFamilyName => Store(confirmation, BookingFailure(ProviderErrorKind.Unknown, "Mock booking timed out after booking (scenario).")),
+            _ => Store(confirmation, Result<FlightBookingConfirmation, ProviderError>.Success(confirmation)),
+        };
+
+        return Task.FromResult(result);
+    }
+
+    public Task<Result<FlightBookingLookup, ProviderError>> RetrieveBookingAsync(ClientReference clientReference, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (ConfiguredFailure() is { } failure)
+        {
+            return Task.FromResult(Result<FlightBookingLookup, ProviderError>.Failure(failure));
+        }
+
+        _bookings.TryGetValue(clientReference.Value, out var booking);
+        return Task.FromResult(Result<FlightBookingLookup, ProviderError>.Success(new FlightBookingLookup(booking)));
+    }
+
+    // Bookings made by this mock, by our reference. In memory: they last as long as the process (Development only).
+    private readonly ConcurrentDictionary<string, FlightBookingConfirmation> _bookings = new(StringComparer.Ordinal);
+
+    // One booking per reference even under parallel requests: the first stored booking wins and is returned.
+    private Result<FlightBookingConfirmation, ProviderError> Store(FlightBookingConfirmation confirmation, Result<FlightBookingConfirmation, ProviderError> result)
+    {
+        var stored = _bookings.GetOrAdd(confirmation.ClientReference.Value, confirmation);
+        return result.IsSuccess ? Result<FlightBookingConfirmation, ProviderError>.Success(stored) : result;
+    }
+
+    private ProviderError? ConfiguredFailure() => options.Value.Scenario switch
+    {
+        MockFlightScenario.Unavailable => new ProviderError(ProviderErrorKind.Unavailable, "Mock provider unavailable (scenario)."),
+        MockFlightScenario.RateLimited => new ProviderError(ProviderErrorKind.RateLimited, "Mock provider rate limited (scenario)."),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Stateless: the reference carries everything that prices the offer, so it is repriced exactly as searched; the
+    /// reserved destinations then apply the revalidation scenarios (which also hold at booking time).
+    /// </summary>
+    private Result<FlightOffer, ProviderError> Reprice(ProviderOfferRef offer, out FlightSearchCriteria? criteria)
+    {
+        criteria = null;
+        if (offer.ProviderId != ProviderId || !TryParseReference(offer.Value, out var index, out var parsed))
+        {
+            return RevalidationFailure(ProviderErrorKind.InvalidRequest, "Unrecognised mock offer reference.");
+        }
+
+        criteria = parsed;
+        var current = CreateOffers(parsed)[index];
+        return parsed.Destination.Value switch
         {
             MockRevalidationScenarios.OfferExpiredDestination => RevalidationFailure(ProviderErrorKind.OfferExpired, "Mock offer expired (scenario)."),
             MockRevalidationScenarios.SoldOutDestination => RevalidationFailure(ProviderErrorKind.SoldOut, "Mock offer sold out (scenario)."),
@@ -68,9 +154,23 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
             }),
             _ => Result<FlightOffer, ProviderError>.Success(current),
         };
-
-        return Task.FromResult(result);
     }
+
+    private static bool MatchesPassengerMix(IReadOnlyList<FlightPassenger> passengers, PassengerMix mix) =>
+        passengers.Count(p => p.Type == PassengerType.Adult) == mix.Adults
+        && passengers.Count(p => p.Type == PassengerType.Child) == mix.Children
+        && passengers.Count(p => p.Type == PassengerType.Infant) == mix.Infants;
+
+    // A deterministic six-character locator, like a PNR: the same reference always gets the same locator.
+    private static string Locator(ClientReference reference)
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        var seed = (uint)StableHash(reference.Value);
+        return string.Concat(Enumerable.Range(0, 6).Select(i => alphabet[(int)((seed >> (i * 5)) % (uint)alphabet.Length)]));
+    }
+
+    private static Result<FlightBookingConfirmation, ProviderError> BookingFailure(ProviderErrorKind kind, string message) =>
+        Result<FlightBookingConfirmation, ProviderError>.Failure(new ProviderError(kind, message));
 
     private List<FlightOffer> CreateOffers(FlightSearchCriteria criteria)
     {

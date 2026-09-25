@@ -457,5 +457,11 @@ public sealed class RevalidateSelectedOfferHandlerTests
             Revalidated.Add(offer);
             return Task.FromResult(result);
         }
+
+        public Task<Result<FlightBookingConfirmation, ProviderError>> BookAsync(FlightBookingDetails request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<Result<FlightBookingLookup, ProviderError>> RetrieveBookingAsync(ClientReference clientReference, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

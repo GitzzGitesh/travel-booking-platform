@@ -126,5 +126,11 @@ public sealed class SearchFlightsHandlerTests
 
         public Task<Result<FlightOffer, ProviderError>> RevalidateAsync(ProviderOfferRef offer, CancellationToken cancellationToken) =>
             throw new NotSupportedException("Search tests never revalidate.");
+
+        public Task<Result<FlightBookingConfirmation, ProviderError>> BookAsync(FlightBookingDetails request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<Result<FlightBookingLookup, ProviderError>> RetrieveBookingAsync(ClientReference clientReference, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }
