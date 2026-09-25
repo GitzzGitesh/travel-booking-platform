@@ -68,6 +68,70 @@ public sealed class MockFlightProviderTests : FlightProviderSearchContract
         result.Error.Kind.ShouldBe(expected);
     }
 
+    [Fact]
+    public async Task Other_destinations_revalidate_at_the_searched_price_with_a_fresh_expiry()
+    {
+        var clock = new FakeTimeProvider(_now);
+        var provider = Create(MockFlightScenario.Success.ToString(), clock: clock);
+        var offer = (await provider.SearchAsync(OneWay(), TestContext.Current.CancellationToken)).Value.Offers[1];
+        clock.Advance(TimeSpan.FromMinutes(10));
+
+        var revalidated = (await provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken)).Value;
+
+        revalidated.TotalPrice.ShouldBe(offer.TotalPrice);
+        revalidated.Reference.ShouldBe(offer.Reference);
+        revalidated.ExpiresAt.ShouldBe(_now.AddMinutes(40));
+    }
+
+    [Fact]
+    public async Task F01_the_price_changed_destination_revalidates_at_a_higher_price()
+    {
+        var offer = await SearchTo(MockRevalidationScenarios.PriceChangedDestination);
+
+        var revalidated = (await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken)).Value;
+
+        revalidated.TotalPrice.Currency.ShouldBe(offer.TotalPrice.Currency);
+        revalidated.TotalPrice.Amount.ShouldBe(decimal.Round(offer.TotalPrice.Amount * MockRevalidationScenarios.PriceChangeFactor, 2));
+        Itinerary(revalidated).ShouldBe(Itinerary(offer));
+    }
+
+    [Theory]
+    [InlineData(MockRevalidationScenarios.OfferExpiredDestination, ProviderErrorKind.OfferExpired)]
+    [InlineData(MockRevalidationScenarios.SoldOutDestination, ProviderErrorKind.SoldOut)]
+    public async Task F02_and_F03_destinations_are_no_longer_bookable(string destination, ProviderErrorKind expected)
+    {
+        var offer = await SearchTo(destination);
+
+        var result = await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Error.Kind.ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("other", "mock-0-LHRJFK-20270214--Economy-1A0C0I")]
+    [InlineData("mock", "mock-9-LHRJFK-20270214--Economy-1A0C0I")]
+    [InlineData("mock", "mock-0-LHRLHR-20270214--Economy-1A0C0I")]
+    [InlineData("mock", "mock-0-LHRJFK-20270214--Steerage-1A0C0I")]
+    [InlineData("mock", "mock-0-LHRJFK-20270214--Economy-0A0C0I")]
+    [InlineData("mock", "mock-0-LHRJFK-20271345--Economy-1A0C0I")] // an impossible date
+    public async Task Foreign_or_malformed_references_are_invalid_requests(string providerId, string token)
+    {
+        var result = await Provider.RevalidateAsync(new ProviderOfferRef(providerId, token), TestContext.Current.CancellationToken);
+
+        result.Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest);
+    }
+
+    [Fact]
+    public async Task The_unavailable_scenario_also_fails_revalidation()
+    {
+        var offer = (await SearchOffers(OneWay()))[0];
+
+        var result = await Create(nameof(MockFlightScenario.Unavailable)).RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken);
+
+        result.Error.Kind.ShouldBe(ProviderErrorKind.Unavailable);
+    }
+
     // An allow-list: production-like names that are not exactly "Production" are refused too.
     [Theory]
     [InlineData("Production")]
@@ -88,13 +152,19 @@ public sealed class MockFlightProviderTests : FlightProviderSearchContract
 
     // Built through the public registration with configuration, as a host would. Resolving the provider reads the
     // options, which runs the same validation that ValidateOnStart runs at host startup.
-    private static IFlightProvider Create(string scenario, string environment = "Development")
+    private async Task<FlightOffer> SearchTo(string destination)
+    {
+        var criteria = new FlightSearchCriteria(new AirportCode("LHR"), new AirportCode(destination), DateOnly.FromDateTime(_now.UtcDateTime).AddDays(30), null, new PassengerMix(2, 0, 1), CabinClass.Business);
+        return (await SearchOffers(criteria))[2];
+    }
+
+    private static IFlightProvider Create(string scenario, string environment = "Development", TimeProvider? clock = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection([new($"{MockFlightProviderOptions.SectionName}:Scenario", scenario)])
             .Build();
         var services = new ServiceCollection()
-            .AddSingleton<TimeProvider>(new FakeTimeProvider(_now))
+            .AddSingleton(clock ?? new FakeTimeProvider(_now))
             .AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = environment })
             .AddMockFlightProvider(configuration)
             .BuildServiceProvider();

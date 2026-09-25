@@ -302,6 +302,49 @@ h1 {
   font-size: var(--text-sm);
 }
 
+/* Price check (revalidation) inside the dark selection bar */
+.price-check {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.price-check :focus {
+  outline: none;
+}
+
+.confirmed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+  color: #86efac;
+}
+
+.check-problem {
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  color: #fca5a5;
+}
+
+.price-change {
+  flex: 1;
+  color: var(--color-ink);
+}
+
+.price-change h4 {
+  margin-block-end: var(--space-1);
+}
+
+.price-change .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
 @media (max-width: 1023.98px) {
   .fields {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

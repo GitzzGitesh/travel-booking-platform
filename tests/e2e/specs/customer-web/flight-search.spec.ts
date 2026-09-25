@@ -10,13 +10,13 @@ import { collectPageErrors, expectNoAccessibilityViolations } from '../../suppor
  */
 async function fillSearch(
   page: Page,
-  options: { roundTrip?: boolean; cabin?: string } = {},
+  options: { roundTrip?: boolean; cabin?: string; destination?: string } = {},
 ): Promise<void> {
   if (options.roundTrip) {
     await page.getByLabel('Round trip').check();
   }
   await page.getByLabel('From').fill('lhr');
-  await page.getByLabel('To', { exact: true }).fill('jfk');
+  await page.getByLabel('To', { exact: true }).fill(options.destination ?? 'jfk');
 
   await page.getByRole('button', { name: /^Departure/ }).click();
   const calendar = page.getByRole('dialog', {
@@ -318,5 +318,70 @@ test.describe('customer flight search', () => {
     await expect(page.getByRole('alert')).toContainText('temporarily unavailable');
     await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
     await expectNoAccessibilityViolations(page);
+  });
+
+  test.describe('price check before booking (revalidation)', () => {
+    // The mock picks the revalidation outcome by destination: ZPC price changed (F-01), ZEX expired (F-02),
+    // ZSO sold out (F-03); any other destination keeps its price.
+    async function selectAndCheck(page: Page, destination: string): Promise<void> {
+      requireDatabase();
+      await routeApiToBackend(page);
+      await page.goto('/');
+      await fillSearch(page, { destination });
+      await page.getByRole('button', { name: 'Search flights' }).click();
+      const saved = page.waitForResponse(
+        (r) => r.url().endsWith('/api/v1/flights/selected-offers'),
+        {
+          timeout: 30_000,
+        },
+      );
+      await results(page).first().getByRole('button', { name: 'Select this flight' }).click();
+      await saved;
+      await expect(page.getByRole('heading', { name: 'Your selection' })).toBeFocused();
+      await page.getByRole('button', { name: 'Confirm price' }).click();
+    }
+
+    test('an unchanged price is confirmed with the airline', async ({ page }) => {
+      await selectAndCheck(page, 'jfk');
+
+      await expect(page.locator('.selection')).toContainText('Price confirmed with the airline');
+      await expectNoAccessibilityViolations(page);
+    });
+
+    test('F-01 a changed price is shown and applied only after the customer accepts it', async ({
+      page,
+    }) => {
+      await selectAndCheck(page, 'zpc');
+
+      const change = page.getByRole('alert').filter({ hasText: 'The price has changed' });
+      await expect(change.getByRole('heading', { name: 'The price has changed' })).toBeFocused();
+      const previous = (await change.locator('s').textContent())!;
+      const next = (await change.locator('strong').textContent())!;
+      expect(next).not.toBe(previous);
+      await expect(page.locator('.sel-price')).toContainText(previous);
+      await expectNoAccessibilityViolations(page);
+
+      await change.getByRole('button', { name: 'Accept new price' }).click();
+
+      await expect(page.locator('.selection')).toContainText('Price confirmed with the airline');
+      await expect(page.locator('.sel-price')).toContainText(next);
+    });
+
+    test('F-02 an expired offer asks the customer to search again', async ({ page }) => {
+      await selectAndCheck(page, 'zex');
+
+      await expect(page.getByRole('heading', { name: 'Offer no longer available' })).toBeFocused();
+      await page.getByRole('button', { name: 'Search again' }).click();
+      await expect(results(page)).toHaveCount(3);
+    });
+
+    test('F-03 a sold-out offer asks the customer to search again', async ({ page }) => {
+      await selectAndCheck(page, 'zso');
+
+      await expect(page.getByRole('heading', { name: 'This flight is sold out' })).toBeFocused();
+      await expectNoAccessibilityViolations(page);
+      await page.getByRole('button', { name: 'Search again' }).click();
+      await expect(results(page)).toHaveCount(3);
+    });
   });
 });

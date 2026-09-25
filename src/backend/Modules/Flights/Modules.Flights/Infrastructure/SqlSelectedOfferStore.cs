@@ -13,6 +13,22 @@ internal sealed class SqlSelectedOfferStore(FlightsDbContext db) : ISelectedOffe
     public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, CancellationToken cancellationToken) =>
         db.SelectedOffers.AsNoTracking().SingleOrDefaultAsync(o => o.SearchId == searchId && o.OfferId == offerId, cancellationToken);
 
+    public Task<SelectedOffer?> FindForUpdateAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+        db.SelectedOffers.SingleOrDefaultAsync(o => o.Id == selectedOfferId, cancellationToken);
+
+    public async Task<bool> TrySaveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> TryAddAsync(SelectedOffer offer, CancellationToken cancellationToken)
     {
         db.SelectedOffers.Add(offer);

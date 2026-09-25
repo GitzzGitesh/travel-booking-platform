@@ -496,6 +496,144 @@ describe('FlightSearchPage', () => {
       expect($('.offer button.select').getAttribute('aria-pressed')).toBe('false');
     });
 
+    describe('price check', () => {
+      const revalidateUrl = `${selectUrl}/selected-1/revalidations`;
+      const acceptUrl = `${selectUrl}/selected-1/price-acceptances`;
+
+      async function saveSelection(): Promise<void> {
+        const buttons = await searchWithTwoOffers();
+        buttons[1].click();
+        await fixture.whenStable();
+        http
+          .expectOne(selectUrl)
+          .flush(selected('offer-ZZ108'), { status: 201, statusText: 'Created' });
+        await settle();
+      }
+
+      function confirmed(amount: string) {
+        return {
+          selectedOfferId: 'selected-1',
+          totalPrice: { amount, currency: 'XTS' },
+          selectedTotalPrice: { amount: '270', currency: 'XTS' },
+          offerExpiresAt: '2099-01-15T10:00:00+00:00',
+          revalidatedAt: '2099-01-15T09:30:00+00:00',
+        };
+      }
+
+      function problem(status: number, type: string, extra: object = {}) {
+        return [
+          { type, status, title: 'problem', ...extra },
+          { status, statusText: 'Problem' },
+        ] as const;
+      }
+
+      const bar = () => $('.selection');
+
+      it('confirms an unchanged price with one request, even when clicked twice', async () => {
+        await saveSelection();
+
+        await click(button('Confirm price', bar()));
+        button('Checking price', bar()).click();
+        const request = http.expectOne(revalidateUrl);
+        expect(request.request.method).toBe('POST');
+        expect(button('Checking price', bar()).disabled).toBe(true);
+
+        request.flush(confirmed('270'));
+        await settle();
+
+        expect(bar().textContent).toContain('Price confirmed with the airline');
+        expect(document.activeElement?.id).toBe('price-check-heading');
+      });
+
+      it('F-01 shows the previous and new price and applies it only after acceptance', async () => {
+        await saveSelection();
+        await click(button('Confirm price', bar()));
+
+        http.expectOne(revalidateUrl).flush(
+          ...problem(422, 'price-changed', {
+            previousTotalPrice: { amount: '270', currency: 'XTS' },
+            newTotalPrice: { amount: '310.5', currency: 'XTS' },
+            priceQuoteId: 'quote-1',
+            requiresConfirmation: true,
+          }),
+        );
+        await settle();
+
+        const alert = $('.price-change');
+        expect(alert.getAttribute('role')).toBe('alert');
+        expect(alert.textContent).toContain('The price has changed');
+        expect(alert.querySelector('s')?.textContent).toContain('270');
+        expect(alert.querySelector('strong')?.textContent).toContain('310.5');
+        expect($('.sel-price').textContent).toContain('270'); // not applied yet
+
+        await click(button('Accept new price', alert));
+        const accept = http.expectOne(acceptUrl);
+        expect(accept.request.body).toEqual({ priceQuoteId: 'quote-1' });
+        accept.flush(confirmed('310.5'));
+        await settle();
+
+        expect(bar().textContent).toContain('Price confirmed with the airline');
+        expect($('.sel-price').textContent).toContain('310.5');
+      });
+
+      it('asks to check again when the accepted quote is stale', async () => {
+        await saveSelection();
+        await click(button('Confirm price', bar()));
+        http.expectOne(revalidateUrl).flush(
+          ...problem(422, 'price-changed', {
+            previousTotalPrice: { amount: '270', currency: 'XTS' },
+            newTotalPrice: { amount: '310.5', currency: 'XTS' },
+            priceQuoteId: 'quote-1',
+          }),
+        );
+        await settle();
+        await click(button('Accept new price'));
+
+        http.expectOne(acceptUrl).flush(...problem(409, 'price-quote-stale'));
+        await settle();
+
+        expect(bar().textContent).toContain('The price changed again');
+        expect(button('Confirm price', bar())).toBeTruthy();
+      });
+
+      it('F-02 an expired offer asks the customer to search again', async () => {
+        await saveSelection();
+        await click(button('Confirm price', bar()));
+
+        http.expectOne(revalidateUrl).flush(...problem(422, 'offer-expired'));
+        await settle();
+
+        expect(bar().textContent).toContain('Offer no longer available');
+        expect(button('Search again', bar())).toBeTruthy();
+      });
+
+      it('F-03 a sold-out offer asks the customer to search again', async () => {
+        await saveSelection();
+        await click(button('Confirm price', bar()));
+
+        http.expectOne(revalidateUrl).flush(...problem(422, 'sold-out'));
+        await settle();
+
+        expect(bar().querySelector('[role="alert"]')?.textContent).toContain('sold out');
+        expect(document.activeElement?.id).toBe('selection-heading');
+        await click(button('Search again', bar()));
+        http.expectOne(url).flush({ searchId: 'search-2', offers: [offer('ZZ101', '250')] });
+        await settle();
+        expect(element.querySelector('.selection')).toBeNull();
+      });
+
+      it('keeps the selection when the price cannot be checked right now', async () => {
+        await saveSelection();
+        await click(button('Confirm price', bar()));
+
+        http.expectOne(revalidateUrl).flush(...problem(503, 'provider-unavailable'));
+        await settle();
+
+        expect(bar().textContent).toContain("We couldn't check the price right now.");
+        expect(bar().textContent).toContain('Your selection');
+      });
+    });
+
     it('reports a failed save without losing the results', async () => {
       const buttons = await searchWithTwoOffers();
 

@@ -54,6 +54,8 @@ Requirements:
 ## Mock providers
 Deterministic and scenario-driven, used for local dev, automated tests, and demos. They are available **only in non-production environments** (registration guarded by environment and configuration).
 
+Implemented so far (flights): `SearchAsync` and `RevalidateAsync`. `RevalidateAsync` returns the offer as the supplier prices it now, and the core compares prices; it does not return a `PriceChanged` error. Search scenarios are chosen by configuration (`Integrations:Flights:Mock:Scenario`). Revalidation scenarios are chosen per offer by reserved test destinations (`MockRevalidationScenarios`), so one running Api can demonstrate all of them: `ZPC` price changed (F-01, +15%), `ZEX` offer expired (F-02), `ZSO` sold out (F-03). The reference returned by revalidation replaces the stored one, because a supplier may issue a new priced offer that must then be booked. **Known gap:** the core does not yet check that the revalidated itinerary is unchanged (only the contract suite asserts it). Handle schedule changes at pricing time with the first real supplier and with `BookAsync`.
+
 Scenarios (selected via a test header/config or magic values, e.g. passenger surname `SCENARIO-TIMEOUT`):
 `success` · `price-changed` · `offer-expired` · `sold-out` · `rejected` · `timeout-then-booked` (book times out, retrieve later finds it) · `timeout-not-booked` · `unavailable` · `slow` · `ticketing-failed` · `cancel-unknown` · `schedule-change` (later).
 

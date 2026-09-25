@@ -25,6 +25,8 @@ public static class FlightsModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<SearchFlightsHandler>();
         services.AddScoped<SelectFlightOfferHandler>();
+        services.AddScoped<RevalidateSelectedOfferHandler>();
+        services.AddScoped<AcceptSelectedOfferPriceHandler>();
 
         // Search results are held in HybridCache (ADR 0011: in-memory L1; Redis L2 later is configuration only).
         services.AddHybridCache(options => options.MaximumPayloadBytes = FlightSearchCache.MaximumPayloadBytes);
@@ -63,6 +65,25 @@ public static class FlightsModule
             .WithName("SelectFlightOffer")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .AllowAnonymous();
+
+        // Revalidation before any booking step (F-01..F-03). Anonymous like selection until identity exists (Phase 4):
+        // the selection id is an unguessable server-issued id, and both must be rate limited before leaving Development.
+        group.MapPost("/selected-offers/{selectedOfferId:guid}/revalidations", SelectedOfferRevalidationEndpoints.Revalidate)
+            .WithName("RevalidateSelectedFlightOffer")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .Produces<SelectedOfferProblemResponse>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
+            .ProducesProblem(StatusCodes.Status502BadGateway)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .AllowAnonymous();
+
+        group.MapPost("/selected-offers/{selectedOfferId:guid}/price-acceptances", SelectedOfferRevalidationEndpoints.AcceptPrice)
+            .WithName("AcceptSelectedFlightOfferPrice")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .Produces<SelectedOfferProblemResponse>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
             .AllowAnonymous();
 
         return endpoints;

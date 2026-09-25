@@ -123,5 +123,8 @@ public sealed class SearchFlightsHandlerTests
             Calls++;
             return Task.FromResult(result);
         }
+
+        public Task<Result<FlightOffer, ProviderError>> RevalidateAsync(ProviderOfferRef offer, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Search tests never revalidate.");
     }
 }

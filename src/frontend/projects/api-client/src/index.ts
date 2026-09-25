@@ -7,7 +7,9 @@ export { RequestBuilder } from './request-builder';
 export type { StrictHttpResponse } from './strict-http-response';
 export { Api } from './api';
 
+export type { AcceptFlightOfferPriceRequest } from './models/accept-flight-offer-price-request';
 export type { CabinClass } from './models/cabin-class';
+export type { ConfirmedFlightOfferResponse } from './models/confirmed-flight-offer-response';
 export type { FlightOfferResponse } from './models/flight-offer-response';
 export type { FlightSearchRequest } from './models/flight-search-request';
 export type { FlightSearchResponse } from './models/flight-search-response';
@@ -17,9 +19,14 @@ export type { HttpValidationProblemDetails } from './models/http-validation-prob
 export type { MoneyResponse } from './models/money-response';
 export type { ProblemDetails } from './models/problem-details';
 export type { SelectedFlightOfferResponse } from './models/selected-flight-offer-response';
+export type { SelectedOfferProblemResponse } from './models/selected-offer-problem-response';
 export type { SelectFlightOfferRequest } from './models/select-flight-offer-request';
 
 export type { SearchFlights$Params as SearchFlights$Params } from './fn/flights/search-flights';
 export { searchFlights as searchFlights } from './fn/flights/search-flights';
 export type { SelectFlightOffer$Params as SelectFlightOffer$Params } from './fn/flights/select-flight-offer';
 export { selectFlightOffer as selectFlightOffer } from './fn/flights/select-flight-offer';
+export type { RevalidateSelectedFlightOffer$Params as RevalidateSelectedFlightOffer$Params } from './fn/flights/revalidate-selected-flight-offer';
+export { revalidateSelectedFlightOffer as revalidateSelectedFlightOffer } from './fn/flights/revalidate-selected-flight-offer';
+export type { AcceptSelectedFlightOfferPrice$Params as AcceptSelectedFlightOfferPrice$Params } from './fn/flights/accept-selected-flight-offer-price';
+export { acceptSelectedFlightOfferPrice as acceptSelectedFlightOfferPrice } from './fn/flights/accept-selected-flight-offer-price';

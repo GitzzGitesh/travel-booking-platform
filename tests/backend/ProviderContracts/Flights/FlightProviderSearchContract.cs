@@ -1,9 +1,10 @@
+using TravelBooking.BuildingBlocks.Providers;
 using TravelBooking.Modules.Flights.Ports;
 
 namespace TravelBooking.ProviderContracts.Flights;
 
 /// <summary>
-/// Search semantics every <see cref="IFlightProvider"/> must honour, mocks included (ADR 0004: mock parity).
+/// Search and revalidation semantics every <see cref="IFlightProvider"/> must honour, mocks included (ADR 0004: mock parity).
 /// An implementation inherits this class and supplies a provider plus its clock. Real adapters run it against
 /// their sandbox (nightly); mocks run it on every PR. Only assert what is true of real flights: local times are in
 /// different zones, so arrival is NOT required to be after departure here.
@@ -83,6 +84,55 @@ public abstract class FlightProviderSearchContract
 
         await Should.ThrowAsync<OperationCanceledException>(() => Provider.SearchAsync(OneWay(), cancelled.Token));
     }
+
+    [Fact]
+    public async Task Revalidating_a_fresh_offer_returns_the_same_itinerary_priced_and_unexpired()
+    {
+        var offer = (await SearchOffers(RoundTrip()))[0];
+
+        var result = await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken);
+
+        result.IsSuccess.ShouldBeTrue(result.IsSuccess ? string.Empty : $"Revalidation failed: {result.Error}");
+        result.Value.Reference.ProviderId.ShouldBe(Provider.Id);
+        result.Value.TotalPrice.Amount.ShouldBeGreaterThan(0);
+        result.Value.ExpiresAt.ShouldBeGreaterThan(Now);
+        Itinerary(result.Value).ShouldBe(Itinerary(offer));
+    }
+
+    [Fact]
+    public async Task Revalidation_is_a_repeatable_read()
+    {
+        var offer = (await SearchOffers(OneWay()))[0];
+
+        var first = await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken);
+        var second = await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken);
+
+        second.IsSuccess.ShouldBe(first.IsSuccess);
+        second.Value.TotalPrice.ShouldBe(first.Value.TotalPrice);
+    }
+
+    [Fact]
+    public async Task An_unrecognised_reference_is_an_error_not_an_exception()
+    {
+        var result = await Provider.RevalidateAsync(new ProviderOfferRef(Provider.Id, "not-an-offer-reference"), TestContext.Current.CancellationToken);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.Error.Kind.ShouldBeOneOf(ProviderErrorKind.InvalidRequest, ProviderErrorKind.OfferExpired);
+    }
+
+    [Fact]
+    public async Task Revalidation_honours_cancellation()
+    {
+        var offer = (await SearchOffers(OneWay()))[0];
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => Provider.RevalidateAsync(offer.Reference, cancelled.Token));
+    }
+
+    protected static string Itinerary(FlightOffer offer) =>
+        string.Join(" | ", offer.Slices.Select(slice =>
+            string.Join(" ", slice.Segments.Select(s => $"{s.FlightNumber} {s.Origin}-{s.Destination} {s.DepartureLocal:O} {s.ArrivalLocal:O}"))));
 
     protected async Task<IReadOnlyList<FlightOffer>> SearchOffers(FlightSearchCriteria criteria)
     {

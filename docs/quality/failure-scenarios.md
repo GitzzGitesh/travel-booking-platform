@@ -23,9 +23,9 @@ Add a new scenario with the next free ID in its category's band, and update this
 ## Pricing and offers
 | ID | Scenario | Expected behaviour | Levels | Status |
 |---|---|---|---|---|
-| F-01 | Price changed at revalidation | 422 `price-changed` with new breakdown; no authorization; customer must accept | U, A, E | Planned |
-| F-02 | Offer expired before checkout | 422 `offer-expired`; item `Expired`; prompt re-search | U, A, E | Planned |
-| F-03 | Sold out at revalidation or booking | Revalidation: 422 `sold-out`. Booking: `Failed`, authorization voided | U, P, E | Planned |
+| F-01 | Price changed at revalidation | 422 `price-changed` with new breakdown; no authorization; customer must accept | U, A, E | Done for the selected offer (chunk 5): 422 `price-changed` with the previous and new totals and a `priceQuoteId`. It is accepted only by that id; a stale quote gets 409. Price breakdown and the authorization step come with pricing and payments |
+| F-02 | Offer expired before checkout | 422 `offer-expired`; item `Expired`; prompt re-search | U, A, E | Done for selection and revalidation (chunks 4–5). The selected offer becomes `Expired` (terminal) and the customer is asked to search again. The order-item state comes with orders |
+| F-03 | Sold out at revalidation or booking | Revalidation: 422 `sold-out`. Booking: `Failed`, authorization voided | U, P, E | Revalidation done (chunk 5: 422 `sold-out`, selection `SoldOut`, search again; U, P, A, E). Booking part planned |
 | F-04 | Client submits a tampered price | Ignored; server price used; audit/security event | A | Planned |
 
 ## Supplier booking

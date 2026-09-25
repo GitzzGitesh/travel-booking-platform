@@ -303,7 +303,7 @@
                       </div>
                       <p class="sel-price">
                         <span class="amount tabular">{{
-                          formatMoney(chosen.selection.totalPrice)
+                          formatMoney(agreedPrice(chosen.selection))
                         }}</span>
                         <span>Total for all travellers</span>
                       </p>
@@ -312,10 +312,121 @@
                           <path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z" />
                         </svg>
                         <span
-                          >Held until {{ heldUntil(chosen.selection) }}. The price is confirmed
-                          again with the airline before you pay.</span
+                          >Held until {{ heldUntil(expiresAt(chosen.selection)) }}. The price is
+                          confirmed again with the airline before you pay.</span
                         >
                       </p>
+
+                      @let check = priceCheck();
+                      <div class="price-check">
+                        @switch (check.kind) {
+                          @case ('confirmed') {
+                            <p
+                              class="confirmed"
+                              id="price-check-heading"
+                              tabindex="-1"
+                              #priceCheckHeading
+                            >
+                              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="m5 12 5 5L20 7" />
+                              </svg>
+                              Price confirmed with the airline:
+                              {{ formatMoney(check.confirmed.totalPrice) }}.
+                            </p>
+                          }
+                          @default {
+                            @if (check.kind === 'changed' || check.kind === 'accepting') {
+                              <div class="alert alert-warning price-change" role="alert">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" />
+                                  <path d="M12 8v5M12 16h.01" />
+                                </svg>
+                                <div>
+                                  <h4 id="price-check-heading" tabindex="-1" #priceCheckHeading>
+                                    The price has changed
+                                  </h4>
+                                  <p class="tabular">
+                                    Was <s>{{ formatMoney(check.previous) }}</s
+                                    >, now <strong>{{ formatMoney(check.next) }}</strong> in total.
+                                  </p>
+                                  <p>Accept the new price to continue, or choose another flight.</p>
+                                  <div class="actions">
+                                    <button
+                                      type="button"
+                                      class="btn btn-primary btn-sm"
+                                      [disabled]="check.kind === 'accepting'"
+                                      (click)="acceptNewPrice()"
+                                    >
+                                      {{
+                                        check.kind === 'accepting'
+                                          ? 'Accepting…'
+                                          : 'Accept new price'
+                                      }}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      class="btn btn-outline btn-sm"
+                                      (click)="chooseAnotherFlight()"
+                                    >
+                                      Choose another flight
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            } @else {
+                              @if (check.kind === 'error' || check.kind === 'stale') {
+                                <p
+                                  class="check-problem"
+                                  id="price-check-heading"
+                                  tabindex="-1"
+                                  #priceCheckHeading
+                                  role="alert"
+                                >
+                                  {{
+                                    check.kind === 'stale'
+                                      ? 'The price changed again. Please check the latest price.'
+                                      : "We couldn't check the price right now. Please try again."
+                                  }}
+                                </p>
+                              }
+                              <button
+                                type="button"
+                                class="btn btn-primary btn-sm"
+                                [disabled]="check.kind === 'checking'"
+                                (click)="confirmPrice()"
+                              >
+                                {{
+                                  check.kind === 'checking' ? 'Checking price…' : 'Confirm price'
+                                }}
+                              </button>
+                            }
+                          }
+                        }
+                      </div>
+                    }
+                    @case ('soldOut') {
+                      <div class="alert alert-warning" role="alert">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M8 8l8 8M16 8l-8 8" />
+                        </svg>
+                        <div>
+                          <h3 id="selection-heading" tabindex="-1" #selectionHeading>
+                            This flight is sold out
+                          </h3>
+                          <p>
+                            There are no seats left at this fare. Please search again for other
+                            flights.
+                          </p>
+                          <button
+                            type="button"
+                            class="btn btn-dark btn-sm action"
+                            (click)="search()"
+                          >
+                            Search again
+                          </button>
+                        </div>
+                      </div>
                     }
                     @case ('expired') {
                       <div class="alert alert-warning" role="alert">

@@ -13,7 +13,7 @@ paths:
 - Errors use **RFC 9457 Problem Details** with a stable machine-readable `type` (e.g. `price-changed`, `offer-expired`, `idempotency-conflict`) and a `traceId`. Never leak stack traces, SQL, or supplier error payloads.
 - Unsafe booking/payment/refund/cancel operations require an **`Idempotency-Key`** header. Replays return the original response.
 - Uncertain or slow operations return `202 Accepted` with a status resource to poll (e.g. an order in `PendingConfirmation`), rather than holding the request open on slow suppliers.
-- Status codes: 200/201/202/204, 400 (validation), 401, 403, 404, 409 (state/idempotency/concurrency conflict), 412 (ETag precondition), 422 (business rule, e.g. price changed), 429, 503 (provider unavailable).
+- Status codes: 200/201/202/204, 400 (validation), 401, 403, 404, 409 (state/idempotency/concurrency conflict), 412 (ETag precondition), 422 (business rule, e.g. price changed), 429, 502 (unexpected or unusable supplier response), 503 (provider unavailable).
 - Optimistic concurrency on admin edits via `ETag` / `If-Match`.
 - Lists use cursor pagination (`?cursor=&limit=`) with a maximum `limit`.
 - Money in JSON is `{ "amount": "123.45", "currency": "EUR" }` (amount as a string to avoid float precision loss). Dates are ISO-8601. Local travel times include the zone.

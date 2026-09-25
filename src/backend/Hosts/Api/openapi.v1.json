@@ -134,10 +134,187 @@
           }
         }
       }
+    },
+    "/api/v1/flights/selected-offers/{selectedOfferId}/revalidations": {
+      "post": {
+        "tags": [
+          "Flights"
+        ],
+        "operationId": "RevalidateSelectedFlightOffer",
+        "parameters": [
+          {
+            "name": "selectedOfferId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmedFlightOfferResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedOfferProblemResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flights/selected-offers/{selectedOfferId}/price-acceptances": {
+      "post": {
+        "tags": [
+          "Flights"
+        ],
+        "operationId": "AcceptSelectedFlightOfferPrice",
+        "parameters": [
+          {
+            "name": "selectedOfferId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptFlightOfferPriceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmedFlightOfferResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedOfferProblemResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AcceptFlightOfferPriceRequest": {
+        "required": [
+          "priceQuoteId"
+        ],
+        "type": "object",
+        "properties": {
+          "priceQuoteId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "CabinClass": {
         "enum": [
           "Economy",
@@ -145,6 +322,36 @@
           "Business",
           "First"
         ]
+      },
+      "ConfirmedFlightOfferResponse": {
+        "required": [
+          "selectedOfferId",
+          "totalPrice",
+          "selectedTotalPrice",
+          "offerExpiresAt",
+          "revalidatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "selectedOfferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "totalPrice": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "selectedTotalPrice": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "offerExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revalidatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "FlightOfferResponse": {
         "required": [
@@ -430,6 +637,79 @@
             "items": {
               "$ref": "#/components/schemas/FlightSliceResponse"
             }
+          }
+        }
+      },
+      "SelectedOfferProblemResponse": {
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "traceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "selectedOfferId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "previousTotalPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MoneyResponse"
+              }
+            ]
+          },
+          "newTotalPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MoneyResponse"
+              }
+            ]
+          },
+          "priceQuoteId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "offerExpiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "requiresConfirmation": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },

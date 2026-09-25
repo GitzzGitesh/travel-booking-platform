@@ -20,7 +20,20 @@ internal sealed class FlightsDbContext(DbContextOptions<FlightsDbContext> option
         modelBuilder.HasDefaultSchema(Schema);
 
         var offer = modelBuilder.Entity<SelectedOffer>();
-        offer.ToTable("SelectedOffers");
+        offer.ToTable("SelectedOffers", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_SelectedOffers_Status",
+                $"[Status] IN ({string.Join(", ", Enum.GetNames<SelectedOfferStatus>().Select(name => $"'{name}'"))})");
+
+            // An optional price is either complete (amount and currency) or absent.
+            foreach (var prefix in new[] { "Confirmed", "Quoted" })
+            {
+                table.HasCheckConstraint(
+                    $"CK_SelectedOffers_{prefix}Price",
+                    $"([{prefix}Amount] IS NULL AND [{prefix}Currency] IS NULL) OR ([{prefix}Amount] IS NOT NULL AND [{prefix}Currency] IS NOT NULL)");
+            }
+        });
         offer.HasKey(o => o.Id);
         offer.Property(o => o.Id).ValueGeneratedNever();
 
@@ -48,7 +61,23 @@ internal sealed class FlightsDbContext(DbContextOptions<FlightsDbContext> option
                     slices => SliceSnapshotJson.Write(slices).GetHashCode(StringComparison.Ordinal),
                     slices => slices));
 
+        // Revalidation state (F-01..F-03). The migration gives existing rows the Selected status.
+        offer.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
+        offer.Ignore(o => o.ConfirmedPrice);
+        offer.Ignore(o => o.QuotedPrice);
+        MapOptionalMoney(offer, "Confirmed");
+        MapOptionalMoney(offer, "Quoted");
+
+        // Optimistic concurrency: a revalidation and an acceptance racing on the same row cannot both win.
         offer.Property<byte[]>("RowVersion").IsRowVersion();
+    }
+
+    private static void MapOptionalMoney(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<SelectedOffer> offer, string prefix)
+    {
+        offer.Property<decimal?>($"{prefix}Amount").HasPrecision(19, 4);
+        offer.Property<CurrencyCode?>($"{prefix}Currency")
+            .HasColumnType("char(3)")
+            .HasConversion(code => code!.Value.Value, value => new CurrencyCode(value));
     }
 }
 
