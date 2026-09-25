@@ -42,5 +42,10 @@ Tokens: the Api validates JWTs from both issuers with separate authentication sc
 | Supply-chain risk | Dependabot, lockfiles, licence checks, pinned SDKs |
 | XSS / injection | Angular sanitisation, strict CSP, parameterised queries |
 
+## Rate limiting and client addresses
+- Every anonymous `/api/v1` endpoint has a per-client rate-limit policy (`BuildingBlocks.Http.RateLimitPolicies`): `anonymous` by default, and the tighter `supplier-calls` where a request reaches a paid supplier. Limits are in `RateLimiting` configuration and are per Api instance until a distributed limiter exists (ADR 0011).
+- The client is the connection's address: per address for IPv4, per /64 prefix for IPv6 (one client controls a whole /64). It comes from `X-Forwarded-For` / `X-Forwarded-Proto` **only when the sender is a configured trusted proxy** (`ForwardedHeaders:KnownProxies/KnownNetworks`), and only the nearest hop counts. With nothing configured, forwarding is off. Never set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, which trusts every sender.
+- Each deployment sets its own ingress addresses (the hosting decision). Exposure outside Development stays gated until then (docs/progress.md).
+
 ## Platform controls (Azure, later phases)
 Front Door + WAF · private endpoints for SQL and Key Vault · managed identities · Defender for Cloud · diagnostic logs to Log Analytics · separate subscriptions/resource groups per environment.

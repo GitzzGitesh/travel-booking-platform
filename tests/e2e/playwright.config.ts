@@ -48,6 +48,9 @@ export default defineConfig({
         ASPNETCORE_ENVIRONMENT: 'Development',
         ASPNETCORE_URLS: 'http://localhost:5099',
         ConnectionStrings__Flights: process.env['E2E_FLIGHTS_DB'] ?? '',
+        // Every journey comes from one local address, so the per-client limits (appsettings.json) are raised for E2E only.
+        RateLimiting__Anonymous__PermitLimit: '10000',
+        RateLimiting__SupplierCalls__PermitLimit: '10000',
       },
       reuseExistingServer: !process.env['CI'],
       timeout: 180_000,

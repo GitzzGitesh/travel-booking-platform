@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using TravelBooking.Api;
+using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Integrations.Flights.Mock;
 using TravelBooking.Modules.Flights;
 
@@ -39,9 +40,14 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 builder.Services.AddAuthorization();
 builder.Services.AddHealthChecks();
 builder.Services.AddApiCors(builder.Configuration);
+builder.Services.AddApiForwardedHeaders(builder.Configuration);
+builder.Services.AddApiRateLimiting(builder.Configuration);
 
 var app = builder.Build();
 
+// First, so the client address and scheme are right for HSTS, HTTPS redirection and rate limiting. It trusts no proxy
+// until a deployment names its ingress (ForwardedHeaders:KnownProxies/KnownNetworks).
+app.UseForwardedHeaders();
 app.UseSecurityHeaders();
 
 if (!app.Environment.IsDevelopment())
@@ -64,6 +70,7 @@ app.UseStatusCodePages();
 
 app.UseHttpsRedirection();
 app.UseCors();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health").AllowAnonymous();
@@ -75,12 +82,14 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 }
 
-var v1 = app.MapGroup("/api/v1");
+// Every anonymous API endpoint is rate limited per client (security rules); modules tighten it where they call suppliers.
+var v1 = app.MapGroup("/api/v1").RequireRateLimiting(RateLimitPolicies.Anonymous);
 
 if (app.Environment.IsDevelopment())
 {
-    // Flight search stays Development-only until forwarded headers and rate limiting exist (docs/progress.md).
-    // This gate must only widen together with IFlightProvider registration: no provider is registered in Production.
+    // Flight endpoints stay Development-only. Rate limiting and the forwarded-headers mechanism exist; widening this gate
+    // still needs the hosting decision (trusted ingress addresses, AllowedHosts, a distributed limiter for more than
+    // one instance, ADR 0011) and Q2 (docs/progress.md). It must only widen together with IFlightProvider registration.
     v1.MapFlightsEndpoints();
 }
 
