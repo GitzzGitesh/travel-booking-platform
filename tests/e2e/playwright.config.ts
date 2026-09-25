@@ -35,5 +35,16 @@ export default defineConfig({
       url: 'http://localhost:4300',
       reuseExistingServer: !process.env['CI'],
     },
+    {
+      // The real Api in Development, with the deterministic mock flight provider (ADR 0004). Journeys reach it
+      // through support/api.ts, which forwards the apps' same-origin /api calls.
+      // CI builds the Api in an earlier step; locally, dotnet run builds it. Port 5080 matches proxy.conf.json and
+      // support/api.ts. Locally an Api already on 5080 is reused, whatever its provider configuration.
+      command: `dotnet run --project ../../src/backend/Hosts/Api --no-launch-profile${process.env['CI'] ? ' --no-build' : ''}`,
+      url: 'http://localhost:5080/health',
+      env: { ASPNETCORE_ENVIRONMENT: 'Development', ASPNETCORE_URLS: 'http://localhost:5080' },
+      reuseExistingServer: !process.env['CI'],
+      timeout: 180_000,
+    },
   ],
 });

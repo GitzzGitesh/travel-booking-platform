@@ -1,0 +1,87 @@
+.offers {
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.offer {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid #6b6b6b;
+  border-radius: 0.25rem;
+}
+
+.offer.selected {
+  border: 3px solid #0b57d0;
+}
+
+.price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.amount {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.price-note,
+.time-note,
+.details {
+  color: #4a4a4a;
+}
+
+.slice-label {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.segment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+
+.times {
+  font-weight: 600;
+}
+
+.time-note {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.select {
+  justify-self: start;
+  cursor: pointer;
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.25rem;
+  color: #0b57d0;
+  background: #fff;
+  border: 2px solid #0b57d0;
+  border-radius: 0.25rem;
+}
+
+.select[aria-pressed='true'] {
+  color: #fff;
+  background: #0b57d0;
+}
+
+.selection {
+  margin-top: 1rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

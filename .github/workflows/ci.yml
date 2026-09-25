@@ -127,6 +127,24 @@ jobs:
           npx ng build customer-web
           npx ng build admin-web
 
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # Journeys call the real Api (Development, deterministic mock), which Playwright starts with dotnet run.
+      - name: Build the Api
+        run: dotnet build src/backend/Hosts/Api
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+          DOTNET_NOLOGO: "1"
+
       - name: Install E2E dependencies
         working-directory: tests/e2e
         run: npm ci

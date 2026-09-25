@@ -1,0 +1,186 @@
+<section class="search" aria-labelledby="search-heading">
+  <h1 id="search-heading">Search flights</h1>
+
+  <form [formGroup]="form" (ngSubmit)="search()" novalidate>
+    <div class="fields">
+      <div class="field">
+        <label for="origin">From <span class="hint">(airport code, e.g. LHR)</span></label>
+        <input
+          id="origin"
+          formControlName="origin"
+          autocomplete="off"
+          autocapitalize="characters"
+          maxlength="3"
+          [attr.aria-invalid]="showError('origin')"
+          [attr.aria-describedby]="showError('origin') ? 'origin-error' : null"
+        />
+        @if (showError('origin')) {
+          <p class="error" id="origin-error">Enter a three-letter airport code.</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="destination">To <span class="hint">(airport code, e.g. JFK)</span></label>
+        <input
+          id="destination"
+          formControlName="destination"
+          autocomplete="off"
+          autocapitalize="characters"
+          maxlength="3"
+          [attr.aria-invalid]="showError('destination') || showGroupError('sameAirport')"
+          [attr.aria-describedby]="
+            showError('destination') || showGroupError('sameAirport') ? 'destination-error' : null
+          "
+        />
+        @if (showError('destination')) {
+          <p class="error" id="destination-error">Enter a three-letter airport code.</p>
+        } @else if (showGroupError('sameAirport')) {
+          <p class="error" id="destination-error">
+            Choose a destination different from the origin.
+          </p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="departureDate">Departure date</label>
+        <input
+          id="departureDate"
+          type="date"
+          formControlName="departureDate"
+          [min]="today"
+          [attr.aria-invalid]="showError('departureDate')"
+          [attr.aria-describedby]="showError('departureDate') ? 'departureDate-error' : null"
+        />
+        @if (showError('departureDate')) {
+          <p class="error" id="departureDate-error">Choose a departure date.</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="returnDate">Return date <span class="hint">(optional)</span></label>
+        <input
+          id="returnDate"
+          type="date"
+          formControlName="returnDate"
+          [min]="form.controls.departureDate.value || today"
+          [attr.aria-invalid]="showGroupError('returnBeforeDeparture')"
+          [attr.aria-describedby]="
+            showGroupError('returnBeforeDeparture') ? 'returnDate-error' : null
+          "
+        />
+        @if (showGroupError('returnBeforeDeparture')) {
+          <p class="error" id="returnDate-error">
+            The return date cannot be before the departure date.
+          </p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="cabin">Cabin</label>
+        <select id="cabin" formControlName="cabin">
+          @for (cabin of cabins; track cabin.value) {
+            <option [value]="cabin.value">{{ cabin.label }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <fieldset class="passengers">
+      <legend>Passengers</legend>
+      <div class="field">
+        <label for="adults">Adults <span class="hint">(12+)</span></label>
+        <input
+          id="adults"
+          type="number"
+          inputmode="numeric"
+          formControlName="adults"
+          min="1"
+          [max]="maxSeatedPassengers"
+        />
+      </div>
+      <div class="field">
+        <label for="children">Children <span class="hint">(2–11)</span></label>
+        <input
+          id="children"
+          type="number"
+          inputmode="numeric"
+          formControlName="children"
+          min="0"
+          [max]="maxSeatedPassengers - 1"
+        />
+      </div>
+      <div class="field">
+        <label for="infants">Infants <span class="hint">(under 2, on lap)</span></label>
+        <input
+          id="infants"
+          type="number"
+          inputmode="numeric"
+          formControlName="infants"
+          min="0"
+          [max]="maxSeatedPassengers"
+          [attr.aria-invalid]="showGroupError('tooManyInfants')"
+          [attr.aria-describedby]="showGroupError('tooManyInfants') ? 'infants-error' : null"
+        />
+      </div>
+      @if (showGroupError('tooManyInfants')) {
+        <p class="error" id="infants-error">Each infant must travel with an adult.</p>
+      }
+      @if (showGroupError('tooManySeated') || showError('adults') || showError('children')) {
+        <p class="error">
+          Search for 1 to {{ maxSeatedPassengers }} adults and children, with at least one adult.
+        </p>
+      }
+    </fieldset>
+
+    <button type="submit" class="primary" [disabled]="state().kind === 'loading'">
+      {{ state().kind === 'loading' ? 'Searching…' : 'Search flights' }}
+    </button>
+  </form>
+</section>
+
+<p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
+
+@let current = state();
+@if (current.kind !== 'idle') {
+  <section
+    class="outcome"
+    aria-labelledby="results-heading"
+    [attr.aria-busy]="current.kind === 'loading'"
+  >
+    <h2 id="results-heading" tabindex="-1" #resultsHeading>
+      @switch (current.kind) {
+        @case ('loading') {
+          Searching…
+        }
+        @case ('results') {
+          {{ current.offers.length === 0 ? 'No flights found' : 'Available flights' }}
+        }
+        @case ('error') {
+          Search problem
+        }
+      }
+    </h2>
+
+    @switch (current.kind) {
+      @case ('results') {
+        @if (current.offers.length === 0) {
+          <p>No flights match this search. Try different dates or airports.</p>
+        } @else {
+          <app-flight-results [offers]="current.offers" [roundTrip]="current.roundTrip" />
+        }
+      }
+      @case ('error') {
+        <div class="alert" role="alert">
+          <p>{{ current.message }}</p>
+          @if (current.details.length) {
+            <ul>
+              @for (detail of current.details; track $index) {
+                <li>{{ detail }}</li>
+              }
+            </ul>
+          }
+        </div>
+      }
+    }
+  </section>
+}

@@ -70,7 +70,10 @@
               "buildTarget": "customer-web:build:development"
             }
           },
-          "defaultConfiguration": "development"
+          "defaultConfiguration": "development",
+          "options": {
+            "proxyConfig": "projects/customer-web/proxy.conf.json"
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test"

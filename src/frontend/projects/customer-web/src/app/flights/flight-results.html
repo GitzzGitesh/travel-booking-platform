@@ -1,0 +1,55 @@
+<ol class="offers">
+  @for (offer of offers(); track $index; let offerIndex = $index) {
+    <li
+      class="offer"
+      [class.selected]="selectedIndex() === offerIndex"
+      [attr.aria-labelledby]="'offer-' + offerIndex + '-price'"
+    >
+      <div class="price">
+        <span class="amount" [id]="'offer-' + offerIndex + '-price'">{{
+          formatMoney(offer.totalPrice)
+        }}</span>
+        <span class="price-note">total for all passengers</span>
+      </div>
+
+      @for (slice of offer.slices; track $index; let sliceIndex = $index) {
+        <div class="slice">
+          <h3 class="slice-label">{{ sliceLabel(sliceIndex) }}</h3>
+          @for (segment of slice.segments; track $index) {
+            <p class="segment">
+              <span class="times">
+                {{ localTime(segment.departureLocal) }} {{ segment.origin }}
+                <span aria-hidden="true">→</span><span class="visually-hidden">to</span>
+                {{ localTime(segment.arrivalLocal) }} {{ segment.destination }}
+              </span>
+              <span class="details">
+                {{ localDate(segment.departureLocal) }} · {{ segment.marketingCarrier }}
+                {{ segment.flightNumber }}
+              </span>
+            </p>
+          }
+        </div>
+      }
+
+      <p class="time-note">Times are local to each airport.</p>
+
+      <button
+        type="button"
+        class="select"
+        [attr.aria-pressed]="selectedIndex() === offerIndex"
+        [attr.aria-describedby]="'offer-' + offerIndex + '-price'"
+        (click)="select(offerIndex)"
+      >
+        {{ selectedIndex() === offerIndex ? 'Selected' : 'Select this flight' }}
+      </button>
+    </li>
+  }
+</ol>
+
+<div class="selection" aria-live="polite">
+  @if (selected(); as offer) {
+    <h3>Your selection</h3>
+    <p>{{ route(offer) }}, {{ formatMoney(offer.totalPrice) }} in total.</p>
+    <p class="price-note">The price is confirmed again with the airline before you pay.</p>
+  }
+</div>

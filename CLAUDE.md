@@ -23,12 +23,12 @@ Frontend (run in `src/frontend`):
 - Install: `npm ci`
 - Build: `npx ng build customer-web` (SSR + prerender) / `npx ng build admin-web` (SPA), then `npm run check:admin-web-csp`; `npm run check:app-boundaries` (apps never import each other)
 - Unit tests (Vitest): `npx ng test customer-web --watch=false` / `npx ng test admin-web --watch=false`
-- Dev server: `npx ng serve customer-web` / `npx ng serve admin-web`
+- Dev server: `npx ng serve customer-web` / `npx ng serve admin-web`. customer-web proxies `/api` to the Api on http://localhost:5080 (`proxy.conf.json`), so run the Api too.
 - API client: `npm run generate:api-client` after the contract snapshot changes (commit the result); `npm run check:api-client` type-checks it (ADR 0013)
 
 CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps (including the API-client drift check), an oasdiff breaking-change check on PRs, a gitleaks history scan, and CodeQL on every PR and push to `main`.
 
-E2E and accessibility (`tests/e2e`, Playwright + axe-core, against the production builds): build both apps first, then in `tests/e2e`: `npm ci`, `npx playwright install chromium` (once), `npx playwright test` (`--project admin-web` for one app).
+E2E and accessibility (`tests/e2e`, Playwright + axe-core, against the production builds; Playwright also starts the Api with `dotnet run` in Development): build both apps first, then in `tests/e2e`: `npm ci`, `npx playwright install chromium` (once), `npx playwright test` (`--project admin-web` for one app).
 
 Not yet available: Aspire AppHost run. They are added in later Phase 1 stories.
 

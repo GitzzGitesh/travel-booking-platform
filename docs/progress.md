@@ -11,15 +11,23 @@ Phase 1 is **complete**. Q3 was answered on 2026-09-25: **flights first**. The d
 |---|---|---|
 | 1 | Flight **search port** (`IFlightProvider.SearchAsync`, with its types in `Modules.Flights.Ports`). `BuildingBlocks`: `Money`, `CurrencyCode`, `Result`, and the provider error taxonomy. Deterministic **mock provider** (`Integrations.Flights.Mock`: XTS test currency, carrier ZZ, scenarios selected by configuration). **Provider contract suite** (`tests/backend/ProviderContracts`). Architecture rules for ports and adapters | **Done** (ADR 0014 Accepted). The mock refuses Production and undefined scenarios at startup. `ProviderOfferRef.Value` is an opaque adapter token |
 | 2 | Flight search **API endpoint**: validation, mapping provider errors to ProblemDetails, contract snapshot and client. The host registers the mock outside Production. Delete `Modules.Sample` (oasdiff ignore file, ADR 0013). Development-only until rate limiting exists | **Done.** `POST /api/v1/flights/searches` (anonymous, Development-only). Provider errors map to 503 `provider-unavailable`, 422 `search-rejected`, or 502 `provider-error`. No offer id is exposed until offer selection. Dates are bounded between yesterday (UTC) and a 361-day sales horizon (a supplier constraint to revisit with Q6). Cabin accepts documented names only. The mock runs only in Development or Staging. `Modules.Sample` is deleted; its removal is accepted in `src/backend/Hosts/Api/openapi-accepted-breaking-changes.txt` |
-| 3 | customer-web **search UI and results** through the generated client, with a Playwright journey test and axe checks | Next |
-| 4 | **Offer selection and a persisted offer snapshot**. This is the first data-owning story, so it brings in EF Core, SQL Server, Testcontainers, and the Aspire AppHost | After 3. Needs **Docker or Podman on the dev machine** |
+| 3 | customer-web **search UI and results** through the generated client, with a Playwright journey test and axe checks | **Done.** The search page is the home route: form, validation, loading, empty and error states, results, and client-side offer selection. It calls the generated client on the same origin (dev proxy; the deployed gateway is part of the hosting story). Server routes are per route (search prerendered, all other routes client-rendered). Playwright covers the journey against the real Api and mock, plus empty, outage, invalid-input, and phone-width cases, all with axe |
+| 4 | **Offer selection and a persisted offer snapshot** (Option 2: HybridCache + `searchId`, above). This is the first data-owning story, so it brings in EF Core, SQL Server, Testcontainers, and the Aspire AppHost | Next. Needs **Docker or Podman on the dev machine** and **ADR 0011 accepted** |
 | 5 | **Revalidation** (`RevalidateAsync`): F-01 price changed, F-02 offer expired, F-03 sold out | After 4 |
 
 **Follow-ups from the chunk 2 reviews:**
-- **Decide before chunk 4:** how a selected offer is identified. Either persist every offer at search time (a database write per search), or hold offers server-side in HybridCache (ADR 0011) behind a `searchId` and persist only on selection. The choice decides whether `POST /flights/searches` also returns a `searchId`.
+- **Decided 2026-09-25 (Option 2): offers are held temporarily in server-side HybridCache (ADR 0011), identified by an opaque `searchId`, and only the selected offer is persisted.** Implications for chunk 4:
+  - `POST /flights/searches` returns a `searchId` and per-offer ids (additive), together with the cache that makes them resolvable.
+  - The cached offer set expires no later than the offers' `expiresAt`.
+  - Selection loads the offer from the cache and persists its snapshot in SQL. An expired or evicted search means re-searching (F-02).
+  - The cache is never the booking source of truth, and the selected offer is revalidated with the supplier before booking (chunk 5).
+  - This builds on ADR 0011, which is still Proposed and needs acceptance before chunk 4.
+  - Until then, customer-web selects an offer client-side by its position in the result set.
 - Remove the `Modules.Sample` entry from `openapi-accepted-breaking-changes.txt` in the first PR after chunk 2 merges.
 - When search leaves Development: add `.RequireRateLimiting(...)` in `MapFlightsEndpoints` itself, with an endpoint-metadata test that every anonymous `/api/v1` endpoint is rate limited.
 - Money amounts are passed through at the adapter's scale; rounding to ISO minor units (ADR 0010) arrives with pricing, so the UI must not assume a fixed number of decimals.
+- **Hosting-story prerequisite (from the chunk 3 review):** the first customer-web route that fetches data during SSR needs an absolute API URL on the server, via a server-only `provideApiConfiguration(...)` in `app.config.server.ts`, fed from server config. The SSR server does not handle `/api` itself, so the deployed gateway path stays untested until the hosting story.
+- When the i18n ADR lands (Q2), mark the search page for extraction, including the status plural (currently string concatenation) and the cabin labels.
 - CODEOWNERS for the contract files was suggested; ADR 0012 defers CODEOWNERS until there is a second technical owner.
 
 **Gates:**
