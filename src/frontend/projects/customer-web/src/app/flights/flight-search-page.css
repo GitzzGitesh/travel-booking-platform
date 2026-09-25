@@ -1,0 +1,100 @@
+:host {
+  display: block;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+.fields {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.passengers {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #6b6b6b;
+  border-radius: 0.25rem;
+}
+
+.passengers .error {
+  grid-column: 1 / -1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+label {
+  font-weight: 600;
+}
+
+.hint {
+  font-weight: 400;
+  color: #4a4a4a;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  padding: 0.5rem;
+  min-height: 2.75rem; /* comfortable touch target */
+}
+
+#origin,
+#destination {
+  text-transform: uppercase;
+}
+
+input[aria-invalid='true'] {
+  border: 2px solid #b00020;
+}
+
+.error {
+  margin: 0;
+  color: #b00020;
+}
+
+.primary {
+  cursor: pointer;
+  color: #fff;
+  background: #0b57d0;
+  border: none;
+  border-radius: 0.25rem;
+  padding-inline: 1.5rem;
+}
+
+.primary:disabled {
+  cursor: progress;
+  background: #4a4a4a;
+}
+
+.outcome {
+  margin-top: 2rem;
+}
+
+.outcome h2:focus {
+  outline: 2px solid #0b57d0;
+  outline-offset: 2px;
+}
+
+.alert {
+  padding: 1rem;
+  border: 2px solid #b00020;
+  border-radius: 0.25rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

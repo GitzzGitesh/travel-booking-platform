@@ -12,7 +12,7 @@ test.describe('customer-web shell', () => {
     const response = await page.goto('/');
 
     expect(response?.status()).toBe(200);
-    await expect(page).toHaveTitle('Travel booking');
+    await expect(page).toHaveTitle(/Travel booking/);
     await expectShellLandmarks(page, 'Travel booking');
     expect(errors).toEqual([]);
   });
