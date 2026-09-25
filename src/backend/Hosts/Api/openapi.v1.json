@@ -74,6 +74,66 @@
           }
         }
       }
+    },
+    "/api/v1/flights/selected-offers": {
+      "post": {
+        "tags": [
+          "Flights"
+        ],
+        "operationId": "SelectFlightOffer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectFlightOfferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedFlightOfferResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedFlightOfferResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -88,12 +148,17 @@
       },
       "FlightOfferResponse": {
         "required": [
+          "offerId",
           "totalPrice",
           "expiresAt",
           "slices"
         ],
         "type": "object",
         "properties": {
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "totalPrice": {
             "$ref": "#/components/schemas/MoneyResponse"
           },
@@ -170,10 +235,15 @@
       },
       "FlightSearchResponse": {
         "required": [
+          "searchId",
           "offers"
         ],
         "type": "object",
         "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "offers": {
             "type": "array",
             "items": {
@@ -322,6 +392,67 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SelectedFlightOfferResponse": {
+        "required": [
+          "selectedOfferId",
+          "searchId",
+          "offerId",
+          "totalPrice",
+          "offerExpiresAt",
+          "slices"
+        ],
+        "type": "object",
+        "properties": {
+          "selectedOfferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "totalPrice": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "offerExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "slices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlightSliceResponse"
+            }
+          }
+        }
+      },
+      "SelectFlightOfferRequest": {
+        "required": [
+          "searchId",
+          "offerId"
+        ],
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "offerId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       }

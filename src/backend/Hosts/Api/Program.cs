@@ -24,7 +24,7 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((doc
     document.Servers?.Clear();
     return Task.CompletedTask;
 }));
-builder.Services.AddFlightsModule();
+builder.Services.AddFlightsModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {

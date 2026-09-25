@@ -1,5 +1,2 @@
 # Accepted breaking changes to the API contract (ADR 0013). Each line is one reviewed break: METHOD PATH description.
 # Keep an entry only while the base branch can still contain the removed contract; it has no effect afterwards.
-
-# Development-only Phase 1 spike removed with the first real endpoint (PR: flight search endpoint).
-POST /api/v1/sample/validation api path removed without deprecation

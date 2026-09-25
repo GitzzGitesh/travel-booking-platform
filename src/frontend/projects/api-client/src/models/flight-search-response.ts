@@ -4,4 +4,5 @@
 import { FlightOfferResponse } from '../models/flight-offer-response';
 export interface FlightSearchResponse {
   offers: Array<FlightOfferResponse>;
+  searchId: string;
 }

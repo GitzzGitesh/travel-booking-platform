@@ -3,3 +3,5 @@
 
 export type { SearchFlights$Params as SearchFlights$Params } from './fn/flights/search-flights';
 export { searchFlights as searchFlights } from './fn/flights/search-flights';
+export type { SelectFlightOffer$Params as SelectFlightOffer$Params } from './fn/flights/select-flight-offer';
+export { selectFlightOffer as selectFlightOffer } from './fn/flights/select-flight-offer';

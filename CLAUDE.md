@@ -18,6 +18,8 @@ Backend (.NET 10 SDK pinned in `global.json`; tests run on Microsoft.Testing.Pla
 - Format check: `dotnet format TravelBooking.slnx --verify-no-changes`
 - Run the Api: `dotnet run --project src/backend/Hosts/Api` (Development, http://localhost:5080; OpenAPI at `/openapi/v1.json`, served in Development only)
 - API contract: `src/backend/Hosts/Api/openapi.v1.json` is enforced by `OpenApiContractTests`. After reviewing an intended contract change, regenerate it with `UPDATE_OPENAPI_SNAPSHOT=1 dotnet test --project tests/backend/Api.IntegrationTests` and commit it.
+- Database (SQL Server, one schema per module): the Flights module owns schema `flights` (connection string `Flights`, set with user-secrets locally). Migrations use the local tool (`dotnet tool restore`): `dotnet ef migrations add <Name> --project src/backend/Modules/Flights/Modules.Flights --startup-project src/backend/Modules/Flights/Modules.Flights --output-dir Infrastructure/Migrations`, then review `dotnet ef migrations script`. Migrations are never applied at startup.
+- Database-backed tests (`Modules.Flights.IntegrationTests`, `FlightOfferSelectionTests`) use Testcontainers and need Docker. If Docker is only reachable inside WSL, run them there with a separate output path: `dotnet test --project tests/backend/<Project> --artifacts-path /tmp/tb-artifacts`.
 
 Frontend (run in `src/frontend`):
 - Install: `npm ci`

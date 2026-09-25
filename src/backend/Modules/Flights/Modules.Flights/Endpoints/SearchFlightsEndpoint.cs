@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Providers;
 using TravelBooking.Modules.Flights.Application;
 using TravelBooking.Modules.Flights.Ports;
@@ -51,27 +52,36 @@ internal static class ProviderProblems
         TypedResults.Problem(statusCode: status, type: type, title: title);
 }
 
-internal sealed record FlightSearchResponse(IReadOnlyList<FlightOfferResponse> Offers)
+/// <summary>A search's offers, selectable by <see cref="SearchId"/> plus an offer id until the offers expire (Option 2).</summary>
+internal sealed record FlightSearchResponse(Guid SearchId, IReadOnlyList<FlightOfferResponse> Offers)
 {
-    public static FlightSearchResponse From(FlightSearchResult result) => new(result.Offers.Select(FlightOfferResponse.From).ToList());
+    public static FlightSearchResponse From(CachedFlightSearch search) =>
+        new(search.SearchId, search.Offers.Select(o => FlightOfferResponse.From(o.OfferId, o.Offer)).ToList());
 }
 
 /// <summary>
-/// An offer as shown to the customer. It has no id yet: offer selection (a later story) persists the offer and returns
-/// our own id, so the adapter's opaque reference is never exposed.
+/// An offer as shown to the customer, with OUR opaque offer id: the adapter's offer token is never exposed.
 /// </summary>
-internal sealed record FlightOfferResponse(MoneyResponse TotalPrice, DateTimeOffset ExpiresAt, IReadOnlyList<FlightSliceResponse> Slices)
+internal sealed record FlightOfferResponse(Guid OfferId, MoneyResponse TotalPrice, DateTimeOffset ExpiresAt, IReadOnlyList<FlightSliceResponse> Slices)
 {
-    public static FlightOfferResponse From(FlightOffer offer) => new(
-        new MoneyResponse(offer.TotalPrice.Amount.ToString(CultureInfo.InvariantCulture), offer.TotalPrice.Currency.Value),
+    public static FlightOfferResponse From(Guid offerId, FlightOffer offer) => new(
+        offerId,
+        MoneyResponse.From(offer.TotalPrice),
         offer.ExpiresAt,
-        offer.Slices.Select(slice => new FlightSliceResponse(slice.Segments.Select(FlightSegmentResponse.From).ToList())).ToList());
+        FlightSliceResponse.From(offer.Slices));
 }
 
 /// <summary>Money in JSON: the amount is a string to avoid float precision loss (api-design rules).</summary>
-internal sealed record MoneyResponse(string Amount, string Currency);
+internal sealed record MoneyResponse(string Amount, string Currency)
+{
+    public static MoneyResponse From(Money money) => new(money.Amount.ToString(CultureInfo.InvariantCulture), money.Currency.Value);
+}
 
-internal sealed record FlightSliceResponse(IReadOnlyList<FlightSegmentResponse> Segments);
+internal sealed record FlightSliceResponse(IReadOnlyList<FlightSegmentResponse> Segments)
+{
+    public static IReadOnlyList<FlightSliceResponse> From(IReadOnlyList<FlightSlice> slices) =>
+        slices.Select(slice => new FlightSliceResponse(slice.Segments.Select(FlightSegmentResponse.From).ToList())).ToList();
+}
 
 /// <summary>Departure and arrival are local times at the origin and destination airports (ADR 0010).</summary>
 internal sealed record FlightSegmentResponse(

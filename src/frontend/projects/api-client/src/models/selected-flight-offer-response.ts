@@ -3,9 +3,11 @@
 
 import { FlightSliceResponse } from '../models/flight-slice-response';
 import { MoneyResponse } from '../models/money-response';
-export interface FlightOfferResponse {
-  expiresAt: string;
+export interface SelectedFlightOfferResponse {
+  offerExpiresAt: string;
   offerId: string;
+  searchId: string;
+  selectedOfferId: string;
   slices: Array<FlightSliceResponse>;
   totalPrice: MoneyResponse;
 }

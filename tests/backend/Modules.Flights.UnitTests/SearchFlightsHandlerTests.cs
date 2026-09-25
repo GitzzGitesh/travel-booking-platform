@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using TravelBooking.BuildingBlocks;
@@ -102,7 +104,10 @@ public sealed class SearchFlightsHandlerTests
         Enum.GetValues<ProviderErrorKind>().ShouldAllBe(kind => ProviderProblems.For(kind).StatusCode >= 422);
 
     private static SearchFlightsHandler Handler(IFlightProvider provider) =>
-        new(provider, _clock, NullLogger<SearchFlightsHandler>.Instance);
+        new(provider, new FlightSearchCache(NewCache(), NullLogger<FlightSearchCache>.Instance), _clock, NullLogger<SearchFlightsHandler>.Instance);
+
+    internal static HybridCache NewCache() =>
+        new ServiceCollection().AddHybridCache().Services.BuildServiceProvider().GetRequiredService<HybridCache>();
 
     private static FlightSearchCriteria Criteria(DateOnly departure) =>
         new(new AirportCode("LHR"), new AirportCode("JFK"), departure, null, new PassengerMix(1), CabinClass.Economy);
