@@ -51,8 +51,8 @@ public sealed class OpenApiContractTests(WebApplicationFactory<Program> factory)
             .ShouldBe(["Economy", "PremiumEconomy", "Business", "First"]);
 
         var responses = document["paths"]!["/api/v1/flights/searches"]!["post"]!["responses"]!.AsObject();
-        responses.Select(r => r.Key).ShouldBe(["200", "400", "422", "502", "503"], ignoreOrder: true);
-        foreach (var status in new[] { "400", "422", "502", "503" })
+        responses.Select(r => r.Key).ShouldBe(["200", "400", "422", "429", "502", "503"], ignoreOrder: true);
+        foreach (var status in new[] { "400", "422", "429", "502", "503" })
         {
             responses[status]!["content"]!.AsObject().ShouldContainKey("application/problem+json");
         }

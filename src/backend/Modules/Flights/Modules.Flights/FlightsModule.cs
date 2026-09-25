@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Modules.Flights.Application;
 using TravelBooking.Modules.Flights.Endpoints;
 using TravelBooking.Modules.Flights.Infrastructure;
@@ -53,14 +54,16 @@ public static class FlightsModule
     {
         var group = endpoints.MapGroup("/flights").WithTags("Flights");
 
-        // Public search: anonymous by design (security rules). Must be rate limited before it is exposed outside
-        // Development (docs/progress.md).
+        // Public search: anonymous by design (security rules). It calls the supplier, so it has the tighter per-client
+        // limit; the host's /api/v1 group limits every other endpoint here.
         group.MapPost("/searches", SearchFlightsEndpoint.Handle)
             .WithName("SearchFlights")
+            .RequireRateLimiting(RateLimitPolicies.SupplierCalls)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status502BadGateway)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .AllowAnonymous();
 
         // Anonymous until identity exists (Phase 4); like search, it must be rate limited before leaving Development.
@@ -68,17 +71,20 @@ public static class FlightsModule
             .WithName("SelectFlightOffer")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .AllowAnonymous();
 
         // Revalidation before any booking step (F-01..F-03). Anonymous like selection until identity exists (Phase 4):
         // the selection id is an unguessable server-issued id, and both must be rate limited before leaving Development.
         group.MapPost("/selected-offers/{selectedOfferId:guid}/revalidations", SelectedOfferRevalidationEndpoints.Revalidate)
             .WithName("RevalidateSelectedFlightOffer")
+            .RequireRateLimiting(RateLimitPolicies.SupplierCalls)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .Produces<SelectedOfferProblemResponse>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
             .ProducesProblem(StatusCodes.Status502BadGateway)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .AllowAnonymous();
 
         group.MapPost("/selected-offers/{selectedOfferId:guid}/price-acceptances", SelectedOfferRevalidationEndpoints.AcceptPrice)
@@ -87,6 +93,7 @@ public static class FlightsModule
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .Produces<SelectedOfferProblemResponse>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .AllowAnonymous();
 
         return endpoints;
