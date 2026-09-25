@@ -28,6 +28,9 @@ public static class FlightsModule
         services.AddScoped<RevalidateSelectedOfferHandler>();
         services.AddScoped<AcceptSelectedOfferPriceHandler>();
 
+        // Supplier booking calls for the Phase 3 order orchestration; no endpoint maps them yet (ADR 0005).
+        services.AddScoped<FlightSupplierBooking>();
+
         // Search results are held in HybridCache (ADR 0011: in-memory L1; Redis L2 later is configuration only).
         services.AddHybridCache(options => options.MaximumPayloadBytes = FlightSearchCache.MaximumPayloadBytes);
         services.AddSingleton<FlightSearchCache>();

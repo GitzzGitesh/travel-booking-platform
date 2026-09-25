@@ -25,18 +25,18 @@ Add a new scenario with the next free ID in its category's band, and update this
 |---|---|---|---|---|
 | F-01 | Price changed at revalidation | 422 `price-changed` with new breakdown; no authorization; customer must accept | U, A, E | Done for the selected offer (chunk 5): 422 `price-changed` with the previous and new totals and a `priceQuoteId`. It is accepted only by that id; a stale quote gets 409. Price breakdown and the authorization step come with pricing and payments |
 | F-02 | Offer expired before checkout | 422 `offer-expired`; item `Expired`; prompt re-search | U, A, E | Done for selection and revalidation (chunks 4–5). The selected offer becomes `Expired` (terminal) and the customer is asked to search again. The order-item state comes with orders |
-| F-03 | Sold out at revalidation or booking | Revalidation: 422 `sold-out`. Booking: `Failed`, authorization voided | U, P, E | Revalidation done (chunk 5: 422 `sold-out`, selection `SoldOut`, search again; U, P, A, E). Booking part planned |
+| F-03 | Sold out at revalidation or booking | Revalidation: 422 `sold-out`. Booking: `Failed`, authorization voided | U, P, E | Revalidation done (chunk 5: 422 `sold-out`, selection `SoldOut`, search again; U, P, A, E). Booking: the supplier outcome `NotBooked(SoldOut)` is done (chunk 6); `Failed` and the void come with Phase 3 |
 | F-04 | Client submits a tampered price | Ignored; server price used; audit/security event | A | Planned |
 
 ## Supplier booking
 | ID | Scenario | Expected behaviour | Levels | Status |
 |---|---|---|---|---|
-| F-10 | Provider timeout on book | `PendingConfirmation`; 202 to client; **no resubmit**; reconciliation resolves | U, P, E | Planned |
-| F-11 | Timeout, booking actually created | Reconciliation finds it → `Confirmed` → capture | U, P, I | Planned |
-| F-12 | Timeout, booking not created | Reconciliation confirms absence → `Failed` → void | U, P, I | Planned |
+| F-10 | Provider timeout on book | `PendingConfirmation`; 202 to client; **no resubmit**; reconciliation resolves | U, P, E | Supplier level done (chunk 6): a timeout is `Unknown` and is never resubmitted (U, P, I). `PendingConfirmation`, the 202 response and the Worker come with Phase 3 orders |
+| F-11 | Timeout, booking actually created | Reconciliation finds it → `Confirmed` → capture | U, P, I | Supplier level done (chunk 6): the lookup by our reference finds the booking (U, P, I). `Confirmed` → capture come with Phase 3 |
+| F-12 | Timeout, booking not created | Reconciliation confirms absence → `Failed` → void | U, P, I | Supplier level done (chunk 6): the lookup finds nothing, giving `NotFound` as of an instant (U, P, I). Not conclusive until the supplier's consistency window has passed; then `Failed` → void (Phase 3) |
 | F-13 | Pending unresolved past limit | `ManualReview`; alert; ops queue item | U, I | Planned |
-| F-14 | Provider unavailable / circuit open | No booking attempt; clear message; search degrades per provider | U, P, E | Planned |
-| F-15 | Definitive supplier rejection | `Failed`; authorization voided; customer informed | U, P, E | Planned |
+| F-14 | Provider unavailable / circuit open | No booking attempt; clear message; search degrades per provider | U, P, E | Supplier level done (chunk 6): Unavailable, RateLimited and AuthFailure on a write are `Unknown` (a gateway error may follow a processed request), settled by one lookup (U, P, I). The customer message comes with Phase 3 |
+| F-15 | Definitive supplier rejection | `Failed`; authorization voided; customer informed | U, P, E | Supplier level done (chunk 6): the booking is `NotBooked(Rejected)` (U, P, I). `Failed`, the void and informing the customer come with Phase 3 |
 | F-16 | Ticketing/fulfilment fails after confirmation | `FulfilmentFailed`; retry within TTL; else cancel + void/refund; alert | U, I | Planned |
 | F-17 | Partial order (one item confirmed, another failed) | Order `PartiallyConfirmed`; capture confirmed items only; customer informed | U, I, E | Planned |
 
@@ -53,7 +53,7 @@ Add a new scenario with the next free ID in its category's band, and update this
 ## Duplicates, ordering, and concurrency
 | ID | Scenario | Expected behaviour | Levels | Status |
 |---|---|---|---|---|
-| F-30 | **Duplicate booking request** (same Idempotency-Key) | Original result returned; exactly one supplier booking | A, C | Planned |
+| F-30 | **Duplicate booking request** (same Idempotency-Key) | Original result returned; exactly one supplier booking | A, C | Supplier level done (chunk 6): at most one booking per client reference, sequential and parallel, and a repeat with other details never books them (provider contract, P). Idempotency-Key and the unique constraint come with Phase 3 orders |
 | F-31 | Same key, different payload | 409 `idempotency-conflict` | A | Planned |
 | F-32 | Double-click / two tabs (different keys, same draft order) | Exactly one booking via state machine + `rowversion`; second gets 409 | C, E | Planned |
 | F-33 | **Duplicate webhook** | Inbox unique constraint; second delivery is a no-op | I, C | Planned |

@@ -132,6 +132,82 @@ public sealed class MockFlightProviderTests : FlightProviderSearchContract
         result.Error.Kind.ShouldBe(ProviderErrorKind.Unavailable);
     }
 
+    [Fact]
+    public async Task A_rejected_booking_is_definitive_and_nothing_is_booked()
+    {
+        var (request, _) = await BookableOffer(MockBookingScenarios.RejectedFamilyName);
+
+        var booked = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+
+        booked.Error.Kind.ShouldBe(ProviderErrorKind.Rejected);
+        (await Provider.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken)).Value.Found.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_timeout_after_booking_is_unknown_and_the_lookup_finds_the_booking()
+    {
+        var (request, _) = await BookableOffer(MockBookingScenarios.TimeoutBookedFamilyName);
+
+        var booked = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+        var lookup = await Provider.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken);
+
+        booked.Error.Kind.ShouldBe(ProviderErrorKind.Unknown);
+        lookup.Value.Booking.ShouldNotBeNull().ClientReference.ShouldBe(request.ClientReference);
+    }
+
+    [Fact]
+    public async Task A_timeout_without_booking_is_unknown_and_the_lookup_finds_nothing()
+    {
+        var (request, _) = await BookableOffer(MockBookingScenarios.TimeoutNotBookedFamilyName);
+
+        var booked = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+        var lookup = await Provider.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken);
+
+        booked.Error.Kind.ShouldBe(ProviderErrorKind.Unknown);
+        lookup.Value.Found.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_same_reference_always_gets_the_same_locator()
+    {
+        var reference = new ClientReference("order-item-1");
+        var (request, _) = await BookableOffer();
+
+        var first = await Provider.BookAsync(request with { ClientReference = reference }, TestContext.Current.CancellationToken);
+        var other = await Create(MockFlightScenario.Success.ToString()).BookAsync(request with { ClientReference = reference }, TestContext.Current.CancellationToken);
+
+        first.Value.Booking.Value.ShouldMatch("^[A-Z2-9]{6}$");
+        other.Value.Booking.ShouldBe(first.Value.Booking);
+    }
+
+    [Theory]
+    [InlineData(MockRevalidationScenarios.SoldOutDestination, ProviderErrorKind.SoldOut)]
+    [InlineData(MockRevalidationScenarios.OfferExpiredDestination, ProviderErrorKind.OfferExpired)]
+    public async Task Sold_out_and_expired_offers_are_not_booked(string destination, ProviderErrorKind expected)
+    {
+        var offer = await SearchTo(destination);
+        var request = new FlightBookingDetails(NewReference(), offer.Reference, offer.TotalPrice,
+            [Passenger(PassengerType.Adult, "One"), Passenger(PassengerType.Adult, "Two"), Passenger(PassengerType.Infant, "Three")]);
+
+        var booked = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
+
+        booked.Error.Kind.ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task The_unavailable_scenario_books_nothing_and_cannot_look_up()
+    {
+        var (request, _) = await BookableOffer();
+        var unavailable = Create(nameof(MockFlightScenario.Unavailable));
+
+        (await unavailable.BookAsync(request, TestContext.Current.CancellationToken)).Error.Kind.ShouldBe(ProviderErrorKind.Unavailable);
+        (await unavailable.RetrieveBookingAsync(request.ClientReference, TestContext.Current.CancellationToken)).Error.Kind.ShouldBe(ProviderErrorKind.Unavailable);
+    }
+
+    [Fact]
+    public void Passengers_never_print_their_names() =>
+        Passenger(PassengerType.Child, "Private").ToString().ShouldNotContain("Private");
+
     // An allow-list: production-like names that are not exactly "Production" are refused too.
     [Theory]
     [InlineData("Production")]
