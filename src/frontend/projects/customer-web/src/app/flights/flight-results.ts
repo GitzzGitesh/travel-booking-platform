@@ -1,10 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import type { FlightOfferResponse } from '@travel-booking/api-client';
 import { formatMoney, localDate, localTime } from './flight-format';
 
 /**
- * Flight offers with client-side selection. The offer is identified by its position in THIS result set: the API
- * adds a searchId and offer ids together with the server-side offer cache (Phase 2, chunk 4).
+ * Flight offers. Presentational: the page saves a selection through the API (POST /flights/selected-offers) and
+ * tells this list which offer is being saved or is selected, by the server's offer id.
  */
 @Component({
   selector: 'app-flight-results',
@@ -15,31 +15,16 @@ import { formatMoney, localDate, localTime } from './flight-format';
 export class FlightResults {
   readonly offers = input.required<readonly FlightOfferResponse[]>();
   readonly roundTrip = input(false);
+  readonly selectedOfferId = input<string | null>(null);
+  readonly savingOfferId = input<string | null>(null);
 
-  // A new result set resets the selection: never carry a selection across searches.
-  protected readonly selectedIndex = linkedSignal<readonly FlightOfferResponse[], number | null>({
-    source: this.offers,
-    computation: () => null,
-  });
-  protected readonly selected = computed(() => {
-    const index = this.selectedIndex();
-    return index === null ? null : (this.offers()[index] ?? null);
-  });
+  readonly select = output<string>();
 
   protected readonly formatMoney = formatMoney;
   protected readonly localTime = localTime;
   protected readonly localDate = localDate;
 
-  protected select(index: number): void {
-    this.selectedIndex.set(index);
-  }
-
   protected sliceLabel(sliceIndex: number): string {
     return this.roundTrip() ? (sliceIndex === 0 ? 'Outbound' : 'Return') : 'Flight';
-  }
-
-  protected route(offer: FlightOfferResponse): string {
-    const first = offer.slices[0].segments;
-    return `${first[0].origin} to ${first[first.length - 1].destination}`;
   }
 }

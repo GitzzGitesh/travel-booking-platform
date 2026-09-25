@@ -98,3 +98,19 @@ input[aria-invalid='true'] {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.selection {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 2px solid #0b57d0;
+  border-radius: 0.25rem;
+}
+
+.selection h2:focus {
+  outline: 2px solid #0b57d0;
+  outline-offset: 2px;
+}
+
+.note {
+  color: #4a4a4a;
+}

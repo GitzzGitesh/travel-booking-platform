@@ -129,7 +129,10 @@ describe('FlightSearchPage', () => {
     });
     expect(text()).toContain('Searching');
 
-    request.flush({ offers: [offer('ZZ101', '245.5'), offer('ZZ108', '270')] });
+    request.flush({
+      searchId: 'search-1',
+      offers: [offer('ZZ101', '245.5'), offer('ZZ108', '270')],
+    });
     await settle();
 
     expect(element.querySelectorAll('.offer').length).toBe(2);
@@ -138,23 +141,144 @@ describe('FlightSearchPage', () => {
     expect(text()).toContain('Times are local to each airport.');
   });
 
-  it('selects one offer at a time and summarises it', async () => {
-    await searchLhrJfk();
-    http.expectOne(url).flush({ offers: [offer('ZZ101', '245.5'), offer('ZZ108', '270')] });
-    await settle();
+  const selectUrl = '/api/v1/flights/selected-offers';
 
-    const buttons = element.querySelectorAll<HTMLButtonElement>('.offer button');
+  async function searchWithTwoOffers(): Promise<HTMLButtonElement[]> {
+    await searchLhrJfk();
+    http
+      .expectOne(url)
+      .flush({ searchId: 'search-1', offers: [offer('ZZ101', '245.5'), offer('ZZ108', '270')] });
+    await settle();
+    return [...element.querySelectorAll<HTMLButtonElement>('.offer button')];
+  }
+
+  function selected(offerId: string) {
+    return {
+      selectedOfferId: 'selected-1',
+      searchId: 'search-1',
+      offerId,
+      totalPrice: { amount: '270', currency: 'XTS' },
+      offerExpiresAt: '2099-01-15T09:30:00+00:00',
+      slices: offer('ZZ108', '270').slices,
+    };
+  }
+
+  it('saves the selected offer by id and shows the server-confirmed selection', async () => {
+    const buttons = await searchWithTwoOffers();
+
     buttons[1].click();
     await fixture.whenStable();
 
+    const request = http.expectOne(selectUrl);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ searchId: 'search-1', offerId: 'offer-ZZ108' });
+    expect(buttons[1].textContent).toContain('Saving');
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+
+    request.flush(selected('offer-ZZ108'), { status: 201, statusText: 'Created' });
+    await settle();
+
     expect(buttons[1].getAttribute('aria-pressed')).toBe('true');
     expect(buttons[0].getAttribute('aria-pressed')).toBe('false');
-    expect(element.querySelector('.selection')?.textContent).toContain('LHR to JFK');
+    const summary = element.querySelector('.selection')?.textContent ?? '';
+    expect(summary).toContain('Your selection');
+    expect(summary).toContain('LHR to JFK');
+    expect(summary).toContain('Held until');
+  });
+
+  it('sends one request even when select is clicked twice', async () => {
+    const buttons = await searchWithTwoOffers();
+
+    buttons[0].click();
+    buttons[0].click();
+    await fixture.whenStable();
+
+    http
+      .expectOne(selectUrl)
+      .flush(selected('offer-ZZ101'), { status: 201, statusText: 'Created' });
+    await settle();
+  });
+
+  it('explains an expired offer and lets the customer search again', async () => {
+    const buttons = await searchWithTwoOffers();
+
+    buttons[0].click();
+    await fixture.whenStable();
+    http
+      .expectOne(selectUrl)
+      .flush(
+        { type: 'offer-expired', status: 422 },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    await settle();
+
+    expect(element.querySelector('.selection [role="alert"]')?.textContent).toContain('expired');
+    const again = [...element.querySelectorAll<HTMLButtonElement>('.selection button')].find((b) =>
+      b.textContent?.includes('Search again'),
+    )!;
+    again.click();
+    await fixture.whenStable();
+
+    http.expectOne(url).flush({ searchId: 'search-2', offers: [offer('ZZ101', '250')] });
+    await settle();
+    expect(element.querySelector('.selection')).toBeNull();
+    expect(element.querySelectorAll('.offer').length).toBe(1);
+  });
+
+  it('treats a 422 that is not offer-expired as a failed save', async () => {
+    const buttons = await searchWithTwoOffers();
+
+    buttons[0].click();
+    await fixture.whenStable();
+    http
+      .expectOne(selectUrl)
+      .flush(
+        { type: 'something-else', status: 422 },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    await settle();
+
+    expect(element.querySelector('.selection [role="alert"]')?.textContent).toContain(
+      "couldn't save",
+    );
+  });
+
+  it('ignores a save that finishes after the customer searched again', async () => {
+    const buttons = await searchWithTwoOffers();
+
+    buttons[1].click();
+    await fixture.whenStable();
+    const pending = http.expectOne(selectUrl);
+
+    element.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await fixture.whenStable();
+    http.expectOne(url).flush({ searchId: 'search-2', offers: [offer('ZZ101', '250')] });
+    await settle();
+
+    pending.flush(selected('offer-ZZ108'), { status: 201, statusText: 'Created' });
+    await settle();
+
+    expect(element.querySelector('.selection')).toBeNull();
+    expect(element.querySelector('.offer button')?.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('reports a failed save without losing the results', async () => {
+    const buttons = await searchWithTwoOffers();
+
+    buttons[0].click();
+    await fixture.whenStable();
+    http.expectOne(selectUrl).flush(null, { status: 500, statusText: 'Server Error' });
+    await settle();
+
+    expect(element.querySelector('.selection [role="alert"]')?.textContent).toContain(
+      "couldn't save",
+    );
+    expect(element.querySelectorAll('.offer').length).toBe(2);
   });
 
   it('shows an empty state when no flights match', async () => {
     await searchLhrJfk();
-    http.expectOne(url).flush({ offers: [] });
+    http.expectOne(url).flush({ searchId: 'search-1', offers: [] });
     await settle();
 
     expect(text()).toContain('No flights match this search.');

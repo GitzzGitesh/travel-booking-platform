@@ -166,7 +166,49 @@
         @if (current.offers.length === 0) {
           <p>No flights match this search. Try different dates or airports.</p>
         } @else {
-          <app-flight-results [offers]="current.offers" [roundTrip]="current.roundTrip" />
+          <app-flight-results
+            [offers]="current.offers"
+            [roundTrip]="current.roundTrip"
+            [selectedOfferId]="selectedOfferId()"
+            [savingOfferId]="savingOfferId()"
+            (select)="selectOffer($event)"
+          />
+
+          @let chosen = selection();
+          @if (chosen.kind !== 'none' && chosen.kind !== 'saving') {
+            <section class="selection" aria-labelledby="selection-heading">
+              @switch (chosen.kind) {
+                @case ('saved') {
+                  <h2 id="selection-heading" tabindex="-1" #selectionHeading>Your selection</h2>
+                  <p>
+                    {{ route(chosen.selection) }}, {{ formatMoney(chosen.selection.totalPrice) }} in
+                    total.
+                  </p>
+                  <p class="note">
+                    Held until {{ heldUntil(chosen.selection) }}. The price is confirmed again with
+                    the airline before you pay.
+                  </p>
+                }
+                @case ('expired') {
+                  <div role="alert">
+                    <h2 id="selection-heading" tabindex="-1" #selectionHeading>
+                      Offer no longer available
+                    </h2>
+                    <p>This offer has expired. Please search again for current prices.</p>
+                    <button type="button" class="primary" (click)="search()">Search again</button>
+                  </div>
+                }
+                @case ('error') {
+                  <div role="alert">
+                    <h2 id="selection-heading" tabindex="-1" #selectionHeading>
+                      Selection not saved
+                    </h2>
+                    <p>We couldn't save your selection. Please try again.</p>
+                  </div>
+                }
+              }
+            </section>
+          }
         }
       }
       @case ('error') {

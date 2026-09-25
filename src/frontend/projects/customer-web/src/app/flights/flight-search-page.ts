@@ -21,11 +21,15 @@ import {
 import {
   Api,
   searchFlights,
+  selectFlightOffer,
   type CabinClass,
   type FlightOfferResponse,
   type FlightSearchRequest,
   type HttpValidationProblemDetails,
+  type ProblemDetails,
+  type SelectedFlightOfferResponse,
 } from '@travel-booking/api-client';
+import { formatMoney } from './flight-format';
 import { FlightResults } from './flight-results';
 
 /** Mirrors the API's limits (PassengerMix, FlightSearchRequest). The server remains the authority. */
@@ -37,10 +41,19 @@ type SearchState =
   | { readonly kind: 'loading' }
   | {
       readonly kind: 'results';
+      readonly searchId: string;
       readonly offers: readonly FlightOfferResponse[];
       readonly roundTrip: boolean;
     }
   | { readonly kind: 'error'; readonly message: string; readonly details: readonly string[] };
+
+/** The customer's selection, saved server-side (POST /flights/selected-offers). */
+type SelectionState =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'saving'; readonly offerId: string }
+  | { readonly kind: 'saved'; readonly selection: SelectedFlightOfferResponse }
+  | { readonly kind: 'expired' }
+  | { readonly kind: 'error' };
 
 export const cabins: readonly { value: CabinClass; label: string }[] = [
   { value: 'Economy', label: 'Economy' },
@@ -117,6 +130,19 @@ export class FlightSearchPage {
   );
 
   protected readonly state = signal<SearchState>({ kind: 'idle' });
+  protected readonly selection = signal<SelectionState>({ kind: 'none' });
+  protected readonly formatMoney = formatMoney;
+  private readonly selectionHeading = viewChild<ElementRef<HTMLElement>>('selectionHeading');
+
+  protected readonly selectedOfferId = computed(() => {
+    const selection = this.selection();
+    return selection.kind === 'saved' ? selection.selection.offerId : null;
+  });
+
+  protected readonly savingOfferId = computed(() => {
+    const selection = this.selection();
+    return selection.kind === 'saving' ? selection.offerId : null;
+  });
   protected readonly submitted = signal(false);
 
   /** Announced politely to screen readers after every search. */
@@ -165,13 +191,65 @@ export class FlightSearchPage {
     };
 
     this.state.set({ kind: 'loading' });
+    this.selection.set({ kind: 'none' });
     try {
       const response = await this.api.invoke(searchFlights, { body });
-      this.state.set({ kind: 'results', offers: response.offers, roundTrip: !!body.returnDate });
+      this.state.set({
+        kind: 'results',
+        searchId: response.searchId,
+        offers: response.offers,
+        roundTrip: !!body.returnDate,
+      });
     } catch (error) {
       this.state.set(toErrorState(error));
     }
     this.focusResults();
+  }
+
+  /** Saves the selected offer server-side. Only ids are sent: the price always comes from the server. */
+  protected async selectOffer(offerId: string): Promise<void> {
+    const state = this.state();
+    if (state.kind !== 'results' || this.selection().kind === 'saving') {
+      return; // One save at a time: no double submits.
+    }
+
+    this.selection.set({ kind: 'saving', offerId });
+    let outcome: SelectionState;
+    try {
+      const selection = await this.api.invoke(selectFlightOffer, {
+        body: { searchId: state.searchId, offerId },
+      });
+      outcome = { kind: 'saved', selection };
+    } catch (error) {
+      // F-02: the search or offer is no longer available; the customer searches again. Branch on the problem
+      // type, the stable machine-readable key, so a different 422 is never shown as "expired".
+      outcome = isProblem(error, 422, 'offer-expired') ? { kind: 'expired' } : { kind: 'error' };
+    }
+    // The customer may have searched again meanwhile: never show an old search's selection under new results.
+    const current = this.state();
+    if (current.kind !== 'results' || current.searchId !== state.searchId) {
+      return;
+    }
+    this.selection.set(outcome);
+    afterNextRender(() => this.selectionHeading()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  protected route(selection: SelectedFlightOfferResponse): string {
+    const segments = selection.slices[0].segments;
+    return `${segments[0].origin} to ${segments[segments.length - 1].destination}`;
+  }
+
+  /** The instant the held offer expires, in the customer's own time zone, labelled with that zone. */
+  protected heldUntil(selection: SelectedFlightOfferResponse): string {
+    return new Intl.DateTimeFormat(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(new Date(selection.offerExpiresAt));
   }
 
   // Move focus to the outcome so keyboard and screen-reader users land on it (WCAG 2.2 AA focus management).
@@ -180,6 +258,14 @@ export class FlightSearchPage {
       injector: this.injector,
     });
   }
+}
+
+function isProblem(error: unknown, status: number, type: string): boolean {
+  return (
+    error instanceof HttpErrorResponse &&
+    error.status === status &&
+    (error.error as ProblemDetails | null)?.type === type
+  );
 }
 
 // Branches on HTTP status, which the OpenAPI contract documents (400, 422, 503), and reads the body with the
