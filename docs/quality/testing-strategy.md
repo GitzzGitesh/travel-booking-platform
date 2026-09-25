@@ -14,9 +14,9 @@
 |---|---|---|---|---|
 | Domain unit | `tests/backend/Modules.X.UnitTests` | xUnit v3, Shouldly | Aggregates, every legal and illegal state transition, money/rounding, pricing math | Every PR |
 | Application | same project | xUnit, mock providers, `FakeTimeProvider` | Handlers/orchestration, idempotency logic, compensation | Every PR |
-| Architecture | `tests/backend/ArchitectureTests` | ArchUnitNET or NetArchTest | Module boundaries, no supplier types in core, Domain purity, every endpoint has an auth policy | Every PR |
+| Architecture | `tests/backend/ArchitectureTests` | ArchUnitNET (xUnit v3) | Module boundaries, no supplier types in core, Domain purity | Every PR |
 | Integration | `tests/backend/Modules.X.IntegrationTests` | Testcontainers (SQL Server) | EF mappings, migrations apply, `rowversion` conflicts, unique idempotency constraints, outbox/inbox | Every PR |
-| API | `tests/backend/Api.Tests` | `WebApplicationFactory`, Testcontainers | HTTP contract, ProblemDetails types, authorization matrix, `Idempotency-Key` behaviour | Every PR |
+| API | `tests/backend/Api.IntegrationTests` | `WebApplicationFactory`, Testcontainers | HTTP contract, ProblemDetails types, every endpoint declares authorization, authorization matrix, `Idempotency-Key` behaviour | Every PR |
 | API contract | CI step | OpenAPI snapshot + oasdiff | No breaking changes within a version | Every PR |
 | Provider contract | `tests/backend/ProviderContracts` | xUnit shared suites per port | Each provider (mocks on every PR; real sandboxes nightly) honours port semantics, error taxonomy, retrieve-by-reference | PR (mocks) / nightly (sandboxes) |
 | Concurrency | integration/API projects | Parallel tasks against the real DB | Duplicate/parallel book, capture, refund, cancel lead to exactly one effect | Every PR |

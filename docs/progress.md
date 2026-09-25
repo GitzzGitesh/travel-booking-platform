@@ -1,12 +1,34 @@
 # Progress
 
-_Last updated: 2026-09-25_
+_Last updated: 2026-09-25 (Phase 1 skeleton)_
 
-## Current phase: 0 — Engineering and architecture foundation (closing, not yet complete)
+## Current phase: 1 — Skeleton (in progress)
 
-No application code yet. **Do not scaffold applications, add dependencies, create databases/migrations, or write business code** until Phase 1 is approved.
+Phase 0 is **complete** (all exit criteria below are met). Phase 1 was approved on 2026-09-25. There is still **no business code**: do not implement flights, hotels, bookings, payments, databases/migrations, or authentication until the story says so.
 
-### Done
+### Phase 1: done
+- Application skeleton (branch `feat/phase-1-application-skeleton`):
+  - `global.json` (SDK 10.0.401, Microsoft.Testing.Platform for `dotnet test`), `Directory.Build.props` (nullable, warnings as errors), `Directory.Packages.props` (central package management), `TravelBooking.slnx`.
+  - Hosts: `src/backend/Hosts/Api` (minimal APIs, ProblemDetails, health endpoint) and `src/backend/Hosts/Worker` (empty host, ready for ADR 0007 background processing).
+  - `src/backend/Modules/Sample/Modules.Sample`: **spike module, Development only.** It proves the module pattern (`AddSampleModule` / `MapSampleEndpoints`, internal handlers) and .NET 10 built-in validation from a module library. **Delete it when the first real module is created**, together with `tests/backend/Modules.Sample.UnitTests` and `tests/backend/Api.IntegrationTests/SampleValidationTests.cs`.
+  - Tests: `tests/backend/Modules.Sample.UnitTests`, `tests/backend/Api.IntegrationTests` (WebApplicationFactory; includes the every-endpoint-declares-authorization check), `tests/backend/ArchitectureTests` (ArchUnitNET module boundary rules).
+  - `src/frontend`: Angular 22 CLI workspace with the `customer-web` shell only (SSR/prerender, zoneless, Vitest). No pages beyond the shell.
+- ADR 0003 spike results: built-in validation works from module libraries when (1) each module calls `AddValidation()` itself and (2) validated request types are public; `[ValidatableType]` is experimental (ASP0029) and is not used. ArchUnitNET runs on xUnit v3 via `TngTech.ArchUnitNET.xUnitV3`. Recorded in `.claude/rules/backend-dotnet.md`.
+
+### Phase 1: next
+1. CI workflow (build, format, tests, frontend build/test, secret scan, CodeQL), then make its checks required on `main` (ADR 0012).
+2. OpenAPI document (`Microsoft.AspNetCore.OpenApi`, Scalar in non-production) and the generated TypeScript client lib.
+3. `admin-web` SPA shell (ADR 0009).
+4. Aspire AppHost and Docker/Podman for integration-test infrastructure (ADR 0003), when the first database-backed story needs them.
+5. BuildingBlocks, only when a second module or a real need requires shared code.
+6. Known follow-ups from the skeleton reviews:
+   - **Fallback authorization policy is deferred to Phase 4** (ADR 0003 names it). Without an authentication scheme it turns unmatched routes into 500s. Until then, deny-by-default rests on `EndpointAuthorizationTests`, which checks Development, Staging, and Production.
+   - When the second module arrives, add an API test proving validation works for endpoints in **each** module (each module calls `AddValidation()`).
+   - When the first real `customer-web` route is added, replace the catch-all prerender with per-route render modes and `RenderMode.Client` as the catch-all (ADR 0009: booking and authenticated flows are client-rendered).
+   - **Decision needed in Phase 2** (ARCHITECTURE REVIEW, pending): provider ports such as `IFlightProvider` must be public for `Integrations.*` to implement them, which conflicts with the internal-by-default architecture rule. Options: a public `Ports` namespace with an architecture-rule exception, or a separate `Modules.X.Ports` project (needs an ADR).
+7. Hosting and security-headers story (from the skeleton security review): per-environment `AllowedHosts`; `UseForwardedHeaders` restricted to the platform ingress before HSTS/HTTPS redirection, with a test that Production sends `Strict-Transport-Security`; SSR server final error handler (generic 500, no stack) and `NODE_ENV=production`; Angular SSR `allowedHosts` set to real hostnames; CSP, CORS allow-list, rate limiting. The `/health` endpoint stays status-only when detailed checks are added.
+
+### Phase 0: done
 - Architecture review and foundation proposal approved.
 - Claude Code environment: `CLAUDE.md`, `.claude/rules/` (9), `.claude/skills/` (3), `.claude/agents/` (3), `.claude/settings.json`, and the secret-guard hook.
 - Documentation structure: requirements, architecture drafts, ADRs 0001–0012, quality docs, runbook template.
@@ -15,7 +37,7 @@ No application code yet. **Do not scaffold applications, add dependencies, creat
 - GitHub repository security settings configured: branch protection on `main`, secret scanning + push protection, Dependabot alerts (confirmed by the developer on 2026-09-25; not independently verified from tooling).
 - Q4 answered (one developer; the client/business owner reviews releases). Recorded in [`requirements/open-questions.md`](requirements/open-questions.md), with the review model in ADR 0012.
 - Phase 0 exit criteria and phase-entry gates documented (below). ADRs 0001, 0010, and 0012 revised.
-- Phase 1 ADR decision (2026-09-25): **Accepted** 0001, 0002, 0007, 0009, 0010, 0012. **ADR 0003 stays Proposed** until the Phase 1 plan deliberately decides its four open choices: minimal APIs vs controllers, validation library, assertion library, and architecture-test library. ADRs 0004, 0005, 0006, 0008, and 0011 remain Proposed.
+- Phase 1 ADR decision (2026-09-25): **Accepted** 0001, 0002, 0007, 0009, 0010, 0012. **ADR 0003 stays Proposed** until the Phase 1 plan deliberately decides its four open choices: minimal APIs vs controllers, validation library, assertion library, and architecture-test library. ADRs 0004, 0005, 0006, 0008, and 0011 remain Proposed. ADR 0003 was then accepted with those four choices (PR #2).
 - Reviewer-agent corrections: reviewers now receive a brief (story, acceptance criteria, changed files, diff); the Definition of Done requires `architecture-reviewer` for structural/boundary changes; the architecture reviewer checks the frontend → API boundary; the security reviewer checks error exposure and permission-matrix tests; the ADR exemption for the three initial reviewers is documented; and the failure-scenario ID scheme and count are documented in the catalog.
 
 ### Phase 0 exit criteria
@@ -30,12 +52,9 @@ Phase 0 closes when **all** of these are true. Q1, Q2, and Q3 do **not** block P
 | 5 | Q4 answered | Done |
 | 6 | Phase 1 architectural ADRs accepted or revised: 0001, 0002, 0003, 0007, 0009, 0010, 0012 | Done. Accepted: 0001, 0002, 0007, 0009, 0010, 0012. **0003 deliberately kept Proposed** (its four choices are decided in the Phase 1 plan) |
 | 7 | Explicit Phase 0 exit criteria documented | Done (this section) |
-| 8 | This documentation/ADR update reviewed and committed through the PR workflow | **Open** |
+| 8 | This documentation/ADR update reviewed and committed through the PR workflow | Done (PR #1, merged as `587a99b`; ADR 0003 accepted in PR #2, `499799e`) |
 
-### Next (Phase 0 completion)
-1. Review and commit this documentation/ADR update (criterion 8).
-2. In the Phase 1 plan: decide ADR 0003's four open choices (minimal APIs vs controllers, validation library, assertion library, architecture-test library), then accept or revise ADR 0003 before scaffolding.
-3. Start the business answers for Q1, Q3, Q6, Q2, and Q5 early. They gate later phases, not Phase 0.
+Business answers for Q1, Q3, Q6, Q2, and Q5 should start early: they gate later phases (see below).
 
 ## Phase-entry gates
 Business questions that must be answered before specific later work. A gate is **not** an answer: each question stays Open in [`requirements/open-questions.md`](requirements/open-questions.md) until the business decides it.
@@ -51,7 +70,7 @@ Business questions that must be answered before specific later work. A gate is *
 Q7–Q12 remain tied to the later phases listed in [`requirements/open-questions.md`](requirements/open-questions.md).
 
 ## Deferred prerequisites
-- **Docker Desktop or Podman** (for Testcontainers) is not a Phase 0 requirement. It becomes required when integration-test infrastructure is introduced in Phase 1 (ADR 0003). Not installed yet.
+- **Docker Desktop or Podman** (for Testcontainers and the Aspire AppHost): required when integration-test infrastructure is introduced (Phase 1, next items). Not installed yet.
 - **GitHub CLI (`gh`)**: optional convenience for PR work; not required.
 - **`TBD` values** in [`requirements/non-functional.md`](requirements/non-functional.md) (availability, RPO/RTO, performance, retention): needed before the first production deployment, not to close Phase 0.
 
@@ -67,5 +86,6 @@ Q7–Q12 remain tied to the later phases listed in [`requirements/open-questions
 | Later | Second product, refunds/cancellations UI, notifications, reporting, B2B |
 
 ## Open blockers
-- **Phase 0:** exit criterion 8 (review and commit of this documentation/ADR update).
+- **Phase 0:** none (complete).
+- **Phase 1:** `main` currently merges with merge commits; ADR 0012 expects squash merges and linear history. Enable "require linear history" and use squash merge.
 - **Later phases:** the phase-entry gates above (Q1, Q3, Q6, Q2, Q5).

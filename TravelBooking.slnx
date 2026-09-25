@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/backend/" />
+  <Folder Name="/src/backend/Hosts/">
+    <Project Path="src/backend/Hosts/Api/Api.csproj" />
+    <Project Path="src/backend/Hosts/Worker/Worker.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/Modules/" />
+  <Folder Name="/src/backend/Modules/Sample/">
+    <Project Path="src/backend/Modules/Sample/Modules.Sample/Modules.Sample.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/backend/">
+    <Project Path="tests/backend/Api.IntegrationTests/Api.IntegrationTests.csproj" />
+    <Project Path="tests/backend/ArchitectureTests/ArchitectureTests.csproj" />
+    <Project Path="tests/backend/Modules.Sample.UnitTests/Modules.Sample.UnitTests.csproj" />
+  </Folder>
+</Solution>
