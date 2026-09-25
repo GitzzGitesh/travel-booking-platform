@@ -7,6 +7,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\backend\Hosts\Api\Api.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Hosts\Worker\Worker.csproj" />
+    <!-- Until a host composes it, reference the adapter directly so its boundaries are checked. -->
+    <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Mock\Integrations.Flights.Mock.csproj" />
   </ItemGroup>
 
 </Project>
