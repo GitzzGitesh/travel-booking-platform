@@ -9,7 +9,9 @@
     "test": "ng test",
     "serve:ssr:customer-web": "node dist/customer-web/server/server.mjs",
     "generate:api-client": "ng-openapi-gen --config ng-openapi-gen.json",
-    "check:api-client": "tsc -p projects/api-client/tsconfig.json"
+    "check:api-client": "tsc -p projects/api-client/tsconfig.json",
+    "check:admin-web-csp": "node tools/check-strict-csp.mjs dist/admin-web/browser/index.html",
+    "check:app-boundaries": "node tools/check-app-boundaries.mjs"
   },
   "private": true,
   "packageManager": "npm@11.13.0",

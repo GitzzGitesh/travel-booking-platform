@@ -16,14 +16,14 @@ Backend (.NET 10 SDK pinned in `global.json`; tests run on Microsoft.Testing.Pla
 - One project: `dotnet test --project tests/backend/ArchitectureTests`
 - Single test: `dotnet test --project tests/backend/Api.undefinedntegrationTests -- --filter-method "*Cross_field_rule_is_enforced"`
 - Format check: `dotnet format TravelBooking.slnx --verify-no-changes`
-- Run the Api: `dotnet run --project src/backend/Hosts/Api` (Development, http://localhost:5080; OpenAPI at `/openapi/v1.json`, not served in Production)
+- Run the Api: `dotnet run --project src/backend/Hosts/Api` (Development, http://localhost:5080; OpenAPI at `/openapi/v1.json`, served in Development only)
 - API contract: `src/backend/Hosts/Api/openapi.v1.json` is enforced by `OpenApiContractTests`. After reviewing an intended contract change, regenerate it with `UPDATE_OPENAPI_SNAPSHOT=1 dotnet test --project tests/backend/Api.IntegrationTests` and commit it.
 
 Frontend (run in `src/frontend`):
 - Install: `npm ci`
-- Build (SSR + prerender): `npx ng build customer-web`
-- Unit tests (Vitest): `npx ng test customer-web --watch=false`
-- Dev server: `npx ng serve customer-web`
+- Build: `npx ng build customer-web` (SSR + prerender) / `npx ng build admin-web` (SPA), then `npm run check:admin-web-csp`; `npm run check:app-boundaries` (apps never import each other)
+- Unit tests (Vitest): `npx ng test customer-web --watch=false` / `npx ng test admin-web --watch=false`
+- Dev server: `npx ng serve customer-web` / `npx ng serve admin-web`
 - API client: `npm run generate:api-client` after the contract snapshot changes (commit the result); `npm run check:api-client` type-checks it (ADR 0013)
 
 CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps (including the API-client drift check), an oasdiff breaking-change check on PRs, a gitleaks history scan, and CodeQL on every PR and push to `main`.
