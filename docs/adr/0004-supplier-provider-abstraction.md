@@ -1,6 +1,6 @@
 # 0004. Supplier provider abstraction and anti-corruption layer
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-24
 - **Related:** [0002](0002-modular-monolith-and-module-boundaries.md), [0005](0005-order-aggregate-and-booking-orchestration.md), `docs/architecture/provider-integration.md`
 

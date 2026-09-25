@@ -1,8 +1,27 @@
 # Progress
 
-_Last updated: 2026-09-25 (Phase 1 skeleton)_
+_Last updated: 2026-09-25 (Phase 2: Flights slice)_
 
-## Current phase: 1 — Skeleton (in progress)
+## Current phase: 2 — Flights slice (in progress)
+
+Phase 1 is **complete**. Q3 was answered on 2026-09-25: **flights first**. The direction is: flight search UI → API → Flights module → `IFlightProvider` → deterministic mock → results. No real supplier (Q6), payment design (Q1), or market or hosting decision (Q2) is assumed.
+
+### Phase 2: plan
+| # | Chunk | Status / depends on |
+|---|---|---|
+| 1 | Flight **search port** (`IFlightProvider.SearchAsync`, with its types in `Modules.Flights.Ports`). `BuildingBlocks`: `Money`, `CurrencyCode`, `Result`, and the provider error taxonomy. Deterministic **mock provider** (`Integrations.Flights.Mock`: XTS test currency, carrier ZZ, scenarios selected by configuration). **Provider contract suite** (`tests/backend/ProviderContracts`). Architecture rules for ports and adapters | **Done** (ADR 0014 Accepted). The mock refuses Production and undefined scenarios at startup. `ProviderOfferRef.Value` is an opaque adapter token |
+| 2 | Flight search **API endpoint**: validation, mapping provider errors to ProblemDetails, contract snapshot and client. The host registers the mock outside Production. Delete `Modules.Sample` (oasdiff ignore file, ADR 0013). Development-only until rate limiting exists | Next |
+| 3 | customer-web **search UI and results** through the generated client, with a Playwright journey test and axe checks | After 2 |
+| 4 | **Offer selection and a persisted offer snapshot**. This is the first data-owning story, so it brings in EF Core, SQL Server, Testcontainers, and the Aspire AppHost | After 3. Needs **Docker or Podman on the dev machine** |
+| 5 | **Revalidation** (`RevalidateAsync`): F-01 price changed, F-02 offer expired, F-03 sold out | After 4 |
+
+**Gates:**
+- Booking and orders with payment need **Q1**.
+- A real supplier needs **Q6**. That supplier also validates the port against a second supplier shape before the port is frozen (ADR 0004).
+- Exposing search in production needs forwarded headers and rate limiting, which need **Q2** plus the hosting decision.
+- ADR 0004 and ADR 0014 were accepted on 2026-09-25.
+
+## Phase 1 — Skeleton (complete)
 
 Phase 0 is **complete** (all exit criteria below are met). Phase 1 was approved on 2026-09-25. There is still **no business code**: do not implement flights, hotels, bookings, payments, databases/migrations, or authentication until the story says so.
 
@@ -26,7 +45,7 @@ Phase 0 is **complete** (all exit criteria below are met). Phase 1 was approved 
    - **Fallback authorization policy is deferred to Phase 4** (ADR 0003 names it). Without an authentication scheme it turns unmatched routes into 500s. Until then, deny-by-default rests on `EndpointAuthorizationTests`, which checks Development, Staging, and Production.
    - When the second module arrives, add an API test proving validation works for endpoints in **each** module (each module calls `AddValidation()`).
    - When the first real `customer-web` route is added, replace the catch-all prerender with per-route render modes and `RenderMode.Client` as the catch-all (ADR 0009: booking and authenticated flows are client-rendered).
-   - **Decision needed in Phase 2** (ARCHITECTURE REVIEW, pending): provider ports such as `IFlightProvider` must be public for `Integrations.*` to implement them, which conflicts with the internal-by-default architecture rule. Options: a public `Ports` namespace with an architecture-rule exception, or a separate `Modules.X.Ports` project (needs an ADR).
+   - Provider port visibility (the ARCHITECTURE REVIEW raised in Phase 1): **addressed by ADR 0014** (Accepted). Ports live in a public `Modules.<Area>.Ports` namespace, enforced by the architecture tests.
 7. customer-web SSR server: **final error handler done.** `server-error-handler.ts` returns a generic 500 and never a stack trace; it logs the path without the query string. Unit-tested and smoke-tested on the production build.
    API transport hardening: **done.** Security headers on every application response, including errors, plus HSTS outside Development (`nosniff`, `DENY`, CSP `default-src 'none'; frame-ancestors 'none'`, `no-referrer`); no `Server` header; `AllowedHosts` fails closed to `localhost`, so **each deployment must set `AllowedHosts`**; `Cors:AllowedOrigins` is an explicit allow-list: empty by default; canonical origins only; `http://localhost` in Development only; no wildcards, user info, or credentials; validated at startup. Tested in `SecurityHardeningTests`.
    Remaining hosting and security-headers story: **rate limiting waits for forwarded headers**, because partitioning by client IP behind an ingress would otherwise put every user in one bucket. Both **must be in place before the first search, booking, or auth-adjacent endpoint is exposed outside Development**; `UseForwardedHeaders` restricted to the platform ingress before HSTS/HTTPS redirection, with a test that Production sends `Strict-Transport-Security`; `NODE_ENV=production` in the customer-web server image (its final error handler already never exposes error details, whatever `NODE_ENV` is); customer-web's SSR output contains Angular's inline event-dispatch and hydration scripts, so its CSP needs nonces or hashes; Angular component styles need `style-src 'unsafe-inline'` or a host-injected nonce (`ngCspNonce`) in both apps, and that story decides which; Angular SSR `allowedHosts` set to real hostnames; the frontend apps' CSP headers. The `/health` endpoint stays status-only when detailed checks are added.

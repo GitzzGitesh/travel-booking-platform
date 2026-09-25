@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Cross-cutting primitives shared by modules and integrations (architecture overview). No framework dependencies. -->
+
+</Project>
