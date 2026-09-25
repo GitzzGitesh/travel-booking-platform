@@ -43,15 +43,19 @@ public sealed class OpenApiContractTests(WebApplicationFactory<Program> factory)
         using var client = factory.CreateClient();
         var document = JsonNode.Parse(await client.GetStringAsync(_documentUrl, TestContext.Current.CancellationToken))!;
 
-        var request = document["components"]!["schemas"]!["SampleRequest"]!["properties"]!;
-        request["name"]!["minLength"]!.GetValue<int>().ShouldBe(1);
-        request["name"]!["maxLength"]!.GetValue<int>().ShouldBe(50);
-        request["quantity"]!["minimum"]!.GetValue<int>().ShouldBe(1);
-        request["quantity"]!["maximum"]!.GetValue<int>().ShouldBe(9);
+        var request = document["components"]!["schemas"]!["FlightSearchRequest"]!["properties"]!;
+        request["origin"]!["pattern"]!.GetValue<string>().ShouldBe("^[A-Z]{3}$");
+        request["adults"]!["minimum"]!.GetValue<int>().ShouldBe(1);
+        request["adults"]!["maximum"]!.GetValue<int>().ShouldBe(9);
+        document["components"]!["schemas"]!["CabinClass"]!["enum"]!.AsArray().Select(v => v!.GetValue<string>())
+            .ShouldBe(["Economy", "PremiumEconomy", "Business", "First"]);
 
-        var responses = document["paths"]!["/api/v1/sample/validation"]!["post"]!["responses"]!.AsObject();
-        responses.Select(r => r.Key).ShouldBe(["200", "400"], ignoreOrder: true);
-        responses["400"]!["content"]!.AsObject().ShouldContainKey("application/problem+json");
+        var responses = document["paths"]!["/api/v1/flights/searches"]!["post"]!["responses"]!.AsObject();
+        responses.Select(r => r.Key).ShouldBe(["200", "400", "422", "502", "503"], ignoreOrder: true);
+        foreach (var status in new[] { "400", "422", "502", "503" })
+        {
+            responses[status]!["content"]!.AsObject().ShouldContainKey("application/problem+json");
+        }
     }
 
     // The generated client names its functions after operationId (ADR 0013). A missing id would get a

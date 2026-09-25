@@ -7,15 +7,15 @@ import { filter, map } from 'rxjs/operators';
 import { StrictHttpResponse } from '../../strict-http-response';
 import { RequestBuilder } from '../../request-builder';
 
-import { SampleRequest } from '../../models/sample-request';
-import { SampleResponse } from '../../models/sample-response';
+import { FlightSearchRequest } from '../../models/flight-search-request';
+import { FlightSearchResponse } from '../../models/flight-search-response';
 
-export interface ValidateSample$Params {
-      body: SampleRequest
+export interface SearchFlights$Params {
+      body: FlightSearchRequest
 }
 
-export function validateSample(http: HttpClient, rootUrl: string, params: ValidateSample$Params, context?: HttpContext): Observable<StrictHttpResponse<SampleResponse>> {
-  const rb = new RequestBuilder(rootUrl, validateSample.PATH, 'post');
+export function searchFlights(http: HttpClient, rootUrl: string, params: SearchFlights$Params, context?: HttpContext): Observable<StrictHttpResponse<FlightSearchResponse>> {
+  const rb = new RequestBuilder(rootUrl, searchFlights.PATH, 'post');
   if (params) {
     rb.body(params.body, 'application/json');
   }
@@ -25,9 +25,9 @@ export function validateSample(http: HttpClient, rootUrl: string, params: Valida
   ).pipe(
     filter((r: any): r is HttpResponse<any> => r instanceof HttpResponse),
     map((r: HttpResponse<any>) => {
-      return r as StrictHttpResponse<SampleResponse>;
+      return r as StrictHttpResponse<FlightSearchResponse>;
     })
   );
 }
 
-validateSample.PATH = '/api/v1/sample/validation';
+searchFlights.PATH = '/api/v1/flights/searches';

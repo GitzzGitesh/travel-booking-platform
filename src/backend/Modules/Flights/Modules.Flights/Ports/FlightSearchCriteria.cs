@@ -24,6 +24,11 @@ public sealed record FlightSearchCriteria
             throw new ArgumentException("Origin and destination must differ.", nameof(destination));
         }
 
+        if (!Enum.IsDefined(cabin))
+        {
+            throw new ArgumentOutOfRangeException(nameof(cabin), cabin, "Undefined cabin class.");
+        }
+
         if (returnDate < departureDate)
         {
             throw new ArgumentException("The return date cannot be before the departure date.", nameof(returnDate));

@@ -5,17 +5,17 @@
     "version": "v1"
   },
   "paths": {
-    "/api/v1/sample/validation": {
+    "/api/v1/flights/searches": {
       "post": {
         "tags": [
-          "Sample"
+          "Flights"
         ],
-        "operationId": "ValidateSample",
+        "operationId": "SearchFlights",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SampleRequest"
+                "$ref": "#/components/schemas/FlightSearchRequest"
               }
             }
           },
@@ -27,7 +27,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SampleResponse"
+                  "$ref": "#/components/schemas/FlightSearchResponse"
                 }
               }
             }
@@ -41,6 +41,36 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -48,6 +78,157 @@
   },
   "components": {
     "schemas": {
+      "CabinClass": {
+        "enum": [
+          "Economy",
+          "PremiumEconomy",
+          "Business",
+          "First"
+        ]
+      },
+      "FlightOfferResponse": {
+        "required": [
+          "totalPrice",
+          "expiresAt",
+          "slices"
+        ],
+        "type": "object",
+        "properties": {
+          "totalPrice": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "slices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlightSliceResponse"
+            }
+          }
+        }
+      },
+      "FlightSearchRequest": {
+        "required": [
+          "origin",
+          "destination",
+          "departureDate"
+        ],
+        "type": "object",
+        "properties": {
+          "origin": {
+            "pattern": "^[A-Z]{3}$",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "destination": {
+            "pattern": "^[A-Z]{3}$",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "departureDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "returnDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "adults": {
+            "maximum": 9,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "children": {
+            "maximum": 8,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32"
+          },
+          "infants": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32"
+          },
+          "cabin": {
+            "$ref": "#/components/schemas/CabinClass"
+          }
+        }
+      },
+      "FlightSearchResponse": {
+        "required": [
+          "offers"
+        ],
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlightOfferResponse"
+            }
+          }
+        }
+      },
+      "FlightSegmentResponse": {
+        "required": [
+          "marketingCarrier",
+          "flightNumber",
+          "origin",
+          "destination",
+          "departureLocal",
+          "arrivalLocal"
+        ],
+        "type": "object",
+        "properties": {
+          "marketingCarrier": {
+            "type": "string"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "departureLocal": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arrivalLocal": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FlightSliceResponse": {
+        "required": [
+          "segments"
+        ],
+        "type": "object",
+        "properties": {
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlightSegmentResponse"
+            }
+          }
+        }
+      },
       "HttpValidationProblemDetails": {
         "type": "object",
         "properties": {
@@ -93,55 +274,54 @@
           }
         }
       },
-      "SampleRequest": {
+      "MoneyResponse": {
         "required": [
-          "name"
+          "amount",
+          "currency"
         ],
         "type": "object",
         "properties": {
-          "name": {
-            "maxLength": 50,
-            "minLength": 1,
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
             "type": [
               "null",
               "string"
             ]
           },
-          "quantity": {
-            "maximum": 9,
-            "minimum": 1,
-            "type": "integer",
-            "format": "int32"
-          },
-          "from": {
+          "title": {
             "type": [
               "null",
               "string"
-            ],
-            "format": "date"
+            ]
           },
-          "to": {
+          "status": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "detail": {
             "type": [
               "null",
               "string"
-            ],
-            "format": "date"
-          }
-        }
-      },
-      "SampleResponse": {
-        "required": [
-          "name",
-          "quantity"
-        ],
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
+            ]
           },
-          "quantity": {
-            "type": "integer",
-            "format": "int32"
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       }
@@ -149,7 +329,7 @@
   },
   "tags": [
     {
-      "name": "Sample"
+      "name": "Flights"
     }
   ]
 }

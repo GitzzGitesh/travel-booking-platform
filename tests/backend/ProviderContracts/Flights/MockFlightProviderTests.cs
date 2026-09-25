@@ -68,10 +68,18 @@ public sealed class MockFlightProviderTests : FlightProviderSearchContract
         result.Error.Kind.ShouldBe(expected);
     }
 
+    // An allow-list: production-like names that are not exactly "Production" are refused too.
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Prod")]
+    [InlineData("Production-EU")]
+    public void The_mock_runs_only_in_development_or_staging(string environment) =>
+        Should.Throw<OptionsValidationException>(() => Create(MockFlightScenario.Success.ToString(), environment))
+            .Message.ShouldContain("only runs in Development or Staging");
+
     [Fact]
-    public void The_mock_refuses_to_run_in_production() =>
-        Should.Throw<OptionsValidationException>(() => Create(MockFlightScenario.Success.ToString(), Environments.Production))
-            .Message.ShouldContain("never run in Production");
+    public void The_mock_runs_in_staging() =>
+        Should.NotThrow(() => Create(MockFlightScenario.Success.ToString(), Environments.Staging));
 
     [Fact]
     public void Undefined_scenarios_are_rejected() =>

@@ -194,7 +194,9 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git show "${BASE_SHA}:${SPEC}" > "$RUNNER_TEMP/base-openapi.json"
-          "$RUNNER_TEMP/oasdiff" breaking "$RUNNER_TEMP/base-openapi.json" "$SPEC" --fail-on ERR
+          # Reviewed, intentional breaks are listed one per line in the accepted-breaks file (ADR 0013).
+          "$RUNNER_TEMP/oasdiff" breaking "$RUNNER_TEMP/base-openapi.json" "$SPEC" --fail-on ERR \
+            --err-ignore src/backend/Hosts/Api/openapi-accepted-breaking-changes.txt
 
   secret-scan:
     name: Secret scan

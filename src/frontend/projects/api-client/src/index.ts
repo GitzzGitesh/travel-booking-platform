@@ -7,9 +7,15 @@ export { RequestBuilder } from './request-builder';
 export type { StrictHttpResponse } from './strict-http-response';
 export { Api } from './api';
 
+export type { CabinClass } from './models/cabin-class';
+export type { FlightOfferResponse } from './models/flight-offer-response';
+export type { FlightSearchRequest } from './models/flight-search-request';
+export type { FlightSearchResponse } from './models/flight-search-response';
+export type { FlightSegmentResponse } from './models/flight-segment-response';
+export type { FlightSliceResponse } from './models/flight-slice-response';
 export type { HttpValidationProblemDetails } from './models/http-validation-problem-details';
-export type { SampleRequest } from './models/sample-request';
-export type { SampleResponse } from './models/sample-response';
+export type { MoneyResponse } from './models/money-response';
+export type { ProblemDetails } from './models/problem-details';
 
-export type { ValidateSample$Params as ValidateSample$Params } from './fn/sample/validate-sample';
-export { validateSample as validateSample } from './fn/sample/validate-sample';
+export type { SearchFlights$Params as SearchFlights$Params } from './fn/flights/search-flights';
+export { searchFlights as searchFlights } from './fn/flights/search-flights';

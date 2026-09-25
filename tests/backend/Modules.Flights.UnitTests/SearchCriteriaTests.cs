@@ -47,6 +47,10 @@ public sealed class SearchCriteriaTests
         Should.Throw<ArgumentException>(() => new FlightSearchCriteria(_lhr, _jfk, _departure, _departure.AddDays(-1), new PassengerMix(1), CabinClass.Economy));
 
     [Fact]
+    public void Undefined_cabins_are_rejected() =>
+        Should.Throw<ArgumentOutOfRangeException>(() => new FlightSearchCriteria(_lhr, _jfk, _departure, null, new PassengerMix(1), (CabinClass)99));
+
+    [Fact]
     public void Same_day_return_is_a_round_trip() =>
         new FlightSearchCriteria(_lhr, _jfk, _departure, _departure, new PassengerMix(1), CabinClass.Economy).IsRoundTrip.ShouldBeTrue();
 }

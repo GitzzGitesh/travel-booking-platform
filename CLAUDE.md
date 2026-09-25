@@ -14,7 +14,7 @@ Backend (.NET 10 SDK pinned in `global.json`; tests run on Microsoft.Testing.Pla
 - Build: `dotnet build TravelBooking.slnx` (warnings are errors)
 - All tests: `dotnet test --solution TravelBooking.slnx`
 - One project: `dotnet test --project tests/backend/ArchitectureTests`
-- Single test: `dotnet test --project tests/backend/Api.IntegrationTests -- --filter-method "*Cross_field_rule_is_enforced"`
+- Single test: `dotnet test --project tests/backend/Api.IntegrationTests -- --filter-method "*One_way_search_returns_priced_offers_with_local_times"`
 - Format check: `dotnet format TravelBooking.slnx --verify-no-changes`
 - Run the Api: `dotnet run --project src/backend/Hosts/Api` (Development, http://localhost:5080; OpenAPI at `/openapi/v1.json`, served in Development only)
 - API contract: `src/backend/Hosts/Api/openapi.v1.json` is enforced by `OpenApiContractTests`. After reviewing an intended contract change, regenerate it with `UPDATE_OPENAPI_SNAPSHOT=1 dotnet test --project tests/backend/Api.IntegrationTests` and commit it.
