@@ -6,13 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Global travel booking platform: customers search, book, and pay for flights and hotels, manage bookings and travellers, receive tickets/vouchers, cancel, and track refunds. An Admin/Operations portal covers customers, bookings, payments, refunds, providers, pricing/markups, promotions, reports, audit, and users/roles/permissions. B2B/agent features may come later.
 
-**Current phase: Engineering foundation.** No application code exists yet. Check `docs/progress.md` for the current phase and story before starting any work. **Do not scaffold apps, add dependencies, create migrations, or write business code unless the current story explicitly says so.**
+**Current phase: see `docs/progress.md`.** Phase 1 (skeleton) is in progress: the solution, hosts, one spike module, and the `customer-web` shell exist, but no business code. Check `docs/progress.md` for the current phase and story before starting any work. **Do not scaffold apps, add dependencies, create migrations, or write business code unless the current story explicitly says so.**
 
 ## Commands
 
-No build yet (foundation phase). When the .NET solution and Angular workspace are scaffolded, this section must be updated with: build, run (Aspire AppHost), full test run, **single test** (`dotnet test --filter`, Vitest/Playwright equivalents), lint/format check, and OpenAPI client generation.
+Backend (.NET 10 SDK pinned in `global.json`; tests run on Microsoft.Testing.Platform, xUnit v3):
+- Build: `dotnet build TravelBooking.slnx` (warnings are errors)
+- All tests: `dotnet test --solution TravelBooking.slnx`
+- One project: `dotnet test --project tests/backend/ArchitectureTests`
+- Single test: `dotnet test --project tests/backend/Api.IntegrationTests -- --filter-method "*Cross_field_rule_is_enforced"`
+- Format check: `dotnet format TravelBooking.slnx --verify-no-changes`
+- Run the Api: `dotnet run --project src/backend/Hosts/Api` (Development, http://localhost:5080)
 
-Available now:
+Frontend (run in `src/frontend`):
+- Install: `npm ci`
+- Build (SSR + prerender): `npx ng build customer-web`
+- Unit tests (Vitest): `npx ng test customer-web --watch=false`
+- Dev server: `npx ng serve customer-web`
+
+Not yet available: Aspire AppHost run, Playwright E2E, OpenAPI client generation, and CI. They are added in later Phase 1 stories.
+
+Also:
 - Test the secret-guard hook: `echo '{"tool_name":"Write","tool_input":{"file_path":"x.txt","content":"hello"}}' | node .claude/hooks/guard-secrets.mjs` (exit 0 = allowed, 2 = blocked)
 
 ## Target architecture (defined by the ADRs in `docs/adr/`; each ADR states its own status, Proposed or Accepted)

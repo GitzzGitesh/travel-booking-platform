@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="TngTech.ArchUnitNET.xUnitV3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\backend\Hosts\Api\Api.csproj" />
+    <ProjectReference Include="..\..\..\src\backend\Hosts\Worker\Worker.csproj" />
+  </ItemGroup>
+
+</Project>
