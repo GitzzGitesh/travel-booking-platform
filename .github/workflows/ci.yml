@@ -145,6 +145,35 @@ jobs:
           DOTNET_CLI_TELEMETRY_OPTOUT: "1"
           DOTNET_NOLOGO: "1"
 
+      # Selection journeys persist to SQL Server. The password is generated per run and masked; nothing is committed.
+      - name: Start SQL Server for E2E
+        run: |
+          password="$(openssl rand -hex 16)Aa1!"
+          echo "::add-mask::$password"
+          docker run -d --name e2e-sql -p 1433:1433 -e ACCEPT_EULA=Y -e "MSSQL_SA_PASSWORD=$password" \
+            mcr.microsoft.com/mssql/server:2022-latest
+          ready=false
+          for attempt in $(seq 1 60); do
+            if docker logs e2e-sql 2>&1 | grep -q "Recovery is complete"; then ready=true; break; fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            docker logs e2e-sql
+            echo "::error::SQL Server did not become ready."
+            exit 1
+          fi
+          echo "E2E_FLIGHTS_DB=Server=localhost,1433;Database=TravelBooking;User Id=sa;Password=$password;TrustServerCertificate=true" >> "$GITHUB_ENV"
+
+      # Applied the way the pipeline will apply them: never at application startup (database rules).
+      - name: Apply Flights migrations
+        run: |
+          dotnet tool restore
+          dotnet ef database update --project src/backend/Modules/Flights/Modules.Flights \
+            --startup-project src/backend/Modules/Flights/Modules.Flights --connection "$E2E_FLIGHTS_DB"
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+          DOTNET_NOLOGO: "1"
+
       - name: Install E2E dependencies
         working-directory: tests/e2e
         run: npm ci

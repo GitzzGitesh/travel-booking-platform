@@ -1,8 +1,8 @@
 <ol class="offers">
-  @for (offer of offers(); track $index; let offerIndex = $index) {
+  @for (offer of offers(); track offer.offerId; let offerIndex = $index) {
     <li
       class="offer"
-      [class.selected]="selectedIndex() === offerIndex"
+      [class.selected]="selectedOfferId() === offer.offerId"
       [attr.aria-labelledby]="'offer-' + offerIndex + '-price'"
     >
       <div class="price">
@@ -36,20 +36,19 @@
       <button
         type="button"
         class="select"
-        [attr.aria-pressed]="selectedIndex() === offerIndex"
+        [attr.aria-pressed]="selectedOfferId() === offer.offerId"
         [attr.aria-describedby]="'offer-' + offerIndex + '-price'"
-        (click)="select(offerIndex)"
+        [disabled]="savingOfferId() !== null"
+        (click)="select.emit(offer.offerId)"
       >
-        {{ selectedIndex() === offerIndex ? 'Selected' : 'Select this flight' }}
+        @if (savingOfferId() === offer.offerId) {
+          Saving…
+        } @else if (selectedOfferId() === offer.offerId) {
+          Selected
+        } @else {
+          Select this flight
+        }
       </button>
     </li>
   }
 </ol>
-
-<div class="selection" aria-live="polite">
-  @if (selected(); as offer) {
-    <h3>Your selection</h3>
-    <p>{{ route(offer) }}, {{ formatMoney(offer.totalPrice) }} in total.</p>
-    <p class="price-note">The price is confirmed again with the airline before you pay.</p>
-  }
-</div>

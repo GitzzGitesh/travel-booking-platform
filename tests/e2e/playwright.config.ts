@@ -38,11 +38,17 @@ export default defineConfig({
     {
       // The real Api in Development, with the deterministic mock flight provider (ADR 0004). Journeys reach it
       // through support/api.ts, which forwards the apps' same-origin /api calls.
-      // CI builds the Api in an earlier step; locally, dotnet run builds it. Port 5080 matches proxy.conf.json and
-      // support/api.ts. Locally an Api already on 5080 is reused, whatever its provider configuration.
+      // CI builds the Api in an earlier step; locally, dotnet run builds it. E2E uses its own port (5099, see
+      // support/api.ts), never the dev port 5080, so a developer's running Api is never mistaken for the test Api.
       command: `dotnet run --project ../../src/backend/Hosts/Api --no-launch-profile${process.env['CI'] ? ' --no-build' : ''}`,
-      url: 'http://localhost:5080/health',
-      env: { ASPNETCORE_ENVIRONMENT: 'Development', ASPNETCORE_URLS: 'http://localhost:5080' },
+      url: 'http://localhost:5099/health',
+      // Selection persists to SQL Server. E2E_FLIGHTS_DB points at a local or CI database with the Flights migrations
+      // applied (CLAUDE.md); without it, database-backed journeys are skipped locally and fail in CI.
+      env: {
+        ASPNETCORE_ENVIRONMENT: 'Development',
+        ASPNETCORE_URLS: 'http://localhost:5099',
+        ConnectionStrings__Flights: process.env['E2E_FLIGHTS_DB'] ?? '',
+      },
       reuseExistingServer: !process.env['CI'],
       timeout: 180_000,
     },

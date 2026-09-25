@@ -1,6 +1,7 @@
-import type { Page } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 
-export const apiBaseUrl = 'http://localhost:5080';
+// E2E's own Api port; the dev server proxies to 5080 instead.
+export const apiBaseUrl = 'http://localhost:5099';
 
 /**
  * The apps call the API on their own origin (/api/...). In deployed environments a gateway routes /api to the Api
@@ -23,4 +24,18 @@ export function daysFromToday(days: number): string {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Journeys that persist data need the Api's database (E2E_FLIGHTS_DB). Locally they are skipped without it; in CI the
+ * database is always provisioned, so a missing configuration fails instead of silently skipping coverage.
+ */
+export function requireDatabase(): void {
+  const configured = !!process.env['E2E_FLIGHTS_DB'];
+  if (!configured && process.env['CI']) {
+    throw new Error(
+      'E2E_FLIGHTS_DB must be set in CI: database-backed journeys cannot be skipped there.',
+    );
+  }
+  test.skip(!configured, 'Set E2E_FLIGHTS_DB to run database-backed journeys (see CLAUDE.md).');
 }

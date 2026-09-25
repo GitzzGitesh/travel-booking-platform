@@ -32,7 +32,9 @@ CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and fronte
 
 E2E and accessibility (`tests/e2e`, Playwright + axe-core, against the production builds; Playwright also starts the Api with `dotnet run` in Development): build both apps first, then in `tests/e2e`: `npm ci`, `npx playwright install chromium` (once), `npx playwright test` (`--project admin-web` for one app).
 
-Not yet available: Aspire AppHost run. They are added in later Phase 1 stories.
+Database-backed E2E journeys (offer selection) need `E2E_FLIGHTS_DB`: a connection string to a local SQL Server with the Flights migrations applied (`dotnet ef database update ... --connection "$E2E_FLIGHTS_DB"`, local databases only). Without it they are skipped locally and fail in CI, which provisions its own. The E2E Api listens on 5099, never the dev port 5080. If SQL Server runs in WSL, connect via the WSL address (`wsl hostname -I`), not `localhost`.
+
+Not yet available: Aspire AppHost run (deferred; see `docs/progress.md`, chunk 4b).
 
 Also:
 - Test the secret-guard hook: `echo '{"tool_name":"Write","tool_input":{"file_path":"x.txt","content":"hello"}}' | node .claude/hooks/guard-secrets.mjs` (exit 0 = allowed, 2 = blocked)
