@@ -1,6 +1,6 @@
 # 0011. Caching: HybridCache first, Redis deferred
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-24
 - **Related:** [0003](0003-baseline-technology-stack.md), [0005](0005-order-aggregate-and-booking-orchestration.md)
 
