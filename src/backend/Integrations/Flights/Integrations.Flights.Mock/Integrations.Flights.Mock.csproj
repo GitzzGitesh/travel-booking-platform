@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Deterministic, scenario-driven flight provider for development and tests only (ADR 0004). Refuses to run in Production. -->
+  <!-- Deterministic, scenario-driven flight provider for development and tests only (ADR 0004). Runs only in Development or Staging. -->
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

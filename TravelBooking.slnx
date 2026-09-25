@@ -15,16 +15,12 @@
   <Folder Name="/src/backend/Modules/Flights/">
     <Project Path="src/backend/Modules/Flights/Modules.Flights/Modules.Flights.csproj" />
   </Folder>
-  <Folder Name="/src/backend/Modules/Sample/">
-    <Project Path="src/backend/Modules/Sample/Modules.Sample/Modules.Sample.csproj" />
-  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/backend/">
     <Project Path="tests/backend/Api.IntegrationTests/Api.IntegrationTests.csproj" />
     <Project Path="tests/backend/ArchitectureTests/ArchitectureTests.csproj" />
     <Project Path="tests/backend/BuildingBlocks.UnitTests/BuildingBlocks.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.UnitTests/Modules.Flights.UnitTests.csproj" />
-    <Project Path="tests/backend/Modules.Sample.UnitTests/Modules.Sample.UnitTests.csproj" />
     <Project Path="tests/backend/ProviderContracts/ProviderContracts.csproj" />
   </Folder>
 </Solution>

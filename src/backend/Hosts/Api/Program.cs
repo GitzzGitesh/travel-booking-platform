@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using TravelBooking.Api;
-using TravelBooking.Modules.Sample;
+using TravelBooking.Integrations.Flights.Mock;
+using TravelBooking.Modules.Flights;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,8 +10,13 @@ builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 builder.Services.AddProblemDetails();
 // Numbers must be JSON numbers: the web default also accepts numeric strings, which loosens input validation
-// and the API contract. Money amounts are explicit strings by design (api-design rules).
-builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
+// and the API contract. Money amounts are explicit strings by design (api-design rules). Enums are strings.
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict;
+    // Names only: integers such as "cabin": 2 or 99 are rejected, so the server accepts exactly the documented contract.
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
+});
 builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((document, _, _) =>
 {
     document.Info = new() { Title = "Travel Booking API", Version = "v1" };
@@ -18,7 +24,15 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((doc
     document.Servers?.Clear();
     return Task.CompletedTask;
 }));
-builder.Services.AddSampleModule();
+builder.Services.AddFlightsModule();
+
+if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
+{
+    // The deterministic mock is the only flight provider until a real supplier is chosen (Q6). Allow-listed
+    // environments only, matching the mock's own guard, so a production-like environment never gets fake offers.
+    builder.Services.AddMockFlightProvider(builder.Configuration);
+}
+
 // No fallback policy yet: without an authentication scheme it would turn every unmatched route into a 500.
 // It is added with the first authentication scheme (ADR 0008, Phase 4). Until then, deny-by-default is
 // enforced by EndpointAuthorizationTests in every environment.
@@ -65,8 +79,9 @@ var v1 = app.MapGroup("/api/v1");
 
 if (app.Environment.IsDevelopment())
 {
-    // Modules.Sample is a Phase 1 spike and is never exposed outside Development.
-    v1.MapSampleEndpoints();
+    // Flight search stays Development-only until forwarded headers and rate limiting exist (docs/progress.md).
+    // This gate must only widen together with IFlightProvider registration: no provider is registered in Production.
+    v1.MapFlightsEndpoints();
 }
 
 app.Run();

@@ -95,6 +95,23 @@ public sealed class ModuleBoundaryTests
             .Because("ports describe supplier-agnostic domain operations (ADR 0004)")
             .Check(_architecture);
 
+    // Modules reference the ASP.NET Core shared framework for their endpoints, so keep it out of Application code:
+    // Application depends only on Domain, Ports, and BuildingBlocks (architecture rules), never on HTTP or endpoints.
+    [Fact]
+    public void Module_application_code_does_not_depend_on_web_data_http_or_endpoints() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Application(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^(Microsoft\.AspNetCore|Microsoft\.EntityFrameworkCore|System\.Net\.Http|TravelBooking\.Modules\.[^.]+\.Endpoints)(\..+)?$"))
+            .Because("Application depends on Domain only, plus BuildingBlocks (architecture rules)")
+            .WithoutRequiringPositiveResults()
+            .Check(_architecture);
+
+    [Fact]
+    public void Provider_ports_do_not_depend_on_application_or_endpoints() =>
+        Types().That().ResideInNamespaceMatching(_portsNamespace)
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.(Application|Endpoints)(\..+)?$"))
+            .Because("ports are the stable inner contract that adapters implement (ADR 0014)")
+            .Check(_architecture);
+
     [Fact]
     public void At_least_one_integration_is_checked() =>
         _integrationAssemblies.ShouldNotBeEmpty();

@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\src\backend\Modules\Sample\Modules.Sample\Modules.Sample.csproj" />
-  </ItemGroup>
-
-</Project>
