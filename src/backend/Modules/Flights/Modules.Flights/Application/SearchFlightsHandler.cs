@@ -13,8 +13,15 @@ internal abstract record SearchFlightsFailure
     internal sealed record ProviderFailed(ProviderError Error) : SearchFlightsFailure;
 }
 
-/// <summary>Runs a flight search against the composed <see cref="IFlightProvider"/>.</summary>
-internal sealed partial class SearchFlightsHandler(IFlightProvider provider, TimeProvider timeProvider, ILogger<SearchFlightsHandler> logger)
+/// <summary>
+/// Runs a flight search against the composed <see cref="IFlightProvider"/>, then holds the offers in the search cache
+/// under a new random search id so the customer can select one (Option 2).
+/// </summary>
+internal sealed partial class SearchFlightsHandler(
+    IFlightProvider provider,
+    FlightSearchCache searchCache,
+    TimeProvider timeProvider,
+    ILogger<SearchFlightsHandler> logger)
 {
     /// <summary>
     /// How far ahead flights can be searched: the longest airline sales horizon (about 361 days). A supplier
@@ -22,17 +29,23 @@ internal sealed partial class SearchFlightsHandler(IFlightProvider provider, Tim
     /// </summary>
     internal const int SalesHorizonDays = 361;
 
-    public async Task<Result<FlightSearchResult, SearchFlightsFailure>> HandleAsync(FlightSearchCriteria criteria, CancellationToken cancellationToken)
+    public async Task<Result<CachedFlightSearch, SearchFlightsFailure>> HandleAsync(FlightSearchCriteria criteria, CancellationToken cancellationToken)
     {
         if (CheckDates(criteria) is { } invalidDates)
         {
-            return Result<FlightSearchResult, SearchFlightsFailure>.Failure(invalidDates);
+            return Result<CachedFlightSearch, SearchFlightsFailure>.Failure(invalidDates);
         }
 
         var result = await provider.SearchAsync(criteria, cancellationToken);
         if (result.IsSuccess)
         {
-            return Result<FlightSearchResult, SearchFlightsFailure>.Success(result.Value);
+            // Random (not time-ordered) ids: they identify a search and an offer, and must not be guessable.
+            var search = new CachedFlightSearch(
+                Guid.NewGuid(),
+                criteria,
+                result.Value.Offers.Select(offer => new CachedFlightOffer(Guid.NewGuid(), offer)).ToList());
+            await searchCache.StoreAsync(search, CacheLifetime(search), cancellationToken);
+            return Result<CachedFlightSearch, SearchFlightsFailure>.Success(search);
         }
 
         if (result.Error.Kind == ProviderErrorKind.AuthFailure)
@@ -45,8 +58,14 @@ internal sealed partial class SearchFlightsHandler(IFlightProvider provider, Tim
             LogProviderFailure(logger, provider.Id, result.Error.Kind);
         }
 
-        return Result<FlightSearchResult, SearchFlightsFailure>.Failure(new SearchFlightsFailure.ProviderFailed(result.Error));
+        return Result<CachedFlightSearch, SearchFlightsFailure>.Failure(new SearchFlightsFailure.ProviderFailed(result.Error));
     }
+
+    // The cache entry never outlives the earliest-expiring offer in it (ADR 0011: offer expiry bounds the TTL).
+    private TimeSpan CacheLifetime(CachedFlightSearch search) =>
+        search.Offers.Count == 0
+            ? TimeSpan.Zero
+            : search.Offers.Min(o => o.Offer.ExpiresAt) - timeProvider.GetUtcNow();
 
     // Dates are local to their airports, and airport time zones are not modelled yet. The earliest local date anywhere
     // is one day behind UTC, so "yesterday in UTC" is the strictest lower bound that never rejects a valid date.

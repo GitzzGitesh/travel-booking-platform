@@ -5,7 +5,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
+    <!-- Migrations tooling only (dotnet ef); never flows to consumers. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Modules.Flights.UnitTests" />
+    <InternalsVisibleTo Include="Modules.Flights.IntegrationTests" />
+    <InternalsVisibleTo Include="Api.IntegrationTests" />
   </ItemGroup>
 
   <ItemGroup>

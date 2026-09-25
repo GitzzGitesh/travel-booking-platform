@@ -10,3 +10,5 @@ export type { FlightSliceResponse } from './models/flight-slice-response';
 export type { HttpValidationProblemDetails } from './models/http-validation-problem-details';
 export type { MoneyResponse } from './models/money-response';
 export type { ProblemDetails } from './models/problem-details';
+export type { SelectedFlightOfferResponse } from './models/selected-flight-offer-response';
+export type { SelectFlightOfferRequest } from './models/select-flight-offer-request';

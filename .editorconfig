@@ -33,6 +33,10 @@ dotnet_naming_symbols.private_fields.applicable_accessibilities = private
 dotnet_naming_style.underscore_camel.required_prefix = _
 dotnet_naming_style.underscore_camel.capitalization = camel_case
 
+# EF Core migrations are tool-generated: formatters and analyzers skip them.
+[**/Infrastructure/Migrations/*.cs]
+generated_code = true
+
 [*.{csproj,props,targets,slnx,xml,config}]
 indent_size = 2
 

@@ -8,6 +8,7 @@ const url = '/api/v1/flights/searches';
 
 function offer(flightNumber: string, amount: string): FlightOfferResponse {
   return {
+    offerId: `offer-${flightNumber}`,
     totalPrice: { amount, currency: 'XTS' },
     expiresAt: '2027-01-15T09:30:00+00:00',
     slices: [

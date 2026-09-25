@@ -92,8 +92,19 @@ public sealed class OpenApiContractTests(WebApplicationFactory<Program> factory)
     private static string Normalize(string json) =>
         JsonNode.Parse(json)!.ToJsonString(_indented).ReplaceLineEndings("\n") + "\n";
 
+    // Recorded at build time (Api.IntegrationTests.csproj), so the test works whatever the output location
+    // (for example --artifacts-path outside the repository). Falls back to walking up from the output directory.
     private static string RepositoryRoot()
     {
+        var recorded = typeof(OpenApiContractTests).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+            .Cast<System.Reflection.AssemblyMetadataAttribute>()
+            .SingleOrDefault(a => a.Key == "RepositoryRoot")?.Value;
+        if (recorded is not null && File.Exists(Path.Combine(recorded, "TravelBooking.slnx")))
+        {
+            return recorded;
+        }
+
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TravelBooking.slnx")))
         {

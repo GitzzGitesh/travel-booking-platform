@@ -20,6 +20,7 @@
     <Project Path="tests/backend/Api.IntegrationTests/Api.IntegrationTests.csproj" />
     <Project Path="tests/backend/ArchitectureTests/ArchitectureTests.csproj" />
     <Project Path="tests/backend/BuildingBlocks.UnitTests/BuildingBlocks.UnitTests.csproj" />
+    <Project Path="tests/backend/Modules.Flights.IntegrationTests/Modules.Flights.IntegrationTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.UnitTests/Modules.Flights.UnitTests.csproj" />
     <Project Path="tests/backend/ProviderContracts/ProviderContracts.csproj" />
   </Folder>

@@ -1,8 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace TravelBooking.Modules.Flights.Ports;
 
 /// <summary>An IATA airport code: three upper-case letters, such as LHR.</summary>
 public readonly record struct AirportCode
 {
+    // Deserialization must go through validation, not the implicit parameterless struct constructor.
+    [JsonConstructor]
     public AirportCode(string value)
     {
         if (!IsValid(value))

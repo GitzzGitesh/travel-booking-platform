@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace TravelBooking.BuildingBlocks;
 
 /// <summary>An ISO 4217 alphabetic currency code, such as EUR (ADR 0010).</summary>
@@ -5,6 +7,8 @@ public readonly record struct CurrencyCode
 {
     private readonly string? _value;
 
+    // Deserialization must go through validation, not the implicit parameterless struct constructor.
+    [JsonConstructor]
     public CurrencyCode(string value)
     {
         if (!IsValid(value))

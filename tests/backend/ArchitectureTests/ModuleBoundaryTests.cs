@@ -56,6 +56,8 @@ public sealed class ModuleBoundaryTests
     public void Module_internals_are_not_public_except_entry_point_request_and_port_types() =>
         ModuleInternalTypes()
             .And().DoNotResideInNamespaceMatching(_portsNamespace)
+            // EF Core generates migrations as public classes; they are schema history, not a module API.
+            .And().DoNotResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Infrastructure\.Migrations$")
             .And().DoNotHaveNameEndingWith("Module")
             .And().DoNotHaveNameEndingWith("Request")
             .Should().NotBePublic()
@@ -100,8 +102,25 @@ public sealed class ModuleBoundaryTests
     [Fact]
     public void Module_application_code_does_not_depend_on_web_data_http_or_endpoints() =>
         Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Application(\..+)?$")
-            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^(Microsoft\.AspNetCore|Microsoft\.EntityFrameworkCore|System\.Net\.Http|TravelBooking\.Modules\.[^.]+\.Endpoints)(\..+)?$"))
-            .Because("Application depends on Domain only, plus BuildingBlocks (architecture rules)")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^(Microsoft\.AspNetCore|Microsoft\.EntityFrameworkCore|System\.Net\.Http|TravelBooking\.Modules\.[^.]+\.(Endpoints|Infrastructure))(\..+)?$"))
+            .Because("Application depends on Domain only, plus BuildingBlocks; Infrastructure implements its ports (architecture rules)")
+            .WithoutRequiringPositiveResults()
+            .Check(_architecture);
+
+    // Thin endpoints: bind, call one Application handler, map the result. Never EF or persistence directly.
+    [Fact]
+    public void Module_endpoints_do_not_depend_on_infrastructure_or_ef_core() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Endpoints(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^(Microsoft\.EntityFrameworkCore|TravelBooking\.Modules\.[^.]+\.Infrastructure)(\..+)?$"))
+            .Because("endpoints stay thin and never touch persistence (architecture rules)")
+            .WithoutRequiringPositiveResults()
+            .Check(_architecture);
+
+    [Fact]
+    public void Module_domain_code_does_not_depend_on_application_infrastructure_or_endpoints() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Domain(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.(Application|Infrastructure|Endpoints)(\..+)?$"))
+            .Because("Domain is the innermost layer (architecture rules)")
             .WithoutRequiringPositiveResults()
             .Check(_architecture);
 
