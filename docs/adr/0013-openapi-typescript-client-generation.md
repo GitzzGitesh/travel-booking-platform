@@ -1,6 +1,6 @@
 # 0013. OpenAPI TypeScript client generation
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-25
 - **Related:** [0003](0003-baseline-technology-stack.md), [0009](0009-frontend-applications-and-rendering.md), [0012](0012-source-control-branching-and-ci.md), `.claude/rules/api-design.md`, `.claude/rules/frontend-angular.md`
 
