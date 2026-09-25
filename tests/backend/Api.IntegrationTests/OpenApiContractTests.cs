@@ -54,6 +54,23 @@ public sealed class OpenApiContractTests(WebApplicationFactory<Program> factory)
         responses["400"]!["content"]!.AsObject().ShouldContainKey("application/problem+json");
     }
 
+    // The generated client names its functions after operationId (ADR 0013). A missing id would get a
+    // path-derived fallback name, and adding one later would rename the client function and break callers.
+    [Fact]
+    public async Task Every_operation_has_a_unique_operation_id()
+    {
+        using var client = factory.CreateClient();
+        var document = JsonNode.Parse(await client.GetStringAsync(_documentUrl, TestContext.Current.CancellationToken))!;
+
+        var operations = document["paths"]!.AsObject()
+            .SelectMany(path => path.Value!.AsObject().Select(operation => (Route: $"{operation.Key.ToUpperInvariant()} {path.Key}", Id: operation.Value?["operationId"]?.GetValue<string>())))
+            .ToList();
+
+        operations.ShouldNotBeEmpty();
+        operations.Where(o => string.IsNullOrWhiteSpace(o.Id)).Select(o => o.Route).ShouldBeEmpty();
+        operations.Select(o => o.Id).ShouldBeUnique();
+    }
+
     [Theory]
     [InlineData("Staging")]
     [InlineData("Production")]

@@ -71,11 +71,52 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Check generated API client is up to date
+        run: |
+          npm run generate:api-client
+          if [ -n "$(git status --porcelain -- projects/api-client)" ]; then
+            git status --porcelain -- projects/api-client
+            echo "::error::projects/api-client is out of date with openapi.v1.json. Run 'npm run generate:api-client' and commit the result."
+            exit 1
+          fi
+
+      - name: Type-check API client
+        run: npm run check:api-client
+
       - name: Build customer-web
         run: npx ng build customer-web
 
       - name: Test customer-web
         run: npx ng test customer-web --watch=false
+
+  api-contract:
+    name: API contract
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OASDIFF_VERSION: 1.32.1
+      OASDIFF_SHA256: 7c8939fc49b75ee11fec66a5b83b37a2fca6aee109fed85013b1ba2ac2a1ee7f
+      SPEC: src/backend/Hosts/Api/openapi.v1.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install oasdiff (checksum verified)
+        run: |
+          archive="oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "$archive" "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/${archive}"
+          echo "${OASDIFF_SHA256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" oasdiff
+
+      - name: Fail on breaking API changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git show "${BASE_SHA}:${SPEC}" > "$RUNNER_TEMP/base-openapi.json"
+          "$RUNNER_TEMP/oasdiff" breaking "$RUNNER_TEMP/base-openapi.json" "$SPEC" --fail-on ERR
 
   secret-scan:
     name: Secret scan
