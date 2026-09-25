@@ -1,7 +1,11 @@
 using System.Text.Json.Serialization;
+using TravelBooking.Api;
 using TravelBooking.Modules.Sample;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Don't advertise the server implementation.
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 builder.Services.AddProblemDetails();
 // Numbers must be JSON numbers: the web default also accepts numeric strings, which loosens input validation
@@ -20,8 +24,17 @@ builder.Services.AddSampleModule();
 // enforced by EndpointAuthorizationTests in every environment.
 builder.Services.AddAuthorization();
 builder.Services.AddHealthChecks();
+builder.Services.AddApiCors(builder.Configuration);
 
 var app = builder.Build();
+
+app.UseSecurityHeaders();
+
+if (!app.Environment.IsDevelopment())
+{
+    // Before the exception handler, which clears headers on failed responses.
+    app.UseHsts();
+}
 
 // Malformed requests (invalid JSON, wrong types, oversized bodies) are client errors in every environment,
 // not 500s. Everything else stays a generic 500 ProblemDetails without exception details.
@@ -35,12 +48,8 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
 });
 app.UseStatusCodePages();
 
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHsts();
-}
-
 app.UseHttpsRedirection();
+app.UseCors();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health").AllowAnonymous();
