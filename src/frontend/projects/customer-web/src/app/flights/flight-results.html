@@ -1,54 +1,230 @@
-<ol class="offers">
-  @for (offer of offers(); track offer.offerId; let offerIndex = $index) {
-    <li
-      class="offer"
-      [class.selected]="selectedOfferId() === offer.offerId"
-      [attr.aria-labelledby]="'offer-' + offerIndex + '-price'"
-    >
-      <div class="price">
-        <span class="amount" [id]="'offer-' + offerIndex + '-price'">{{
-          formatMoney(offer.totalPrice)
-        }}</span>
-        <span class="price-note">total for all passengers</span>
-      </div>
+<div class="layout">
+  <aside class="sidebar card" aria-label="Filter flights">
+    <app-flight-filters
+      idPrefix="side-filters"
+      [facets]="facets()"
+      [value]="filters()"
+      (valueChange)="filters.set($event)"
+    />
+  </aside>
 
-      @for (slice of offer.slices; track $index; let sliceIndex = $index) {
-        <div class="slice">
-          <h3 class="slice-label">{{ sliceLabel(sliceIndex) }}</h3>
-          @for (segment of slice.segments; track $index) {
-            <p class="segment">
-              <span class="times">
-                {{ localTime(segment.departureLocal) }} {{ segment.origin }}
-                <span aria-hidden="true">→</span><span class="visually-hidden">to</span>
-                {{ localTime(segment.arrivalLocal) }} {{ segment.destination }}
-              </span>
-              <span class="details">
-                {{ localDate(segment.departureLocal) }} · {{ segment.marketingCarrier }}
-                {{ segment.flightNumber }}
-              </span>
-            </p>
+  <div class="list-column">
+    <div class="toolbar">
+      <fieldset class="sort">
+        <legend class="field-label">Sort by</legend>
+        <div class="segmented">
+          @for (order of sortOrders; track order.value) {
+            <label>
+              <input
+                type="radio"
+                name="sort"
+                [value]="order.value"
+                [checked]="sort() === order.value"
+                (change)="setSort(order.value)"
+              />
+              {{ order.label }}
+            </label>
           }
         </div>
-      }
-
-      <p class="time-note">Times are local to each airport.</p>
+      </fieldset>
 
       <button
         type="button"
-        class="select"
-        [attr.aria-pressed]="selectedOfferId() === offer.offerId"
-        [attr.aria-describedby]="'offer-' + offerIndex + '-price'"
-        [disabled]="savingOfferId() !== null"
-        (click)="select.emit(offer.offerId)"
+        class="btn btn-outline btn-sm filters-button"
+        aria-haspopup="dialog"
+        (click)="openFilters()"
       >
-        @if (savingOfferId() === offer.offerId) {
-          Saving…
-        } @else if (selectedOfferId() === offer.offerId) {
-          Selected
-        } @else {
-          Select this flight
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16M7 12h10M10 18h4" />
+        </svg>
+        Filters
+        @if (activeCount()) {
+          <span class="badge badge-dark">{{ activeCount() }}</span>
+          <span class="visually-hidden">active</span>
         }
       </button>
-    </li>
-  }
-</ol>
+    </div>
+
+    @if (chips().length) {
+      <div class="chips">
+        <ul aria-label="Active filters">
+          @for (chip of chips(); track chip.group + chip.value) {
+            <li>
+              <button type="button" class="chip" (click)="removeFilter(chip.group, chip.value)">
+                <span class="visually-hidden">Remove filter:</span> {{ chip.label }}
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 7l10 10M17 7 7 17" />
+                </svg>
+              </button>
+            </li>
+          }
+        </ul>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="clearFilters()">
+          Clear all
+        </button>
+      </div>
+    }
+
+    <p class="count" aria-live="polite">
+      <span class="tabular">
+        @if (activeCount()) {
+          Showing {{ visible().length }} of {{ offers().length }} flights.
+        } @else {
+          {{ offers().length }} {{ offers().length === 1 ? 'flight' : 'flights' }}.
+        }
+      </span>
+      <span class="time-note">Times are local to each airport.</span>
+    </p>
+
+    @if (visible().length === 0) {
+      <div class="card no-match">
+        <h3>No flights match your filters</h3>
+        <p>Remove a filter to see more flights from this search.</p>
+        <button type="button" class="btn btn-dark" (click)="clearFilters()">Clear filters</button>
+      </div>
+    }
+
+    <ol class="offers">
+      @for (offer of visible(); track offer.offerId; let offerIndex = $index) {
+        @let isSelected = selectedOfferId() === offer.offerId;
+        <li class="offer card" [class.selected]="isSelected">
+          @if (isSelected) {
+            <span class="badge badge-dark selected-badge" aria-hidden="true">Selected</span>
+          }
+          <div class="itinerary">
+            @for (slice of offer.slices; track $index; let sliceIndex = $index) {
+              <div class="slice">
+                <div class="slice-head">
+                  <h3 class="slice-label">{{ sliceLabel(sliceIndex) }}</h3>
+                  <span class="flight-no">
+                    <span class="carrier-code" aria-hidden="true">{{
+                      first(slice).marketingCarrier
+                    }}</span>
+                    <span class="visually-hidden">Flight</span>
+                    {{ flightNumbers(slice) }}
+                  </span>
+                </div>
+                <div class="timeline">
+                  <p class="point">
+                    <span class="visually-hidden">Departs</span>
+                    <strong class="time tabular">{{
+                      localTime(first(slice).departureLocal)
+                    }}</strong>
+                    <span class="code">{{ first(slice).origin }}</span>
+                    <span class="date">{{ localDate(first(slice).departureLocal) }}</span>
+                  </p>
+                  <p class="path">
+                    <span class="line" aria-hidden="true"></span>
+                    <span class="stops" [class.nonstop]="slice.segments.length === 1">{{
+                      stopsLabel(slice)
+                    }}</span>
+                  </p>
+                  <p class="point end">
+                    <span class="visually-hidden">Arrives</span>
+                    <strong class="time tabular"
+                      >{{ localTime(last(slice).arrivalLocal) }}
+                      @if (dayShift(slice) > 0) {
+                        <sup class="shift"
+                          >+{{ dayShift(slice)
+                          }}<span class="visually-hidden">
+                            {{ dayShift(slice) === 1 ? 'day' : 'days' }}</span
+                          ></sup
+                        >
+                      }
+                    </strong>
+                    <span class="code">{{ last(slice).destination }}</span>
+                    <span class="date">{{ localDate(last(slice).arrivalLocal) }}</span>
+                  </p>
+                </div>
+              </div>
+            }
+
+            @if (hasConnections(offer)) {
+              <details class="details">
+                <summary>Flight details</summary>
+                @for (slice of offer.slices; track $index; let sliceIndex = $index) {
+                  <ol class="segments" [attr.aria-label]="sliceLabel(sliceIndex) + ' flights'">
+                    @for (segment of slice.segments; track $index) {
+                      <li>
+                        <strong>{{ segment.flightNumber }}</strong>
+                        {{ segment.origin }} {{ localTime(segment.departureLocal) }} ({{
+                          localDate(segment.departureLocal)
+                        }}) <span aria-hidden="true">→</span><span class="visually-hidden">to</span>
+                        {{ segment.destination }} {{ localTime(segment.arrivalLocal) }} ({{
+                          localDate(segment.arrivalLocal)
+                        }})
+                      </li>
+                    }
+                  </ol>
+                }
+              </details>
+            }
+          </div>
+
+          <div class="fare">
+            <p class="price">
+              <span class="amount tabular" [id]="'offer-' + offerIndex + '-price'">{{
+                formatMoney(offer.totalPrice)
+              }}</span>
+              <span class="price-note">Total for all travellers</span>
+            </p>
+            <button
+              type="button"
+              class="btn select"
+              [class.btn-primary]="!isSelected"
+              [class.btn-dark]="isSelected"
+              [attr.aria-pressed]="isSelected"
+              [attr.aria-describedby]="'offer-' + offerIndex + '-price'"
+              [disabled]="savingOfferId() !== null"
+              (click)="select.emit(offer.offerId)"
+            >
+              @if (savingOfferId() === offer.offerId) {
+                Saving…
+              } @else if (isSelected) {
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m5 12 5 5L20 7" />
+                </svg>
+                Selected
+              } @else {
+                Select<span class="visually-hidden"> this flight</span>
+              }
+            </button>
+          </div>
+        </li>
+      }
+    </ol>
+
+    <ng-content />
+  </div>
+</div>
+
+<dialog
+  #filtersSheet
+  class="modal-sheet filters-sheet"
+  aria-labelledby="sheet-filters-heading"
+  (click)="closeOnBackdropClick($event)"
+>
+  <div class="sheet-head">
+    <h2 id="sheet-filters-heading">Filters</h2>
+    <button type="button" class="icon-btn" (click)="closeFilters()">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 6l12 12M18 6 6 18" />
+      </svg>
+      <span class="visually-hidden">Close filters</span>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <app-flight-filters
+      idPrefix="sheet-filters"
+      [showHeading]="false"
+      [facets]="facets()"
+      [value]="filters()"
+      (valueChange)="filters.set($event)"
+    />
+  </div>
+  <div class="sheet-foot">
+    <button type="button" class="btn btn-primary show-button" (click)="closeFilters()">
+      Show {{ visible().length }} {{ visible().length === 1 ? 'flight' : 'flights' }}
+    </button>
+  </div>
+</dialog>

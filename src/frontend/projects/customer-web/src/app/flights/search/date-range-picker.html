@@ -1,0 +1,158 @@
+<button
+  #departureTile
+  type="button"
+  id="departureDate"
+  class="tile"
+  aria-haspopup="dialog"
+  [class.invalid]="departureErrorId() !== null"
+  [attr.aria-describedby]="departureErrorId()"
+  (click)="open('departure')"
+>
+  <span class="field-label">Departure</span>
+  @if (departure()) {
+    <span class="value">{{ dayMonth(departure()) }}</span>
+    <span class="sub">{{ weekdayYear(departure()) }}</span>
+  } @else {
+    <span class="value placeholder">Add date</span>
+    <span class="sub">Choose a date</span>
+  }
+</button>
+
+<button
+  #returnTile
+  type="button"
+  id="returnDate"
+  class="tile"
+  aria-haspopup="dialog"
+  [class.inactive]="!roundTrip()"
+  [class.invalid]="returnErrorId() !== null"
+  [attr.aria-describedby]="returnErrorId()"
+  (click)="open('return')"
+>
+  <span class="field-label">Return</span>
+  @if (end()) {
+    <span class="value">{{ dayMonth(end()) }}</span>
+    <span class="sub">{{ weekdayYear(end()) }}</span>
+  } @else if (roundTrip()) {
+    <span class="value placeholder">Add date</span>
+    <span class="sub">Choose your return</span>
+  } @else {
+    <span class="value placeholder">Add return</span>
+    <span class="sub">Optional</span>
+  }
+</button>
+
+<dialog
+  #dialog
+  class="modal-sheet calendar"
+  aria-labelledby="calendar-heading"
+  (click)="closeOnBackdropClick($event)"
+  (close)="onClosed()"
+>
+  <div class="sheet-head">
+    <h2 id="calendar-heading">
+      {{ step() === 'return' ? 'Choose your return date' : 'Choose your departure date' }}
+    </h2>
+    <button type="button" class="icon-btn" (click)="close()">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 6l12 12M18 6 6 18" />
+      </svg>
+      <span class="visually-hidden">Close calendar</span>
+    </button>
+  </div>
+
+  @if (roundTrip()) {
+    <div class="steps" role="group" aria-label="Which date to choose">
+      <button
+        type="button"
+        [attr.aria-pressed]="step() === 'departure'"
+        (click)="switchStep('departure')"
+      >
+        <span class="field-label">Departure</span>
+        {{ start() ? shortLabel(start()) : 'Add date' }}
+      </button>
+      <button
+        type="button"
+        [attr.aria-pressed]="step() === 'return'"
+        (click)="switchStep('return')"
+      >
+        <span class="field-label">Return</span>
+        {{ end() ? shortLabel(end()) : 'Add date' }}
+      </button>
+    </div>
+  }
+
+  <div class="sheet-body">
+    <div class="month-nav">
+      <button type="button" class="icon-btn" [disabled]="!canGoBack()" (click)="showMonth(-1)">
+        <svg class="icon flip" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+        <span class="visually-hidden">Previous month</span>
+      </button>
+      <button type="button" class="icon-btn" (click)="showMonth(1)">
+        <svg class="icon flip" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+        <span class="visually-hidden">Next month</span>
+      </button>
+    </div>
+
+    <div #grid class="months" (keydown)="onKeydown($event)" (pointerleave)="hovered.set(null)">
+      @for (month of months(); track month.id) {
+        <table class="month">
+          <caption>
+            {{
+              month.label
+            }}
+          </caption>
+          <thead>
+            <tr>
+              @for (day of weekdays; track day.long) {
+                <th scope="col" [attr.abbr]="day.long">{{ day.short }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (week of month.weeks; track $index) {
+              <tr>
+                @for (date of week; track $index) {
+                  <td
+                    [class.in-range]="date && inRange(date)"
+                    [class.range-start]="date && date === start() && rangeEnd()"
+                    [class.range-end]="date && date === rangeEnd() && start()"
+                  >
+                    @if (date) {
+                      <button
+                        type="button"
+                        class="day"
+                        [attr.data-date]="date"
+                        [attr.tabindex]="date === focused() ? 0 : -1"
+                        [disabled]="date < stepMin()"
+                        [attr.aria-pressed]="date === start() || date === end()"
+                        [attr.aria-current]="date === min() ? 'date' : null"
+                        [attr.aria-label]="dayLabel(date)"
+                        [class.selected]="date === start() || date === rangeEnd()"
+                        (click)="pick(date)"
+                        (pointerenter)="hovered.set(date)"
+                        (focus)="focused.set(date)"
+                      >
+                        {{ dayNumber(date) }}
+                      </button>
+                    }
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
+    <p class="visually-hidden" aria-live="polite">{{ announcement() }}</p>
+  </div>
+
+  <div class="sheet-foot">
+    <p class="hint">Use the arrow keys to move between days.</p>
+    <button type="button" class="btn btn-dark" (click)="close()">Done</button>
+  </div>
+</dialog>

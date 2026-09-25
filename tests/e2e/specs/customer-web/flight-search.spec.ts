@@ -1,25 +1,63 @@
 import { expect, test, type Page } from '@playwright/test';
-import { daysFromToday, requireDatabase, routeApiToBackend } from '../../support/api';
+import { requireDatabase, routeApiToBackend } from '../../support/api';
 import { collectPageErrors, expectNoAccessibilityViolations } from '../../support/page-checks';
 
 // The customer flight search journey against the production build, the real Api, and the deterministic mock.
 
+/**
+ * Fills the search with the keyboard-driven calendar: it opens on today, so 4 weeks and 2 days later is 30 days
+ * ahead, and a round trip continues straight to the return date, one week after departure.
+ */
 async function fillSearch(
   page: Page,
-  options: { returnInDays?: number; cabin?: string } = {},
+  options: { roundTrip?: boolean; cabin?: string } = {},
 ): Promise<void> {
-  await page.getByLabel('From').fill('lhr');
-  await page.getByLabel('To', { exact: false }).first().fill('jfk');
-  await page.getByLabel('Departure date').fill(daysFromToday(30));
-  if (options.returnInDays !== undefined) {
-    await page.getByLabel('Return date').fill(daysFromToday(options.returnInDays));
+  if (options.roundTrip) {
+    await page.getByLabel('Round trip').check();
   }
+  await page.getByLabel('From').fill('lhr');
+  await page.getByLabel('To', { exact: true }).fill('jfk');
+
+  await page.getByRole('button', { name: /^Departure/ }).click();
+  const calendar = page.getByRole('dialog', {
+    name: /Choose your departure date/,
+  });
+  await expect(calendar).toBeVisible();
+  // The dialog focuses its first control, then the calendar moves focus to today: wait for that.
+  await expect(calendar.locator('button.day:focus')).toHaveAttribute('aria-current', 'date');
+  for (const key of [
+    'ArrowDown',
+    'ArrowDown',
+    'ArrowDown',
+    'ArrowDown',
+    'ArrowRight',
+    'ArrowRight',
+  ]) {
+    await page.keyboard.press(key);
+  }
+  await page.keyboard.press('Enter');
+  if (options.roundTrip) {
+    await expect(page.getByRole('heading', { name: 'Choose your return date' })).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+  }
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
   if (options.cabin) {
-    await page.getByLabel('Cabin').selectOption({ label: options.cabin });
+    await page.getByRole('button', { name: /^Travellers/ }).click();
+    await page.getByRole('dialog').getByLabel(options.cabin).check();
+    await page.getByRole('button', { name: 'Done' }).click();
   }
 }
 
 const results = (page: Page) => page.locator('.offers > li');
+
+async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+}
 
 test.describe('customer flight search', () => {
   test('searches and shows priced offers', async ({ page }) => {
@@ -34,11 +72,35 @@ test.describe('customer flight search', () => {
     await expect(heading).toBeFocused();
     await expect(results(page)).toHaveCount(3);
     await expect(page.getByRole('status')).toHaveText('3 flights found.');
+    await expect(page.locator('.search-summary')).toContainText('LHR → JFK');
     await expect(results(page).first()).toContainText('LHR');
     await expect(results(page).first()).toContainText('XTS');
+    await expect(results(page).first()).toContainText('Nonstop');
 
     await expectNoAccessibilityViolations(page);
     expect(errors).toEqual([]);
+  });
+
+  test('the calendar and traveller pickers are accessible dialogs', async ({ page }) => {
+    await page.goto('/');
+
+    await page.getByRole('button', { name: /^Departure/ }).click();
+    await expect(page.getByRole('dialog', { name: /departure date/ })).toBeVisible();
+    await expect(page.locator('dialog.calendar button.day:focus')).toHaveAttribute(
+      'aria-current',
+      'date',
+    );
+    await expectNoAccessibilityViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: /^Departure/ })).toBeFocused();
+
+    await page.getByRole('button', { name: /^Travellers/ }).click();
+    const travellers = page.getByRole('dialog', { name: 'Travellers & cabin' });
+    await travellers.getByRole('button', { name: 'Add one child' }).click();
+    await expect(travellers.getByRole('group', { name: 'Children' })).toContainText('1');
+    await expectNoAccessibilityViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: /^Travellers/ })).toContainText('2 Travellers');
   });
 
   test('selects an offer, which the Api stores, and replays it idempotently', async ({ page }) => {
@@ -112,29 +174,94 @@ test.describe('customer flight search', () => {
     await routeApiToBackend(page);
     await page.goto('/');
 
-    await fillSearch(page, { returnInDays: 37, cabin: 'Business' });
+    await fillSearch(page, { roundTrip: true, cabin: 'Business' });
+    await expect(page.getByRole('button', { name: /^Travellers/ })).toContainText('Business');
     await page.getByRole('button', { name: 'Search flights' }).click();
 
     await expect(results(page)).toHaveCount(3);
     await expect(results(page).first().getByRole('heading', { name: 'Outbound' })).toBeVisible();
     await expect(results(page).first().getByRole('heading', { name: 'Return' })).toBeVisible();
     await expect(results(page).first()).toContainText('JFK');
+    await expect(page.locator('.search-summary')).toContainText('Business');
   });
 
-  test('works at phone width without horizontal scrolling', async ({ page }) => {
-    await page.setViewportSize({ width: 360, height: 780 });
+  test('sorts and filters the returned flights', async ({ page }) => {
     await routeApiToBackend(page);
     await page.goto('/');
-
-    await fillSearch(page, { returnInDays: 37 });
+    await fillSearch(page);
     await page.getByRole('button', { name: 'Search flights' }).click();
     await expect(results(page)).toHaveCount(3);
 
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
+    await page.getByLabel('Earliest departure').check();
+    const firstTime = await results(page).first().locator('.time').first().textContent();
+    const lastTime = await results(page).last().locator('.time').first().textContent();
+    expect(firstTime!.trim() <= lastTime!.trim()).toBe(true);
+
+    const sidebar = page.getByRole('complementary', { name: 'Filter flights' });
+    await sidebar.getByLabel(/^Morning/).check();
+    await expect(results(page)).toHaveCount(1);
+    await expect(page.getByRole('list', { name: 'Active filters' })).toContainText('Morning');
     await expectNoAccessibilityViolations(page);
+
+    await page.getByRole('button', { name: 'Remove filter: Morning' }).click();
+    await expect(results(page)).toHaveCount(3);
+  });
+
+  for (const width of [360, 390]) {
+    test(`works at ${width}px: no horizontal scrolling, filter sheet, selection`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await routeApiToBackend(page);
+      await page.route('**/api/v1/flights/selected-offers', (route) =>
+        route.fulfill({ status: 500, json: { status: 500 } }),
+      );
+      await page.goto('/');
+      await expectNoHorizontalOverflow(page);
+
+      await fillSearch(page, { roundTrip: true });
+      await page.getByRole('button', { name: 'Search flights' }).click();
+      await expect(results(page)).toHaveCount(3);
+      await expectNoHorizontalOverflow(page);
+      await expectNoAccessibilityViolations(page);
+
+      await expect(page.getByRole('complementary', { name: 'Filter flights' })).toBeHidden();
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      const sheet = page.getByRole('dialog', { name: 'Filters' });
+      await sheet.getByLabel(/^Afternoon/).check();
+      await expectNoAccessibilityViolations(page);
+      await sheet.getByRole('button', { name: 'Show 1 flight' }).click();
+      await expect(results(page)).toHaveCount(1);
+      await expect(page.getByRole('button', { name: /^Filters/ })).toContainText('1');
+
+      await results(page).first().getByRole('button', { name: 'Select this flight' }).click();
+      await expect(page.getByRole('heading', { name: 'Selection not saved' })).toBeFocused();
+      await expectNoHorizontalOverflow(page);
+    });
+  }
+
+  test('tablet layout keeps the search usable and opens the menu', async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await routeApiToBackend(page);
+    await page.goto('/');
+
+    await page.getByRole('button', { name: 'Menu' }).click();
+    const menu = page.getByRole('dialog', { name: 'Menu' });
+    await expect(menu.getByRole('link', { name: 'Flights' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expectNoAccessibilityViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Menu' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+
+    await fillSearch(page);
+    await page.getByRole('button', { name: 'Search flights' }).click();
+    await expect(results(page)).toHaveCount(3);
+    await expectNoHorizontalOverflow(page);
   });
 
   test('invalid input is explained on the page without calling the API', async ({ page }) => {
@@ -148,6 +275,7 @@ test.describe('customer flight search', () => {
     await page.getByRole('button', { name: 'Search flights' }).click();
 
     await expect(page.getByLabel('From')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByLabel('From')).toBeFocused();
     await expect(page.getByText('Choose a departure date.')).toBeVisible();
     expect(apiCalls).toBe(0);
     await expectNoAccessibilityViolations(page);
@@ -165,6 +293,9 @@ test.describe('customer flight search', () => {
     await expect(page.getByRole('heading', { name: 'No flights found' })).toBeFocused();
     await expect(page.getByText('No flights match this search.')).toBeVisible();
     await expectNoAccessibilityViolations(page);
+
+    await page.getByRole('button', { name: 'Change search' }).click();
+    await expect(page.getByLabel('From')).toBeFocused();
   });
 
   test('a supplier outage is explained without technical detail', async ({ page }) => {
@@ -185,6 +316,7 @@ test.describe('customer flight search', () => {
     await page.getByRole('button', { name: 'Search flights' }).click();
 
     await expect(page.getByRole('alert')).toContainText('temporarily unavailable');
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
     await expectNoAccessibilityViolations(page);
   });
 });

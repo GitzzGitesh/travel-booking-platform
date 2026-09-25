@@ -1,9 +1,115 @@
 <a class="skip-link" href="#main-content">Skip to main content</a>
 
 <header class="site-header">
-  <a class="brand" routerLink="/">Travel booking</a>
+  <div class="page bar">
+    <a class="brand" routerLink="/" aria-label="Travel booking">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" />
+        <path d="M7 19.5 25 11l-4.5 13-4-5-5.5 3 1.5-4.5z" />
+      </svg>
+      <span class="wordmark" aria-hidden="true">Travel<span>booking</span></span>
+    </a>
+
+    <nav class="primary-nav" aria-label="Main">
+      <ul>
+        <li>
+          <a routerLink="/" routerLinkActive="active" ariaCurrentWhenActive="page">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 16l20-6-3 9-5-3-4 3 1-5z" />
+            </svg>
+            Flights
+          </a>
+        </li>
+        @for (item of comingSoon; track item) {
+          <li>
+            <span class="soon-item">{{ item }} <span class="badge">Soon</span></span>
+          </li>
+        }
+      </ul>
+    </nav>
+
+    <div class="actions">
+      <button
+        type="button"
+        class="btn btn-sm sign-in"
+        aria-disabled="true"
+        aria-describedby="sign-in-note"
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+        </svg>
+        Sign in
+      </button>
+      <span id="sign-in-note" class="visually-hidden">Sign-in is coming soon.</span>
+
+      <button
+        #menuButton
+        type="button"
+        class="menu-button"
+        aria-haspopup="dialog"
+        aria-controls="site-menu"
+        [attr.aria-expanded]="menuOpen()"
+        (click)="openMenu()"
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+        <span class="visually-hidden">Menu</span>
+      </button>
+    </div>
+  </div>
 </header>
+
+<dialog
+  #menu
+  id="site-menu"
+  class="modal-sheet menu"
+  aria-labelledby="site-menu-heading"
+  (click)="closeOnBackdropClick($event)"
+  (close)="menuOpen.set(false)"
+>
+  <div class="sheet-head">
+    <h2 id="site-menu-heading">Menu</h2>
+    <button type="button" class="icon-btn" (click)="menu.close()">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 6l12 12M18 6 6 18" />
+      </svg>
+      <span class="visually-hidden">Close menu</span>
+    </button>
+  </div>
+  <nav class="sheet-body" aria-label="Main (menu)">
+    <ul class="menu-list">
+      <li>
+        <a
+          routerLink="/"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          (click)="menu.close()"
+          >Flights</a
+        >
+      </li>
+      @for (item of comingSoon; track item) {
+        <li>
+          <span class="soon-item">{{ item }} <span class="badge">Soon</span></span>
+        </li>
+      }
+      <li>
+        <span class="soon-item">Sign in <span class="badge">Soon</span></span>
+      </li>
+    </ul>
+  </nav>
+</dialog>
 
 <main id="main-content" tabindex="-1">
   <router-outlet />
 </main>
+
+<footer class="site-footer">
+  <div class="page">
+    <p>
+      Prices are shown in the currency the fare is offered in. Flight times are local to each
+      airport.
+    </p>
+  </div>
+</footer>
