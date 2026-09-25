@@ -16,7 +16,7 @@ Phase 0 is **complete** (all exit criteria below are met). Phase 1 was approved 
 - ADR 0003 spike results: built-in validation works from module libraries when (1) each module calls `AddValidation()` itself and (2) validated request types are public; `[ValidatableType]` is experimental (ASP0029) and is not used. ArchUnitNET runs on xUnit v3 via `TngTech.ArchUnitNET.xUnitV3`. Recorded in `.claude/rules/backend-dotnet.md`.
 
 ### Phase 1: next
-1. CI workflow (build, format, tests, frontend build/test, secret scan, CodeQL), then make its checks required on `main` (ADR 0012).
+1. CI workflow: **done** (`ci.yml`: Backend, Frontend, Secret scan; `codeql.yml`: C# and JavaScript/TypeScript, plus weekly). Next: make its checks required on `main` once they have passed on GitHub (ADR 0012).
 2. OpenAPI document (`Microsoft.AspNetCore.OpenApi`, Scalar in non-production) and the generated TypeScript client lib.
 3. `admin-web` SPA shell (ADR 0009).
 4. Aspire AppHost and Docker/Podman for integration-test infrastructure (ADR 0003), when the first database-backed story needs them.

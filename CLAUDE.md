@@ -24,7 +24,9 @@ Frontend (run in `src/frontend`):
 - Unit tests (Vitest): `npx ng test customer-web --watch=false`
 - Dev server: `npx ng serve customer-web`
 
-Not yet available: Aspire AppHost run, Playwright E2E, OpenAPI client generation, and CI. They are added in later Phase 1 stories.
+CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps plus a gitleaks history scan and CodeQL on every PR and push to `main`.
+
+Not yet available: Aspire AppHost run, Playwright E2E, and OpenAPI client generation. They are added in later Phase 1 stories.
 
 Also:
 - Test the secret-guard hook: `echo '{"tool_name":"Write","tool_input":{"file_path":"x.txt","content":"hello"}}' | node .claude/hooks/guard-secrets.mjs` (exit 0 = allowed, 2 = blocked)
