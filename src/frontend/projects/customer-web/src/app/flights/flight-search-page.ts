@@ -31,6 +31,9 @@ import {
 } from '@travel-booking/api-client';
 import { formatMoney } from './flight-format';
 import { FlightResults } from './flight-results';
+import { dayMonth, shortLabel } from './search/calendar';
+import { DateRangePicker } from './search/date-range-picker';
+import { TravellerPicker, type Travellers } from './search/traveller-picker';
 
 /** Mirrors the API's limits (PassengerMix, FlightSearchRequest). The server remains the authority. */
 const maxSeatedPassengers = 9;
@@ -44,8 +47,24 @@ type SearchState =
       readonly searchId: string;
       readonly offers: readonly FlightOfferResponse[];
       readonly roundTrip: boolean;
+      readonly query: SearchQuery;
     }
-  | { readonly kind: 'error'; readonly message: string; readonly details: readonly string[] };
+  | {
+      readonly kind: 'error';
+      readonly title: string;
+      readonly message: string;
+      readonly details: readonly string[];
+      /** A temporary problem: the same search may work if tried again. */
+      readonly retryable: boolean;
+    };
+
+export type TripType = 'oneWay' | 'roundTrip';
+
+/** The search as sent: the request with every field present. */
+type SearchQuery = Required<FlightSearchRequest> & {
+  readonly departureDate: string;
+  readonly returnDate: string | null;
+};
 
 /** The customer's selection, saved server-side (POST /flights/selected-offers). */
 type SelectionState =
@@ -68,6 +87,9 @@ function crossFieldRules(group: AbstractControl): ValidationErrors | null {
   if (v.origin && v.destination && v.origin.toUpperCase() === v.destination.toUpperCase()) {
     errors['sameAirport'] = true;
   }
+  if (v.tripType === 'roundTrip' && !v.returnDate) {
+    errors['returnRequired'] = true;
+  }
   if (v.returnDate && v.departureDate && v.returnDate < v.departureDate) {
     errors['returnBeforeDeparture'] = true;
   }
@@ -83,7 +105,7 @@ function crossFieldRules(group: AbstractControl): ValidationErrors | null {
 @Component({
   selector: 'app-flight-search-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, FlightResults],
+  imports: [ReactiveFormsModule, FlightResults, DateRangePicker, TravellerPicker],
   templateUrl: './flight-search-page.html',
   styleUrl: './flight-search-page.css',
 })
@@ -91,6 +113,8 @@ export class FlightSearchPage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
   private readonly resultsHeading = viewChild<ElementRef<HTMLElement>>('resultsHeading');
+  private readonly searchForm = viewChild.required<ElementRef<HTMLFormElement>>('searchForm');
+  private readonly originInput = viewChild.required<ElementRef<HTMLInputElement>>('originInput');
 
   protected readonly cabins = cabins;
   protected readonly maxSeatedPassengers = maxSeatedPassengers;
@@ -98,6 +122,7 @@ export class FlightSearchPage {
 
   protected readonly form = new FormGroup(
     {
+      tripType: new FormControl<TripType>('oneWay', { nonNullable: true }),
       origin: new FormControl('', {
         nonNullable: true,
         validators: [Validators.required, Validators.pattern(airportCode)],
@@ -174,16 +199,20 @@ export class FlightSearchPage {
   protected async search(): Promise<void> {
     this.submitted.set(true);
     this.form.markAllAsTouched();
-    if (this.form.invalid || this.state().kind === 'loading') {
+    if (this.form.invalid) {
+      this.focusFirstInvalid();
+      return;
+    }
+    if (this.state().kind === 'loading') {
       return;
     }
 
     const v = this.form.getRawValue();
-    const body: FlightSearchRequest = {
+    const body: SearchQuery = {
       origin: v.origin.toUpperCase(),
       destination: v.destination.toUpperCase(),
       departureDate: v.departureDate,
-      returnDate: v.returnDate || null,
+      returnDate: v.tripType === 'roundTrip' ? v.returnDate || null : null,
       adults: v.adults,
       children: v.children,
       infants: v.infants,
@@ -199,6 +228,7 @@ export class FlightSearchPage {
         searchId: response.searchId,
         offers: response.offers,
         roundTrip: !!body.returnDate,
+        query: body,
       });
     } catch (error) {
       this.state.set(toErrorState(error));
@@ -236,9 +266,72 @@ export class FlightSearchPage {
     });
   }
 
+  protected setTripType(tripType: TripType): void {
+    this.form.controls.tripType.setValue(tripType);
+    if (tripType === 'oneWay') {
+      this.form.controls.returnDate.setValue('');
+    }
+  }
+
+  protected swapAirports(): void {
+    const { origin, destination } = this.form.getRawValue();
+    this.form.patchValue({ origin: destination, destination: origin });
+  }
+
+  protected travellers(): Travellers {
+    const { adults, children, infants, cabin } = this.form.getRawValue();
+    return { adults, children, infants, cabin };
+  }
+
+  protected setTravellers(value: Travellers): void {
+    this.form.patchValue(value);
+    this.form.controls.adults.markAsTouched();
+  }
+
+  protected setDeparture(date: string): void {
+    this.form.controls.departureDate.setValue(date);
+    this.form.controls.departureDate.markAsTouched();
+  }
+
+  protected setReturn(date: string): void {
+    this.form.controls.returnDate.setValue(date);
+  }
+
+  protected travellersInvalid(): boolean {
+    return (
+      this.showGroupError('tooManyInfants') ||
+      this.showGroupError('tooManySeated') ||
+      this.showError('adults') ||
+      this.showError('children') ||
+      this.showError('infants')
+    );
+  }
+
+  /** "LHR → JFK · Sun, 14 Feb – Sun, 21 Feb · 2 travellers · Economy", from the search that was sent. */
+  protected summary(query: SearchQuery): string {
+    const travellers = query.adults + query.children + query.infants;
+    const dates = query.returnDate
+      ? `${dayMonth(query.departureDate)} – ${dayMonth(query.returnDate)}`
+      : shortLabel(query.departureDate);
+    const cabin = this.cabins.find((c) => c.value === query.cabin)?.label ?? query.cabin;
+    return [
+      `${query.origin} → ${query.destination}`,
+      dates,
+      `${travellers} ${travellers === 1 ? 'traveller' : 'travellers'}`,
+      cabin,
+    ].join(' · ');
+  }
+
+  protected modifySearch(): void {
+    const origin = this.originInput().nativeElement;
+    origin.scrollIntoView({ block: 'center' });
+    origin.focus({ preventScroll: true });
+  }
+
   protected route(selection: SelectedFlightOfferResponse): string {
     const segments = selection.slices[0].segments;
-    return `${segments[0].origin} to ${segments[segments.length - 1].destination}`;
+    const route = `${segments[0].origin} to ${segments[segments.length - 1].destination}`;
+    return selection.slices.length > 1 ? `${route}, round trip` : route;
   }
 
   /** The instant the held offer expires, in the customer's own time zone, labelled with that zone. */
@@ -250,6 +343,17 @@ export class FlightSearchPage {
       minute: '2-digit',
       timeZoneName: 'short',
     }).format(new Date(selection.offerExpiresAt));
+  }
+
+  // Take keyboard and screen-reader users to the first field that needs attention.
+  private focusFirstInvalid(): void {
+    afterNextRender(
+      () => {
+        const tile = this.searchForm().nativeElement.querySelector<HTMLElement>('.tile.invalid');
+        (tile?.matches('button') ? tile : tile?.querySelector('input'))?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   // Move focus to the outcome so keyboard and screen-reader users land on it (WCAG 2.2 AA focus management).
@@ -277,25 +381,37 @@ function toErrorState(error: unknown): SearchState {
         const problem = error.error as HttpValidationProblemDetails | null;
         return {
           kind: 'error',
-          message: 'Please check your search details.',
+          title: 'Please check your search',
+          message: 'Some search details could not be used.',
           details: Object.values(problem?.errors ?? {}).flat(),
+          retryable: false,
         };
       }
       case 422:
         return {
           kind: 'error',
+          title: 'We couldn’t run this search',
           message: 'This search could not be processed. Please change your search and try again.',
           details: [],
+          retryable: false,
         };
       case 503:
         return {
           kind: 'error',
+          title: 'Flight search is busy right now',
           message: 'Flight search is temporarily unavailable. Please try again in a moment.',
           details: [],
+          retryable: true,
         };
     }
   }
-  return { kind: 'error', message: 'Something went wrong. Please try again.', details: [] };
+  return {
+    kind: 'error',
+    title: 'Something went wrong',
+    message: 'Something went wrong. Please try again.',
+    details: [],
+    retryable: true,
+  };
 }
 
 /** Today's date in the user's own time zone, as yyyy-mm-dd for date inputs. */

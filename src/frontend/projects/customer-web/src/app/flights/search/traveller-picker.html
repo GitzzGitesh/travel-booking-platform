@@ -1,0 +1,99 @@
+<button
+  #tile
+  type="button"
+  id="travellers"
+  class="tile"
+  aria-haspopup="dialog"
+  [class.invalid]="invalid()"
+  [attr.aria-describedby]="errorId()"
+  (click)="open()"
+>
+  <span class="field-label">Travellers &amp; cabin</span>
+  <span class="value">{{ total() }} {{ total() === 1 ? 'Traveller' : 'Travellers' }}</span>
+  <span class="sub">{{ cabinLabel() }}</span>
+</button>
+
+<dialog
+  #dialog
+  class="modal-sheet travellers"
+  aria-labelledby="travellers-heading"
+  (click)="closeOnBackdropClick($event)"
+  (close)="onClosed()"
+>
+  <div class="sheet-head">
+    <h2 id="travellers-heading">Travellers &amp; cabin</h2>
+    <button type="button" class="icon-btn" (click)="close()">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 6l12 12M18 6 6 18" />
+      </svg>
+      <span class="visually-hidden">Close travellers</span>
+    </button>
+  </div>
+
+  <div class="sheet-body">
+    <div class="rows">
+      @for (row of rows; track row.key) {
+        <div class="row" role="group" [attr.aria-labelledby]="row.key + '-label'">
+          <div>
+            <p class="row-label" [id]="row.key + '-label'">{{ row.label }}</p>
+            <p class="row-hint">{{ row.hint }}</p>
+          </div>
+          <div class="stepper">
+            <button
+              type="button"
+              class="icon-btn"
+              [disabled]="!canDecrease(row.key)"
+              (click)="step(row.key, -1)"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+              <span class="visually-hidden">Remove one {{ row.noun }}</span>
+            </button>
+            <span class="count tabular" [id]="row.key" aria-live="polite">{{
+              value()[row.key]
+            }}</span>
+            <button
+              type="button"
+              class="icon-btn"
+              [disabled]="!canIncrease(row.key)"
+              (click)="step(row.key, 1)"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span class="visually-hidden">Add one {{ row.noun }}</span>
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+    <p class="rule">
+      Up to {{ maxSeated() }} adults and children per booking. Each infant travels on an adult’s
+      lap.
+    </p>
+
+    <fieldset class="cabins">
+      <legend class="field-label">Cabin class</legend>
+      <div class="segmented">
+        @for (cabin of cabins(); track cabin.value) {
+          <label>
+            <input
+              type="radio"
+              name="cabin"
+              [value]="cabin.value"
+              [checked]="value().cabin === cabin.value"
+              (change)="setCabin(cabin.value)"
+            />
+            {{ cabin.label }}
+          </label>
+        }
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="sheet-foot">
+    <p class="summary">
+      {{ total() }} {{ total() === 1 ? 'traveller' : 'travellers' }} · {{ cabinLabel() }}
+    </p>
+    <button type="button" class="btn btn-dark" (click)="close()">Done</button>
+  </div>
+</dialog>

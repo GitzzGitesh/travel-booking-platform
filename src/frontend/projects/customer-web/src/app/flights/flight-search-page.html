@@ -1,228 +1,387 @@
-<section class="search" aria-labelledby="search-heading">
-  <h1 id="search-heading">Search flights</h1>
-
-  <form [formGroup]="form" (ngSubmit)="search()" novalidate>
-    <div class="fields">
-      <div class="field">
-        <label for="origin">From <span class="hint">(airport code, e.g. LHR)</span></label>
-        <input
-          id="origin"
-          formControlName="origin"
-          autocomplete="off"
-          autocapitalize="characters"
-          maxlength="3"
-          [attr.aria-invalid]="showError('origin')"
-          [attr.aria-describedby]="showError('origin') ? 'origin-error' : null"
-        />
-        @if (showError('origin')) {
-          <p class="error" id="origin-error">Enter a three-letter airport code.</p>
-        }
-      </div>
-
-      <div class="field">
-        <label for="destination">To <span class="hint">(airport code, e.g. JFK)</span></label>
-        <input
-          id="destination"
-          formControlName="destination"
-          autocomplete="off"
-          autocapitalize="characters"
-          maxlength="3"
-          [attr.aria-invalid]="showError('destination') || showGroupError('sameAirport')"
-          [attr.aria-describedby]="
-            showError('destination') || showGroupError('sameAirport') ? 'destination-error' : null
-          "
-        />
-        @if (showError('destination')) {
-          <p class="error" id="destination-error">Enter a three-letter airport code.</p>
-        } @else if (showGroupError('sameAirport')) {
-          <p class="error" id="destination-error">
-            Choose a destination different from the origin.
-          </p>
-        }
-      </div>
-
-      <div class="field">
-        <label for="departureDate">Departure date</label>
-        <input
-          id="departureDate"
-          type="date"
-          formControlName="departureDate"
-          [min]="today"
-          [attr.aria-invalid]="showError('departureDate')"
-          [attr.aria-describedby]="showError('departureDate') ? 'departureDate-error' : null"
-        />
-        @if (showError('departureDate')) {
-          <p class="error" id="departureDate-error">Choose a departure date.</p>
-        }
-      </div>
-
-      <div class="field">
-        <label for="returnDate">Return date <span class="hint">(optional)</span></label>
-        <input
-          id="returnDate"
-          type="date"
-          formControlName="returnDate"
-          [min]="form.controls.departureDate.value || today"
-          [attr.aria-invalid]="showGroupError('returnBeforeDeparture')"
-          [attr.aria-describedby]="
-            showGroupError('returnBeforeDeparture') ? 'returnDate-error' : null
-          "
-        />
-        @if (showGroupError('returnBeforeDeparture')) {
-          <p class="error" id="returnDate-error">
-            The return date cannot be before the departure date.
-          </p>
-        }
-      </div>
-
-      <div class="field">
-        <label for="cabin">Cabin</label>
-        <select id="cabin" formControlName="cabin">
-          @for (cabin of cabins; track cabin.value) {
-            <option [value]="cabin.value">{{ cabin.label }}</option>
-          }
-        </select>
-      </div>
+<section class="hero" aria-labelledby="search-heading">
+  <div class="page">
+    <div class="hero-copy">
+      <h1 id="search-heading">Search flights</h1>
+      <p class="lede">
+        Compare fares, choose your flight, and keep your selection while the fare is available.
+      </p>
     </div>
 
-    <fieldset class="passengers">
-      <legend>Passengers</legend>
-      <div class="field">
-        <label for="adults">Adults <span class="hint">(12+)</span></label>
-        <input
-          id="adults"
-          type="number"
-          inputmode="numeric"
-          formControlName="adults"
-          min="1"
-          [max]="maxSeatedPassengers"
-        />
-      </div>
-      <div class="field">
-        <label for="children">Children <span class="hint">(2–11)</span></label>
-        <input
-          id="children"
-          type="number"
-          inputmode="numeric"
-          formControlName="children"
-          min="0"
-          [max]="maxSeatedPassengers - 1"
-        />
-      </div>
-      <div class="field">
-        <label for="infants">Infants <span class="hint">(under 2, on lap)</span></label>
-        <input
-          id="infants"
-          type="number"
-          inputmode="numeric"
-          formControlName="infants"
-          min="0"
-          [max]="maxSeatedPassengers"
-          [attr.aria-invalid]="showGroupError('tooManyInfants')"
-          [attr.aria-describedby]="showGroupError('tooManyInfants') ? 'infants-error' : null"
-        />
-      </div>
-      @if (showGroupError('tooManyInfants')) {
-        <p class="error" id="infants-error">Each infant must travel with an adult.</p>
-      }
-      @if (showGroupError('tooManySeated') || showError('adults') || showError('children')) {
-        <p class="error">
-          Search for 1 to {{ maxSeatedPassengers }} adults and children, with at least one adult.
-        </p>
-      }
-    </fieldset>
+    <form #searchForm class="search card" [formGroup]="form" (ngSubmit)="search()" novalidate>
+      <fieldset class="trip-type">
+        <legend class="visually-hidden">Trip type</legend>
+        <div class="segmented">
+          <label>
+            <input
+              type="radio"
+              name="tripType"
+              value="oneWay"
+              [checked]="form.controls.tripType.value === 'oneWay'"
+              (change)="setTripType('oneWay')"
+            />
+            One way
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="tripType"
+              value="roundTrip"
+              [checked]="form.controls.tripType.value === 'roundTrip'"
+              (change)="setTripType('roundTrip')"
+            />
+            Round trip
+          </label>
+          <label>
+            <input type="radio" name="tripType" value="multiCity" disabled />
+            Multi-city <span class="badge">Soon</span>
+          </label>
+        </div>
+      </fieldset>
 
-    <button type="submit" class="primary" [disabled]="state().kind === 'loading'">
-      {{ state().kind === 'loading' ? 'Searching…' : 'Search flights' }}
-    </button>
-  </form>
+      <div class="fields">
+        <div class="cell airports">
+          <div class="pair">
+            <div class="tile airport" [class.invalid]="showError('origin')">
+              <label class="field-label" for="origin">From</label>
+              <input
+                #originInput
+                id="origin"
+                class="code-input"
+                formControlName="origin"
+                placeholder="Add airport"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+                maxlength="3"
+                [attr.aria-invalid]="showError('origin')"
+                [attr.aria-describedby]="
+                  showError('origin') ? 'origin-hint origin-error' : 'origin-hint'
+                "
+              />
+              <span class="sub" id="origin-hint">3-letter airport code, e.g. LHR</span>
+            </div>
+
+            <button type="button" class="icon-btn swap" (click)="swapAirports()">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" />
+              </svg>
+              <span class="visually-hidden">Swap From and To</span>
+            </button>
+
+            <div
+              class="tile airport"
+              [class.invalid]="showError('destination') || showGroupError('sameAirport')"
+            >
+              <label class="field-label" for="destination">To</label>
+              <input
+                id="destination"
+                class="code-input"
+                formControlName="destination"
+                placeholder="Add airport"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+                maxlength="3"
+                [attr.aria-invalid]="showError('destination') || showGroupError('sameAirport')"
+                [attr.aria-describedby]="
+                  showError('destination') || showGroupError('sameAirport')
+                    ? 'destination-hint destination-error'
+                    : 'destination-hint'
+                "
+              />
+              <span class="sub" id="destination-hint">3-letter airport code, e.g. JFK</span>
+            </div>
+          </div>
+
+          <div class="errors">
+            @if (showError('origin')) {
+              <p class="field-error" id="origin-error">From: enter a three-letter airport code.</p>
+            }
+            @if (showError('destination')) {
+              <p class="field-error" id="destination-error">
+                To: enter a three-letter airport code.
+              </p>
+            } @else if (showGroupError('sameAirport')) {
+              <p class="field-error" id="destination-error">
+                Choose a destination different from the origin.
+              </p>
+            }
+          </div>
+        </div>
+
+        <div class="cell dates">
+          <app-date-range-picker
+            [departure]="form.controls.departureDate.value"
+            [returnDate]="form.controls.returnDate.value"
+            [roundTrip]="form.controls.tripType.value === 'roundTrip'"
+            [min]="today"
+            [departureErrorId]="showError('departureDate') ? 'departureDate-error' : null"
+            [returnErrorId]="
+              showGroupError('returnRequired') || showGroupError('returnBeforeDeparture')
+                ? 'returnDate-error'
+                : null
+            "
+            (departureChange)="setDeparture($event)"
+            (returnChange)="setReturn($event)"
+            (addReturn)="setTripType('roundTrip')"
+          />
+          <div class="errors">
+            @if (showError('departureDate')) {
+              <p class="field-error" id="departureDate-error">Choose a departure date.</p>
+            }
+            @if (showGroupError('returnRequired')) {
+              <p class="field-error" id="returnDate-error">
+                Choose a return date, or switch to one way.
+              </p>
+            } @else if (showGroupError('returnBeforeDeparture')) {
+              <p class="field-error" id="returnDate-error">
+                The return date cannot be before the departure date.
+              </p>
+            }
+          </div>
+        </div>
+
+        <div class="cell">
+          <app-traveller-picker
+            [value]="travellers()"
+            [cabins]="cabins"
+            [maxSeated]="maxSeatedPassengers"
+            [invalid]="travellersInvalid()"
+            [errorId]="travellersInvalid() ? 'travellers-error' : null"
+            (valueChange)="setTravellers($event)"
+          />
+          <div class="errors" id="travellers-error">
+            @if (showGroupError('tooManyInfants')) {
+              <p class="field-error">Each infant must travel with an adult.</p>
+            }
+            @if (showGroupError('tooManySeated') || showError('adults') || showError('children')) {
+              <p class="field-error">
+                Search for 1 to {{ maxSeatedPassengers }} adults and children, with at least one
+                adult.
+              </p>
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <button
+          type="submit"
+          class="btn btn-primary btn-lg"
+          [disabled]="state().kind === 'loading'"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          {{ state().kind === 'loading' ? 'Searching…' : 'Search flights' }}
+        </button>
+      </div>
+    </form>
+  </div>
 </section>
 
 <p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
 
 @let current = state();
-@if (current.kind !== 'idle') {
-  <section
-    class="outcome"
-    aria-labelledby="results-heading"
-    [attr.aria-busy]="current.kind === 'loading'"
-  >
-    <h2 id="results-heading" tabindex="-1" #resultsHeading>
-      @switch (current.kind) {
-        @case ('loading') {
-          Searching…
-        }
-        @case ('results') {
-          {{ current.offers.length === 0 ? 'No flights found' : 'Available flights' }}
-        }
-        @case ('error') {
-          Search problem
-        }
-      }
-    </h2>
-
-    @switch (current.kind) {
-      @case ('results') {
-        @if (current.offers.length === 0) {
-          <p>No flights match this search. Try different dates or airports.</p>
-        } @else {
-          <app-flight-results
-            [offers]="current.offers"
-            [roundTrip]="current.roundTrip"
-            [selectedOfferId]="selectedOfferId()"
-            [savingOfferId]="savingOfferId()"
-            (select)="selectOffer($event)"
-          />
-
-          @let chosen = selection();
-          @if (chosen.kind !== 'none' && chosen.kind !== 'saving') {
-            <section class="selection" aria-labelledby="selection-heading">
-              @switch (chosen.kind) {
-                @case ('saved') {
-                  <h2 id="selection-heading" tabindex="-1" #selectionHeading>Your selection</h2>
-                  <p>
-                    {{ route(chosen.selection) }}, {{ formatMoney(chosen.selection.totalPrice) }} in
-                    total.
-                  </p>
-                  <p class="note">
-                    Held until {{ heldUntil(chosen.selection) }}. The price is confirmed again with
-                    the airline before you pay.
-                  </p>
-                }
-                @case ('expired') {
-                  <div role="alert">
-                    <h2 id="selection-heading" tabindex="-1" #selectionHeading>
-                      Offer no longer available
-                    </h2>
-                    <p>This offer has expired. Please search again for current prices.</p>
-                    <button type="button" class="primary" (click)="search()">Search again</button>
-                  </div>
-                }
-                @case ('error') {
-                  <div role="alert">
-                    <h2 id="selection-heading" tabindex="-1" #selectionHeading>
-                      Selection not saved
-                    </h2>
-                    <p>We couldn't save your selection. Please try again.</p>
-                  </div>
-                }
+<div class="page content">
+  @if (current.kind === 'idle') {
+    <section class="highlights" aria-labelledby="highlights-heading">
+      <h2 id="highlights-heading">Book with confidence</h2>
+      <ul>
+        <li class="card">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+          <h3>Fares checked before you pay</h3>
+          <p>We confirm the price with the airline again before any payment is taken.</p>
+        </li>
+        <li class="card">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <h3>Local times, always</h3>
+          <p>Departure and arrival times are shown in each airport’s local time.</p>
+        </li>
+        <li class="card">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 3h12v18l-6-4-6 4z" />
+          </svg>
+          <h3>Your pick is saved</h3>
+          <p>Choose a flight and we keep your selection until the fare’s offer ends.</p>
+        </li>
+      </ul>
+    </section>
+  } @else {
+    <section
+      class="outcome"
+      aria-labelledby="results-heading"
+      [attr.aria-busy]="current.kind === 'loading'"
+    >
+      <div class="results-head">
+        <div>
+          <h2 id="results-heading" tabindex="-1" #resultsHeading>
+            @switch (current.kind) {
+              @case ('loading') {
+                Searching…
               }
-            </section>
-          }
-        }
-      }
-      @case ('error') {
-        <div class="alert" role="alert">
-          <p>{{ current.message }}</p>
-          @if (current.details.length) {
-            <ul>
-              @for (detail of current.details; track $index) {
-                <li>{{ detail }}</li>
+              @case ('results') {
+                {{ current.offers.length === 0 ? 'No flights found' : 'Available flights' }}
               }
-            </ul>
+              @case ('error') {
+                {{ current.title }}
+              }
+            }
+          </h2>
+          @if (current.kind === 'results') {
+            <p class="search-summary">{{ summary(current.query) }}</p>
           }
         </div>
+        @if (current.kind !== 'loading') {
+          <button type="button" class="btn btn-outline btn-sm" (click)="modifySearch()">
+            Modify search
+          </button>
+        }
+      </div>
+
+      @switch (current.kind) {
+        @case ('loading') {
+          <div class="skeletons" aria-hidden="true">
+            <div class="card sk-side">
+              <span class="skeleton w-50"></span>
+              <span class="skeleton w-80"></span>
+              <span class="skeleton w-70"></span>
+              <span class="skeleton w-80"></span>
+            </div>
+            <div class="sk-list">
+              @for (i of [1, 2, 3]; track i) {
+                <div class="card sk-card">
+                  <span class="skeleton w-30"></span>
+                  <span class="skeleton sk-line"></span>
+                  <span class="skeleton sk-price"></span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+        @case ('results') {
+          @if (current.offers.length === 0) {
+            <div class="card empty">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 16l20-6-3 9-5-3-4 3 1-5z" />
+                <path d="M3 3l18 18" />
+              </svg>
+              <p>No flights match this search. Try different dates or airports.</p>
+              <button type="button" class="btn btn-dark" (click)="modifySearch()">
+                Change search
+              </button>
+            </div>
+          } @else {
+            <app-flight-results
+              [offers]="current.offers"
+              [roundTrip]="current.roundTrip"
+              [selectedOfferId]="selectedOfferId()"
+              [savingOfferId]="savingOfferId()"
+              (select)="selectOffer($event)"
+            >
+              @let chosen = selection();
+              @if (chosen.kind !== 'none' && chosen.kind !== 'saving') {
+                <section
+                  class="selection"
+                  [class.saved]="chosen.kind === 'saved'"
+                  aria-labelledby="selection-heading"
+                >
+                  @switch (chosen.kind) {
+                    @case ('saved') {
+                      <div class="sel-main">
+                        <h3 id="selection-heading" tabindex="-1" #selectionHeading>
+                          Your selection
+                        </h3>
+                        <p class="sel-route">{{ route(chosen.selection) }}</p>
+                      </div>
+                      <p class="sel-price">
+                        <span class="amount tabular">{{
+                          formatMoney(chosen.selection.totalPrice)
+                        }}</span>
+                        <span>Total for all travellers</span>
+                      </p>
+                      <p class="note">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z" />
+                        </svg>
+                        <span
+                          >Held until {{ heldUntil(chosen.selection) }}. The price is confirmed
+                          again with the airline before you pay.</span
+                        >
+                      </p>
+                    }
+                    @case ('expired') {
+                      <div class="alert alert-warning" role="alert">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M12 7v5l3 2" />
+                        </svg>
+                        <div>
+                          <h3 id="selection-heading" tabindex="-1" #selectionHeading>
+                            Offer no longer available
+                          </h3>
+                          <p>This offer has expired. Please search again for current prices.</p>
+                          <button
+                            type="button"
+                            class="btn btn-dark btn-sm action"
+                            (click)="search()"
+                          >
+                            Search again
+                          </button>
+                        </div>
+                      </div>
+                    }
+                    @case ('error') {
+                      <div class="alert alert-error" role="alert">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M12 8v5M12 16h.01" />
+                        </svg>
+                        <div>
+                          <h3 id="selection-heading" tabindex="-1" #selectionHeading>
+                            Selection not saved
+                          </h3>
+                          <p>We couldn't save your selection. Please try again.</p>
+                        </div>
+                      </div>
+                    }
+                  }
+                </section>
+              }
+            </app-flight-results>
+          }
+        }
+        @case ('error') {
+          <div class="alert alert-error" role="alert">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v5M12 16h.01" />
+            </svg>
+            <div>
+              <p>{{ current.message }}</p>
+              @if (current.details.length) {
+                <ul>
+                  @for (detail of current.details; track $index) {
+                    <li>{{ detail }}</li>
+                  }
+                </ul>
+              }
+              @if (current.retryable) {
+                <button type="button" class="btn btn-dark btn-sm action" (click)="search()">
+                  Try again
+                </button>
+              }
+            </div>
+          </div>
+        }
       }
-    }
-  </section>
-}
+    </section>
+  }
+</div>

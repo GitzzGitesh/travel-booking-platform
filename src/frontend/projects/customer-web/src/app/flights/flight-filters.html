@@ -1,0 +1,31 @@
+<div class="head">
+  @if (showHeading()) {
+    <h3 [id]="idPrefix() + '-heading'">Filters</h3>
+  }
+  <button type="button" class="btn btn-ghost btn-sm" [disabled]="active() === 0" (click)="clear()">
+    Clear all
+  </button>
+</div>
+
+@for (group of groups(); track group.key) {
+  <fieldset>
+    <legend>{{ group.legend }}</legend>
+    @if (group.note) {
+      <p class="note">{{ group.note }}</p>
+    }
+    @for (option of group.facets; track option.value) {
+      <label class="checkbox">
+        <input
+          type="checkbox"
+          [checked]="isChecked(group.key, option.value)"
+          (change)="toggle(group.key, option.value, $any($event.target).checked)"
+        />
+        <span class="option-label">{{ option.label }}</span>
+        <span class="badge tabular">
+          {{ option.count
+          }}<span class="visually-hidden"> {{ option.count === 1 ? 'flight' : 'flights' }}</span>
+        </span>
+      </label>
+    }
+  </fieldset>
+}

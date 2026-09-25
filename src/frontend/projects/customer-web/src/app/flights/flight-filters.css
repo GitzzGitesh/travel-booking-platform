@@ -1,0 +1,49 @@
+:host {
+  display: block;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--tap);
+  gap: var(--space-2);
+  margin-block-end: var(--space-2);
+}
+
+.head .btn {
+  margin-inline-start: auto;
+}
+
+h3 {
+  font-size: var(--text-lg);
+}
+
+fieldset {
+  margin: 0;
+  padding: var(--space-3) 0;
+  border: 0;
+  border-block-start: 1px solid var(--color-line);
+}
+
+legend {
+  float: inline-start;
+  width: 100%;
+  padding: 0;
+  font-weight: 700;
+}
+
+.note {
+  clear: both;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.checkbox {
+  clear: both;
+}
+
+.option-label {
+  flex: 1;
+  font-size: var(--text-sm);
+}
