@@ -16,7 +16,12 @@ Phase 1 is **complete**. Q3 was answered on 2026-09-25: **flights first**. The d
 | 5 | **Revalidation** (`RevalidateAsync`): F-01 price changed, F-02 offer expired, F-03 sold out | After 4 |
 
 **Follow-ups from the chunk 2 reviews:**
-- **Decide before chunk 4:** how a selected offer is identified. Either persist every offer at search time (a database write per search), or hold offers server-side in HybridCache (ADR 0011) behind a `searchId` and persist only on selection. The choice decides whether `POST /flights/searches` also returns a `searchId`.
+- **Decided 2026-09-25: offers are held server-side in HybridCache (ADR 0011) behind a `searchId`, and only the selected offer is persisted.** Implications:
+  - `POST /flights/searches` will return a `searchId` and a per-offer id (additive changes).
+  - The cached offer set expires no later than the offers' `expiresAt`.
+  - Selection (chunk 4) loads the offer from the cache and persists its snapshot in SQL. An expired or evicted search means re-searching (F-02).
+  - The cache is never the source of truth (ADR 0011).
+  - This builds on ADR 0011, which is still Proposed and needs acceptance before chunk 4.
 - Remove the `Modules.Sample` entry from `openapi-accepted-breaking-changes.txt` in the first PR after chunk 2 merges.
 - When search leaves Development: add `.RequireRateLimiting(...)` in `MapFlightsEndpoints` itself, with an endpoint-metadata test that every anonymous `/api/v1` endpoint is rate limited.
 - Money amounts are passed through at the adapter's scale; rounding to ISO minor units (ADR 0010) arrives with pricing, so the UI must not assume a fixed number of decimals.
