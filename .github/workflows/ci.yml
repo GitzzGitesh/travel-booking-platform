@@ -83,11 +83,23 @@ jobs:
       - name: Type-check API client
         run: npm run check:api-client
 
+      - name: Check apps do not import each other
+        run: npm run check:app-boundaries
+
       - name: Build customer-web
         run: npx ng build customer-web
 
       - name: Test customer-web
         run: npx ng test customer-web --watch=false
+
+      - name: Build admin-web
+        run: npx ng build admin-web
+
+      - name: Check admin-web is strict-CSP compatible
+        run: npm run check:admin-web-csp
+
+      - name: Test admin-web
+        run: npx ng test admin-web --watch=false
 
   api-contract:
     name: API contract
