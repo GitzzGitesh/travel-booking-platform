@@ -25,6 +25,7 @@ public static class SampleModule
         var group = endpoints.MapGroup("/sample").WithTags("Sample");
 
         group.MapPost("/validation", ValidateSampleEndpoint.Handle)
+            .ProducesValidationProblem()
             .AllowAnonymous();
 
         return endpoints;
