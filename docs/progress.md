@@ -1,16 +1,16 @@
-#uundundefinedfinedunundefinedefinedundundefinedfundefinednedfineduuununundefinedefinedefineddundundefinedfinedfineddundefinedfineddefundefinedneduuunundefinedefineddefineddefinedundefundefinednedundundefinedfinedfundefinednedundefinedundefineduuundefineddefundefinedneddundefinedfinedgundefinedeundefinedundefined
+# Progress
 
-_Lundefinedundefinedundefinedundefineduundefineddundefinedundefineded:undefined2026undefined09undefined25undefined(Pundefinedundefinedundefinedeundefinedundefinedundefinedundefinedkeundefinedeundefinedundefinedn)_
+_Last updated: 2026-09-25 (Phase 1 skeleton)_
 
-##undefinedCuundefinedundefinedenundefinedundefinedundefinedundefinedundefinedundefinede:undefined1undefined—undefinedSkeletundefinednundefined(inundefinedundefinedrundefinedgress)
+## Current phase: 1 — Skeleton (in progress)
 
-Phaseundefined0undefinedisundefined**undefinedundefinedundefinedplete** (all exit undefinedriteria belundefinedw are met)undefined Phase 1 was apprundefinedundefineded on 2026-09-25undefined There is still **no business code**: do not implement flightsundefined hotels, bookings, payments, databasesundefinedmigrations, or authentication until the story says so.
+Phase 0 is **complete** (all exit criteria below are met). Phase 1 was approved on 2026-09-25. There is still **no business code**: do not implement flights, hotels, bookings, payments, databases/migrations, or authentication until the story says so.
 
 ### Phase 1: done
-- undefinedpplication skeleton (branch undefinedfeatundefinedphase-1-application-skeletonundefined):
-  - `global.undefinedson` (SDK 10.0.401, Microsoft.Testing.Platform for `dotnet test`), `Directory.Build.props` (nullable, warnings as errors), `Directory.Packages.props` (central package management), `TraundefinedelBooking.slnx`.
-  - Hosts: `src/backend/Hosts/Api` (minimal APundefineds, ProblemDetails, health endpoint) and `src/backend/Hosts/undefinedorker` (empty host, ready for ADR 0007 background processing).
-  - `src/backend/Modules/Sample/Modules.Sample`: **spike module, Deundefinedelopment only.** It proves the module pattern (`AddSampleModule` / `MapSampleEndpoints`, internal handlers) and .NET 10 built-in validation from a module library. **Delete it when the first real module is created**, together with `tests/backend/Modules.Sample.UnitTests` and `tests/backend/Api.IntegrationTests/SampleValidationTests.cs`.
+- Application skeleton (branch `feat/phase-1-application-skeleton`):
+  - `global.json` (SDK 10.0.401, Microsoft.Testing.Platform for `dotnet test`), `Directory.Build.props` (nullable, warnings as errors), `Directory.Packages.props` (central package management), `TravelBooking.slnx`.
+  - Hosts: `src/backend/Hosts/Api` (minimal APIs, ProblemDetails, health endpoint) and `src/backend/Hosts/Worker` (empty host, ready for ADR 0007 background processing).
+  - `src/backend/Modules/Sample/Modules.Sample`: **spike module, Development only.** It proves the module pattern (`AddSampleModule` / `MapSampleEndpoints`, internal handlers) and .NET 10 built-in validation from a module library. **Delete it when the first real module is created**, together with `tests/backend/Modules.Sample.UnitTests` and `tests/backend/Api.IntegrationTests/SampleValidationTests.cs`.
   - Tests: `tests/backend/Modules.Sample.UnitTests`, `tests/backend/Api.IntegrationTests` (WebApplicationFactory; includes the every-endpoint-declares-authorization check), `tests/backend/ArchitectureTests` (ArchUnitNET module boundary rules).
   - `src/frontend`: Angular 22 CLI workspace with the `customer-web` shell (SSR/prerender, zoneless, Vitest) and, since then, the `admin-web` shell (item 3). No pages beyond the shells.
 - ADR 0003 spike results: built-in validation works from module libraries when (1) each module calls `AddValidation()` itself and (2) validated request types are public; `[ValidatableType]` is experimental (ASP0029) and is not used. ArchUnitNET runs on xUnit v3 via `TngTech.ArchUnitNET.xUnitV3`. Recorded in `.claude/rules/backend-dotnet.md`.
