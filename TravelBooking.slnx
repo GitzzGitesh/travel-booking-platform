@@ -1,11 +1,20 @@
 <Solution>
   <Folder Name="/src/" />
-  <Folder Name="/src/backend/" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/BuildingBlocks/BuildingBlocks.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Hosts/">
     <Project Path="src/backend/Hosts/Api/Api.csproj" />
     <Project Path="src/backend/Hosts/Worker/Worker.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Integrations/" />
+  <Folder Name="/src/backend/Integrations/Flights/">
+    <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Mock/Integrations.Flights.Mock.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/" />
+  <Folder Name="/src/backend/Modules/Flights/">
+    <Project Path="src/backend/Modules/Flights/Modules.Flights/Modules.Flights.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Sample/">
     <Project Path="src/backend/Modules/Sample/Modules.Sample/Modules.Sample.csproj" />
   </Folder>
@@ -13,6 +22,9 @@
   <Folder Name="/tests/backend/">
     <Project Path="tests/backend/Api.IntegrationTests/Api.IntegrationTests.csproj" />
     <Project Path="tests/backend/ArchitectureTests/ArchitectureTests.csproj" />
+    <Project Path="tests/backend/BuildingBlocks.UnitTests/BuildingBlocks.UnitTests.csproj" />
+    <Project Path="tests/backend/Modules.Flights.UnitTests/Modules.Flights.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Sample.UnitTests/Modules.Sample.UnitTests.csproj" />
+    <Project Path="tests/backend/ProviderContracts/ProviderContracts.csproj" />
   </Folder>
 </Solution>

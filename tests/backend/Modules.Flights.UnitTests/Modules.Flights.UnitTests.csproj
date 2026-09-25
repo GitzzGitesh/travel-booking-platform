@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\backend\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />
+  </ItemGroup>
+
+</Project>
