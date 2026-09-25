@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Deterministic, scenario-driven flight provider for development and tests only (ADR 0004). Refuses to run in Production. -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />  </ItemGroup>
+
+</Project>

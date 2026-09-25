@@ -8,7 +8,7 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 |---|---|---|---|---|
 | Q1 | **Merchant-of-record model** per product: do we charge customers for flights and hotels ourselves (merchant), or does the airline/supplier charge (agency), or mixed? | Determines payment flows, PCI scope (card pass-through to airlines breaks SAQ-A), refund handling, invoicing, and legal liability | **Gate:** before payment architecture is finalised (ADR 0005/0006) and before Phase 2 payment work (`IPaymentProvider`) | Open |
 | Q2 | **Launch markets** (countries of sale and customer residency)? | Drives EU Package Travel Directive / UK ATOL / US seller-of-travel obligations, GDPR/CCPA, SCA, data residency, price-display laws, languages, currencies | **Gate:** before production-market, compliance, and hosting-region decisions, and before production-oriented design in Phase 3 | Open |
-| Q3 | **First product**: flights or hotels for the first vertical slice? | Scopes the MVP. Hotels are simpler (no ticketing/APIS); flights are the harder, higher-value flow | **Gate:** before implementation priority is finalised and before the Phase 2 product slice (which provider port and mock come first) | Open. Engineering has no strong preference; flights de-risk the harder model first |
+| Q3 | **First product**: flights or hotels for the first vertical slice? | Scopes the MVP. Hotels are simpler (no ticketing/APIS); flights are the harder, higher-value flow | Phase 2 product slice | **Answered 2026-09-25:** flights first (see below) |
 | Q4 | **Team size and roles** now and at launch? | Affects PR review policy, CODEOWNERS, on-call, branch protection strictness | ADR 0012 review model | **Answered 2026-09-25** (see below) |
 | Q5 | **Charge currencies** and FX policy: charge in the customer's currency or the supplier's? Who carries FX risk? | Money model, Stripe configuration, reconciliation | **Gate:** before real payment/currency integration (Phase 5). Produces a separate FX-policy ADR; ADR 0010's technical conventions do not wait for it | Open |
 | Q6 | **Target suppliers** and their contract/commercial model (aggregator with balance, GDS with BSP/ARC accreditation, bed bank)? | Shapes provider ports and payment flows | **Gate:** before the supplier provider ports are frozen (ADR 0004) and before Phase 5 | Open |
@@ -17,9 +17,13 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 | Q9 | **Data retention periods** for PII, bookings, and financial records? | Privacy compliance vs financial/legal retention | Data design, Phase 4 | Open |
 | Q10 | **Fraud tolerance and review process**: automatic block vs manual review queue? | Checkout UX, ops staffing, Stripe Radar rules | Phase 5 | Open |
 | Q11 | **Refund approval policy**: which refunds need maker-checker, and what are the thresholds? | Admin permissions and workflow | Refund phase | Open |
+| Q13 | Are **group bookings (10+ passengers)** and **unaccompanied minors / child-only bookings** in scope? | The flight port limits a booking to 1–9 seated passengers with at least one adult (the usual GDS/NDC limit); both cases would need different flows | Before either flow is designed | Open. Out of scope until decided |
 | Q12 | **Customer support channels** (email, chat, phone) and tooling? | Notifications, admin features, integrations | Admin phase | Open |
 
 ## Answered
+
+### Q3. First product (answered 2026-09-25)
+**Answer:** **flights** are the first real product slice. Phase 2 starts with the flight search port, a deterministic mock provider, and the provider contract suite (ADR 0004, ADR 0014). This answer does not settle Q1 (merchant of record), Q2 (markets), or Q6 (suppliers).
 
 ### Q4. Team size and roles (answered 2026-09-25)
 **Answer:** there is currently **one developer**. The **client/business owner reviews releases**. The client/business owner is not documented as a technical code reviewer, so nobody should assume they are one. Team size **at launch** was not stated; when the team changes, revisit ADR 0012.

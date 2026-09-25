@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Global travel booking platform: customers search, book, and pay for flights and hotels, manage bookings and travellers, receive tickets/vouchers, cancel, and track refunds. An Admin/Operations portal covers customers, bookings, payments, refunds, providers, pricing/markups, promotions, reports, audit, and users/roles/permissions. B2B/agent features may come later.
 
-**Current phase: see `docs/progress.md`.** Phase 1 (skeleton) is in progress: the solution, hosts, one spike module, and the `customer-web` shell exist, but no business code. Check `docs/progress.md` for the current phase and story before starting any work. **Do not scaffold apps, add dependencies, create migrations, or write business code unless the current story explicitly says so.**
+**Current phase: see `docs/progress.md`.** Phase 2 (Flights slice) is in progress: flight search port, deterministic mock provider, and provider contract suite exist. There is no real supplier (Q6), payment design (Q1), or market or hosting decision (Q2). Check `docs/progress.md` for the current phase and story before starting any work. **Do not scaffold apps, add dependencies, create migrations, or write business code unless the current story explicitly says so.**
 
 ## Commands
 
