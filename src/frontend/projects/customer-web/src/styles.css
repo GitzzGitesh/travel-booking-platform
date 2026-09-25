@@ -111,6 +111,11 @@ p {
   margin: 0;
 }
 
+/* Fieldsets default to min-content width, which would push wide option rows past the viewport. */
+fieldset {
+  min-inline-size: 0;
+}
+
 button,
 input,
 select {
