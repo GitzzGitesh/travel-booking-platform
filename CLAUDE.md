@@ -24,10 +24,11 @@ Frontend (run in `src/frontend`):
 - Build (SSR + prerender): `npx ng build customer-web`
 - Unit tests (Vitest): `npx ng test customer-web --watch=false`
 - Dev server: `npx ng serve customer-web`
+- API client: `npm run generate:api-client` after the contract snapshot changes (commit the result); `npm run check:api-client` type-checks it (ADR 0013)
 
-CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps plus a gitleaks history scan and CodeQL on every PR and push to `main`.
+CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps (including the API-client drift check), an oasdiff breaking-change check on PRs, a gitleaks history scan, and CodeQL on every PR and push to `main`.
 
-Not yet available: Aspire AppHost run, Playwright E2E, and TypeScript client generation from the OpenAPI snapshot. They are added in later Phase 1 stories.
+Not yet available: Aspire AppHost run and Playwright E2E. They are added in later Phase 1 stories.
 
 Also:
 - Test the secret-guard hook: `echo '{"tool_name":"Write","tool_input":{"file_path":"x.txt","content":"hello"}}' | node .claude/hooks/guard-secrets.mjs` (exit 0 = allowed, 2 = blocked)

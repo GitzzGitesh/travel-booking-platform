@@ -10,6 +10,7 @@
         "tags": [
           "Sample"
         ],
+        "operationId": "ValidateSample",
         "requestBody": {
           "content": {
             "application/json": {
