@@ -28,7 +28,9 @@ Frontend (run in `src/frontend`):
 
 CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps (including the API-client drift check), an oasdiff breaking-change check on PRs, a gitleaks history scan, and CodeQL on every PR and push to `main`.
 
-Not yet available: Aspire AppHost run and Playwright E2E. They are added in later Phase 1 stories.
+E2E and accessibility (`tests/e2e`, Playwright + axe-core, against the production builds): build both apps first, then in `tests/e2e`: `npm ci`, `npx playwright install chromium` (once), `npx playwright test` (`--project admin-web` for one app).
+
+Not yet available: Aspire AppHost run. They are added in later Phase 1 stories.
 
 Also:
 - Test the secret-guard hook: `echo '{"tool_name":"Write","tool_input":{"file_path":"x.txt","content":"hello"}}' | node .claude/hooks/guard-secrets.mjs` (exit 0 = allowed, 2 = blocked)

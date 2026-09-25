@@ -49,6 +49,22 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
+  - package-ecosystem: npm
+    directory: /tests/e2e
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      e2e-tooling:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
