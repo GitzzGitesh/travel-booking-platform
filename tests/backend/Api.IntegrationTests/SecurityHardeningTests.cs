@@ -1,6 +1,11 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace TravelBooking.Api.IntegrationTests;
 
@@ -77,13 +82,20 @@ public sealed class SecurityHardeningTests(WebApplicationFactory<Program> factor
     [InlineData("https://app.example.test:443")]
     [InlineData("https://APP.example.test")]
     [InlineData(" https://app.example.test")]
-    public void Invalid_origins_fail_startup(string origin)
+    public async Task Invalid_origins_fail_startup(string origin)
     {
-        using var configured = factory.WithWebHostBuilder(b => b.UseSetting("Cors:AllowedOrigins:0", origin));
+        // A host with the same CORS registration as Program.cs, started directly. WebApplicationFactory can surface
+        // an ObjectDisposedException instead of the startup failure, depending on how it tears down the failed host.
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
+        builder.WebHost.UseTestServer();
+        builder.Configuration.AddInMemoryCollection([new("Cors:AllowedOrigins:0", origin)]);
+        builder.Services.AddApiCors(builder.Configuration);
+        await using var app = builder.Build();
 
-        var exception = Should.Throw<Exception>(() => configured.CreateClient());
+        var exception = await Should.ThrowAsync<OptionsValidationException>(() => app.StartAsync(TestContext.Current.CancellationToken));
 
-        exception.ToString().ShouldContain("Cors:AllowedOrigins");
+        exception.OptionsType.ShouldBe(typeof(ApiCors.CorsSettings));
+        exception.Message.ShouldContain("Cors:AllowedOrigins");
     }
 
     [Theory]

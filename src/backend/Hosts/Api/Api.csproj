@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Lets SecurityHardeningTests start a host with the same CORS registration as Program.cs. -->
+    <InternalsVisibleTo Include="Api.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Modules\Sample\Modules.Sample\Modules.Sample.csproj" />
   </ItemGroup>
 
