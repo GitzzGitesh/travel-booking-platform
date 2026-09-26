@@ -19,8 +19,25 @@ internal interface IPaymentAttemptStore
     /// </summary>
     Task<bool> TryAddAsync(PaymentAttempt attempt, CancellationToken cancellationToken);
 
-    /// <summary>Saves a loaded attempt; false if another request changed it first (optimistic concurrency).</summary>
+    /// <summary>
+    /// Saves the tracked changes; false if another request changed the attempt first (optimistic concurrency), or an
+    /// inbox record already exists (a duplicate delivery). Nothing is saved then.
+    /// </summary>
     Task<bool> TrySaveAsync(CancellationToken cancellationToken);
+
+    /// <summary>The order's live attempt (at most one: a filtered unique index), untracked.</summary>
+    Task<PaymentAttempt?> FindLiveByOrderAsync(Guid orderId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The reconciliation work list, oldest first: open or voiding attempts untouched since <paramref name="settledBefore"/>,
+    /// and Authorized attempts whose release was requested.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> FindReconcilableAsync(DateTimeOffset settledBefore, int limit, CancellationToken cancellationToken);
+
+    Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken);
+
+    /// <summary>Records a consumed integration event, saved with the next <see cref="TrySaveAsync"/> (ADR 0007 inbox).</summary>
+    void MarkConsumed(Guid messageId, string handler, DateTimeOffset at);
 }
 
 internal sealed class PaymentReconciliationOptions
@@ -32,6 +49,12 @@ internal sealed class PaymentReconciliationOptions
     /// Provider-specific: the real provider's ADR states it. The mock is consistent at once.
     /// </summary>
     public TimeSpan NotFoundConclusiveAfter { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// How long an open attempt is left alone after its last change before the reconciliation job looks it up: a request
+    /// may still be waiting for the provider, and an unfinished challenge is not looked up more often than this.
+    /// </summary>
+    public TimeSpan LookupAfter { get; set; } = TimeSpan.FromMinutes(1);
 }
 
 /// <summary>
@@ -78,7 +101,7 @@ internal sealed class AuthorizeOrderPaymentHandler(
         }
 
         // Saved before the provider call: whatever happens next, this attempt can be found and looked up.
-        var attempt = PaymentAttempt.Start(request.OrderId, request.CustomerId, request.IdempotencyKey, request.Amount, Change(request.CorrelationId));
+        var attempt = PaymentAttempt.Start(request.OrderId, request.CustomerId, request.IdempotencyKey, request.Amount, Change(CustomerActor, request.CorrelationId));
         if (!await store.TryAddAsync(attempt, cancellationToken))
         {
             // The same request won the race (resume it), or another attempt for this order may still hold funds.
@@ -88,7 +111,7 @@ internal sealed class AuthorizeOrderPaymentHandler(
         }
 
         var outcome = await operations.AuthorizeAsync(new AuthorizationDetails(new PaymentReference(attempt.Reference), attempt.Amount, token), cancellationToken);
-        return Success(Report(await ApplyAndSaveAsync(attempt, outcome, fromLookup: false, request.CorrelationId, cancellationToken), outcome));
+        return Success(Report(await ApplyAndSaveAsync(attempt, outcome, fromLookup: false, CustomerActor, request.CorrelationId, cancellationToken), outcome));
     }
 
     public async Task<OrderPaymentResult?> ResumeAsync(Guid orderId, string customerId, string idempotencyKey, string? correlationId, CancellationToken cancellationToken)
@@ -101,6 +124,21 @@ internal sealed class AuthorizeOrderPaymentHandler(
         }
 
         return await BringUpToDateAsync(attempt, correlationId, cancellationToken);
+    }
+
+    public async Task<LiveOrderPayment?> FindLiveAsync(Guid orderId, CancellationToken cancellationToken) =>
+        await store.FindLiveByOrderAsync(orderId, cancellationToken) is { } attempt
+            ? new LiveOrderPayment(attempt.Id, Report(attempt, null).Status, attempt.ReleaseRequestedAt is not null)
+            : null;
+
+    /// <summary>
+    /// Looks an open attempt up with the provider by our reference and records the outcome (never a second
+    /// authorization). Returns the attempt as stored afterwards, with the outcome.
+    /// </summary>
+    internal async Task<(PaymentAttempt Attempt, PaymentOutcome Outcome)> LookUpAsync(PaymentAttempt attempt, string actor, string? correlationId, CancellationToken cancellationToken)
+    {
+        var outcome = await operations.ReconcileAsync(new PaymentReference(attempt.Reference), cancellationToken);
+        return (await ApplyAndSaveAsync(attempt, outcome, fromLookup: true, actor, correlationId, cancellationToken), outcome);
     }
 
     /// <summary>What an attempt becomes, given a provider outcome (payment-lifecycle.md).</summary>
@@ -142,19 +180,19 @@ internal sealed class AuthorizeOrderPaymentHandler(
         return Success(await BringUpToDateAsync(existing, request.CorrelationId, cancellationToken));
     }
 
-    /// <summary>A final attempt as it is; an open one (unknown, in flight or crashed, or challenged) looked up, never authorized again.</summary>
+    /// <summary>A settled attempt as it is; an open one (unknown, in flight or crashed, or challenged) looked up, never authorized again.</summary>
     private async Task<OrderPaymentResult> BringUpToDateAsync(PaymentAttempt attempt, string? correlationId, CancellationToken cancellationToken)
     {
-        if (attempt.IsFinal)
+        if (attempt.IsAuthorizationSettled)
         {
             return Report(attempt, null);
         }
 
-        var outcome = await operations.ReconcileAsync(new PaymentReference(attempt.Reference), cancellationToken);
-        return Report(await ApplyAndSaveAsync(attempt, outcome, fromLookup: true, correlationId, cancellationToken), outcome);
+        var (current, outcome) = await LookUpAsync(attempt, CustomerActor, correlationId, cancellationToken);
+        return Report(current, outcome);
     }
 
-    private async Task<PaymentAttempt> ApplyAndSaveAsync(PaymentAttempt attempt, PaymentOutcome outcome, bool fromLookup, string? correlationId, CancellationToken cancellationToken)
+    private async Task<PaymentAttempt> ApplyAndSaveAsync(PaymentAttempt attempt, PaymentOutcome outcome, bool fromLookup, string actor, string? correlationId, CancellationToken cancellationToken)
     {
         var window = reconciliation.Value.NotFoundConclusiveAfter;
         var snapshot = Snapshot(outcome);
@@ -162,9 +200,9 @@ internal sealed class AuthorizeOrderPaymentHandler(
         for (var round = 1; ; round++)
         {
             var (status, reason) = Transition(attempt, outcome, fromLookup, window);
-            if (!attempt.Resolve(status, reason, Change(correlationId), snapshot?.Payment.ProviderId, snapshot?.Payment.Value, declineReason).IsSuccess)
+            if (!attempt.Resolve(status, reason, Change(actor, correlationId), snapshot?.Payment.ProviderId, snapshot?.Payment.Value, declineReason).IsSuccess)
             {
-                return attempt; // already final: a late outcome changes nothing
+                return attempt; // already settled: a late outcome changes nothing
             }
 
             if (await store.TrySaveAsync(cancellationToken))
@@ -182,7 +220,7 @@ internal sealed class AuthorizeOrderPaymentHandler(
         }
     }
 
-    private PaymentChange Change(string? correlationId) => new(timeProvider.GetUtcNow(), CustomerActor, correlationId);
+    private PaymentChange Change(string actor, string? correlationId) => new(timeProvider.GetUtcNow(), actor, correlationId);
 
     private static PaymentSnapshot? Snapshot(PaymentOutcome outcome) => outcome switch
     {
@@ -199,16 +237,20 @@ internal sealed class AuthorizeOrderPaymentHandler(
             attempt.Id,
             attempt.Status switch
             {
+                // Being released (Orders said it will not use it): never booked on, and no challenge to complete.
+                PaymentAttemptStatus.Authorized or PaymentAttemptStatus.ActionRequired when attempt.ReleaseRequestedAt is not null => OrderPaymentStatus.Pending,
                 PaymentAttemptStatus.Authorized => OrderPaymentStatus.Authorized,
                 PaymentAttemptStatus.ActionRequired => OrderPaymentStatus.ActionRequired,
                 PaymentAttemptStatus.Declined => OrderPaymentStatus.Declined,
                 PaymentAttemptStatus.ManualReview => OrderPaymentStatus.ManualReview,
-                PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.AuthorizationUnknown => OrderPaymentStatus.Pending,
+                // A void in progress may still hold funds: never booked on, never a new attempt yet.
+                PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.AuthorizationUnknown
+                    or PaymentAttemptStatus.Voiding or PaymentAttemptStatus.VoidUnknown => OrderPaymentStatus.Pending,
                 _ => OrderPaymentStatus.Failed,
             },
             attempt.Amount,
             attempt.Status == PaymentAttemptStatus.Declined ? attempt.DeclineReason : null,
-            attempt.Status == PaymentAttemptStatus.ActionRequired && outcome is PaymentOutcome.ActionRequired action
+            attempt.Status == PaymentAttemptStatus.ActionRequired && attempt.ReleaseRequestedAt is null && outcome is PaymentOutcome.ActionRequired action
                 ? action.Payment.CustomerActionToken?.Value
                 : null);
 

@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TravelBooking.BuildingBlocks.Background.Persistence;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Contracts;
 using TravelBooking.Modules.Payments.Infrastructure;
@@ -22,6 +24,7 @@ public static class PaymentsModule
         services.AddOptions<PaymentReconciliationOptions>()
             .Bind(configuration.GetSection(PaymentReconciliationOptions.SectionName))
             .Validate(options => options.NotFoundConclusiveAfter >= TimeSpan.Zero, "Payments:Reconciliation:NotFoundConclusiveAfter must not be negative.")
+            .Validate(options => options.LookupAfter >= TimeSpan.Zero, "Payments:Reconciliation:LookupAfter must not be negative.")
             .ValidateOnStart();
 
         // The module's own schema. The connection string is resolved on first use; migrations are never applied at
@@ -33,6 +36,18 @@ public static class PaymentsModule
         services.AddScoped<IPaymentAttemptStore, SqlPaymentAttemptStore>();
         services.AddScoped<AuthorizeOrderPaymentHandler>();
         services.AddScoped<IOrderPayments>(provider => provider.GetRequiredService<AuthorizeOrderPaymentHandler>());
+        return services;
+    }
+
+    /// <summary>
+    /// The Worker's Payments jobs (ADR 0007): reconciling payment attempts and releasing holds Orders will not use, and
+    /// recording Orders' release requests (inbox). Never registered in the Api.
+    /// </summary>
+    public static IServiceCollection AddPaymentsBackgroundJobs(this IServiceCollection services)
+    {
+        services.AddScoped<PaymentAttemptReconciler>();
+        services.AddBackgroundJob<ReconcilePaymentAttemptsJob, PaymentsDbContext>(ReconcilePaymentAttemptsJob.Name, TimeSpan.FromSeconds(30));
+        services.AddIntegrationEventHandler<OrderPaymentReleaseRequested, OrderPaymentReleaseRequestedHandler>();
         return services;
     }
 }

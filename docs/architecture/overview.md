@@ -62,7 +62,7 @@ Supplier adapters live in `Integrations.*` projects (e.g. `Integrations.Flights.
 ## Key cross-cutting mechanisms (BuildingBlocks)
 - `Money`, `Currency`, `Result<T>`, typed IDs
 - Idempotency store (unique `(Scope, Key)`, stored response)
-- Transactional outbox + inbox, dispatched by the Worker
+- Transactional outbox + inbox, dispatched by the Worker, and DB job leases (built: `BuildingBlocks/Background`). Each module maps these tables in its own schema. For this, BuildingBlocks references EF Core (SQL Server) and the ASP.NET Core shared framework, which an architecture test keeps out of adapters and Contracts
 - Audit and timeline writers
 - `TimeProvider` everywhere; correlation ID propagation; PII redaction for logs and supplier payload capture
 

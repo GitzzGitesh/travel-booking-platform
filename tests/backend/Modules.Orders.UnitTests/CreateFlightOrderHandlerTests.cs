@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Time.Testing;
 using TravelBooking.BuildingBlocks;
+using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Domain;
@@ -187,5 +188,13 @@ public sealed class CreateFlightOrderHandlerTests
         }
 
         public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
+            where TEvent : IIntegrationEvent => throw new NotSupportedException("Order creation publishes nothing.");
+
+        public Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> IsReleaseRequestPendingAsync(Guid paymentId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

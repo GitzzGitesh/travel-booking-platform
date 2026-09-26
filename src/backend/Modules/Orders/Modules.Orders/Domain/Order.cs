@@ -228,17 +228,36 @@ internal sealed class Order
     /// or the held amount is not the order's total): the hold must be released (payment-lifecycle.md). No status changes.
     /// Idempotent per authorization.
     /// </summary>
-    public void NoteUnusedPaymentHold(string paymentAuthorizationId, string reason, TransitionContext context)
+    /// <returns>True if this call added the note (the caller then asks Payments to release the hold); false if it was there.</returns>
+    public bool NoteUnusedPaymentHold(string paymentAuthorizationId, string reason, TransitionContext context)
     {
         if (_timeline.Any(e => e.ProviderReference == paymentAuthorizationId))
         {
-            return;
+            return false;
         }
 
         foreach (var item in _items)
         {
-            Record(item, item.Status, $"Payment authorized but not used: {reason}. The hold must be released", context, paymentAuthorizationId);
+            Record(item, item.Status, $"Payment not used: {reason}. The hold must be released", context, paymentAuthorizationId);
         }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Abandons every item still awaiting payment whose supplier offer has expired (F-02). The caller first makes sure no
+    /// payment attempt for the order still holds, or may hold, funds. Returns how many items it abandoned; none again on a
+    /// repeat.
+    /// </summary>
+    public int AbandonExpired(TransitionContext context)
+    {
+        var expired = _items.Where(i => i.Status is FlightOrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= context.At).ToList();
+        foreach (var item in expired)
+        {
+            Move(item, FlightOrderItemStatus.Abandoned, "The offer expired before payment", context, providerReference: null);
+        }
+
+        return expired.Count;
     }
 
     /// <summary>The supplier confirmed the booking at the agreed price, directly or found by reconciliation.</summary>

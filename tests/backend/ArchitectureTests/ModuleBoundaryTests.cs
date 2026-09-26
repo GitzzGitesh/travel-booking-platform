@@ -91,6 +91,15 @@ public sealed class ModuleBoundaryTests
             .Because("Payments relies on its caller for the order-ownership check")
             .Check(_architecture);
 
+    // BuildingBlocks carries EF Core and ASP.NET Core for the outbox, inbox and leases (ADR 0007): keep them out of the
+    // supplier adapters and the module Contracts that reference it (architecture review, background batch).
+    [Fact]
+    public void Adapters_and_contracts_do_not_use_the_data_or_web_frameworks() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.(Integrations\..+|Modules\.[^.]+\.Contracts)$")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^(Microsoft\.AspNetCore|Microsoft\.EntityFrameworkCore|TravelBooking\.BuildingBlocks\.Background\.Persistence)(\..+)?$"))
+            .Because("adapters map supplier models and Contracts describe a module's surface; persistence stays in the modules (ADR 0004, 0007)")
+            .Check(_architecture);
+
     [Fact]
     public void Module_domain_code_does_not_depend_on_web_data_or_http_frameworks() =>
         Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Domain(\..+)?$")

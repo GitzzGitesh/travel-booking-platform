@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using TravelBooking.BuildingBlocks;
+using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Domain;
 
@@ -17,6 +18,7 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
+        modelBuilder.AddInbox().AddJobLeases(); // ADR 0007: consumed events, and the reconciliation job's lease
 
         var attempt = modelBuilder.Entity<PaymentAttempt>();
         attempt.ToTable("PaymentAttempts", table => table.HasCheckConstraint(
@@ -44,8 +46,14 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         attempt.Property(a => a.DeclineReason).HasMaxLength(30);
         attempt.Property(a => a.ProviderId).HasMaxLength(50);
         attempt.Property(a => a.ProviderPaymentId).HasMaxLength(255);
+        attempt.Property(a => a.ReleaseReason).HasMaxLength(PaymentAttempt.MaxReleaseReasonLength);
+
+        // The reconciliation job's work list.
+        attempt.HasIndex(a => new { a.Status, a.UpdatedAt });
         attempt.Ignore(a => a.Reference);
-        attempt.Ignore(a => a.IsFinal);
+        attempt.Ignore(a => a.VoidKey);
+        attempt.Ignore(a => a.IsAuthorizationSettled);
+        attempt.Ignore(a => a.IsVoidInProgress);
         attempt.Property<byte[]>("RowVersion").IsRowVersion();
 
         attempt.HasMany(a => a.Events).WithOne().HasForeignKey(e => e.PaymentAttemptId).OnDelete(DeleteBehavior.Restrict);

@@ -8,8 +8,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MsSql;
+using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Flights.Infrastructure;
+using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Orders.Infrastructure;
+using TravelBooking.Modules.Payments;
 using TravelBooking.Modules.Payments.Infrastructure;
 
 namespace TravelBooking.Api.IntegrationTests;
@@ -47,7 +50,15 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         builder.UseSetting("ConnectionStrings:Flights", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Orders", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Payments", _sql.GetConnectionString());
-        builder.ConfigureTestServices(services => services.AddSingleton<TimeProvider>(Clock));
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<TimeProvider>(Clock);
+
+            // The Worker's jobs, run explicitly by the tests: the scheduler itself is never started here.
+            services.AddOrdersBackgroundJobs();
+            services.AddPaymentsBackgroundJobs();
+            services.AddSingleton<BackgroundJobRunner>();
+        });
     }
 }
 

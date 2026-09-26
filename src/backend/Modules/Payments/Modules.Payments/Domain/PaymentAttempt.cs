@@ -3,10 +3,12 @@ using TravelBooking.BuildingBlocks;
 namespace TravelBooking.Modules.Payments.Domain;
 
 /// <summary>
-/// The authorization phase of one payment attempt (payment-lifecycle.md). Capture, void and refunds come with the
-/// orchestration chunk that needs them.
-/// Authorizing → any other status; ActionRequired and AuthorizationUnknown → any status but Authorizing (a completed
-/// challenge, a lookup); every other status is final.
+/// One payment attempt (payment-lifecycle.md). Capture and refunds come with the orchestration chunk that needs them.
+/// Authorization: Authorizing → any authorization outcome; ActionRequired and AuthorizationUnknown → any outcome but
+/// Authorizing (a completed challenge, a lookup).
+/// Release: Authorized or ActionRequired → Voiding (saved before the provider call) → Voided, Canceled (an unfinished
+/// challenge), VoidUnknown (looked up, then voided again with the same key) or ManualReview.
+/// Declined, Canceled, Expired, Failed and Voided are final.
 /// </summary>
 internal enum PaymentAttemptStatus
 {
@@ -19,6 +21,9 @@ internal enum PaymentAttemptStatus
     Expired,
     Failed,
     ManualReview,
+    Voiding,
+    VoidUnknown,
+    Voided,
 }
 
 internal enum PaymentAttemptTransitionError
@@ -26,18 +31,20 @@ internal enum PaymentAttemptTransitionError
     /// <summary>The attempt's outcome is settled: a late or duplicate outcome changes nothing.</summary>
     AlreadyFinal,
 
-    /// <summary>Nothing goes back to Authorizing: an attempt is authorized at the provider once.</summary>
+    /// <summary>Not a transition this attempt can make (e.g. back to Authorizing, or voiding a declined payment).</summary>
     Illegal,
 }
 
 /// <summary>
 /// One attempt to authorize an order's total. It is saved as Authorizing BEFORE the provider is called, so a crash
-/// never loses a possible hold: the attempt can always be looked up by its reference. Status changes only through
-/// <see cref="Resolve"/>, each appended to the attempt's history with its actor and correlation id.
+/// never loses a possible hold: the attempt can always be looked up by its reference. Likewise a void is saved as
+/// Voiding before the provider is asked. Status changes only through the methods here, each appended to the attempt's
+/// history with its actor and correlation id.
 /// </summary>
 internal sealed class PaymentAttempt
 {
     public const int MaxCustomerIdLength = 128;
+    public const int MaxReleaseReasonLength = 200;
 
     private readonly List<PaymentAttemptEvent> _events = [];
 
@@ -65,6 +72,11 @@ internal sealed class PaymentAttempt
 
     public string? DeclineReason { get; private set; }
 
+    /// <summary>When Orders said it will not use this payment: the hold is to be released once its outcome is known.</summary>
+    public DateTimeOffset? ReleaseRequestedAt { get; private set; }
+
+    public string? ReleaseReason { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -77,17 +89,23 @@ internal sealed class PaymentAttempt
     /// <summary>Our reference at the provider: this attempt's id, without dashes.</summary>
     public string Reference => Id.ToString("N");
 
+    /// <summary>Our idempotency key for the one void of this attempt: repeating it never releases twice.</summary>
+    public string VoidKey => $"{Reference}:void";
+
     /// <summary>
-    /// Statuses in which the attempt holds, or may hold, funds: at most one such attempt per order. Every one of them
-    /// needs a way out before checkout is exposed: a lookup (the open ones), a void (Authorized), or a person (ManualReview).
+    /// Statuses in which the attempt holds, or may hold, funds: at most one such attempt per order. Each has a way out: a
+    /// lookup (the open ones and the void in progress), a void (Authorized), or a person (ManualReview).
     /// </summary>
     public static IReadOnlyList<PaymentAttemptStatus> LiveStatuses { get; } =
     [
         PaymentAttemptStatus.Authorizing, PaymentAttemptStatus.ActionRequired, PaymentAttemptStatus.AuthorizationUnknown,
-        PaymentAttemptStatus.Authorized, PaymentAttemptStatus.ManualReview,
+        PaymentAttemptStatus.Authorized, PaymentAttemptStatus.ManualReview, PaymentAttemptStatus.Voiding, PaymentAttemptStatus.VoidUnknown,
     ];
 
-    public bool IsFinal => Status is not (PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.ActionRequired or PaymentAttemptStatus.AuthorizationUnknown);
+    /// <summary>The authorization's outcome is known (whatever happens to the hold afterwards).</summary>
+    public bool IsAuthorizationSettled => Status is not (PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.ActionRequired or PaymentAttemptStatus.AuthorizationUnknown);
+
+    public bool IsVoidInProgress => Status is PaymentAttemptStatus.Voiding or PaymentAttemptStatus.VoidUnknown;
 
     public static PaymentAttempt Start(Guid orderId, string customerId, string idempotencyKey, Money amount, PaymentChange change)
     {
@@ -114,20 +132,20 @@ internal sealed class PaymentAttempt
     }
 
     /// <summary>
-    /// Records what the provider established. The same status again only fills in provider details, without a history
-    /// entry. A final attempt never changes, and nothing goes back to Authorizing.
+    /// Records what the provider established about the authorization. The same status again only fills in provider
+    /// details, without a history entry. A settled attempt never changes this way, and nothing goes back to Authorizing.
     /// </summary>
     public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> Resolve(
         PaymentAttemptStatus to, string reason, PaymentChange change, string? providerId = null, string? providerPaymentId = null, string? declineReason = null)
     {
-        if (IsFinal)
+        if (IsAuthorizationSettled)
         {
-            return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Failure(PaymentAttemptTransitionError.AlreadyFinal);
+            return Failure(PaymentAttemptTransitionError.AlreadyFinal);
         }
 
-        if (to == PaymentAttemptStatus.Authorizing)
+        if (to is PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.Voiding or PaymentAttemptStatus.VoidUnknown or PaymentAttemptStatus.Voided)
         {
-            return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Failure(PaymentAttemptTransitionError.Illegal);
+            return Failure(PaymentAttemptTransitionError.Illegal);
         }
 
         if (providerId is not null && providerPaymentId is not null)
@@ -137,6 +155,72 @@ internal sealed class PaymentAttempt
         }
 
         DeclineReason = declineReason ?? DeclineReason;
+        return MoveTo(to, reason, change, providerPaymentId);
+    }
+
+    /// <summary>
+    /// Orders will not use this payment. The request is recorded (no status change) and acted on once the outcome is
+    /// known. Idempotent. False when the attempt holds nothing any more, so there is nothing to release.
+    /// </summary>
+    public bool RequestRelease(string reason, PaymentChange change)
+    {
+        if (ReleaseRequestedAt is not null)
+        {
+            return true;
+        }
+
+        if (!LiveStatuses.Contains(Status))
+        {
+            return false;
+        }
+
+        ReleaseRequestedAt = change.At;
+        ReleaseReason = reason.Length <= MaxReleaseReasonLength ? reason : reason[..MaxReleaseReasonLength];
+        Record(Status, $"Release requested: {ReleaseReason}", change, null);
+        return true;
+    }
+
+    /// <summary>
+    /// Starts releasing the hold of an Authorized payment or an unfinished challenge (a void, which cancels the
+    /// latter). Saved before the provider is asked. Needs the provider's payment id; a void already in progress is a no-op.
+    /// </summary>
+    public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> BeginVoid(PaymentChange change)
+    {
+        if (Status is PaymentAttemptStatus.Voiding)
+        {
+            return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status);
+        }
+
+        if (Status is not (PaymentAttemptStatus.Authorized or PaymentAttemptStatus.ActionRequired or PaymentAttemptStatus.VoidUnknown)
+            || ProviderId is null || ProviderPaymentId is null)
+        {
+            return Failure(Status is PaymentAttemptStatus.Voided or PaymentAttemptStatus.Canceled ? PaymentAttemptTransitionError.AlreadyFinal : PaymentAttemptTransitionError.Illegal);
+        }
+
+        return MoveTo(PaymentAttemptStatus.Voiding, "Releasing the hold (void)", change, ProviderPaymentId);
+    }
+
+    /// <summary>Records the void's outcome: Voided, Canceled (an unfinished challenge), VoidUnknown or ManualReview.</summary>
+    public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> ResolveVoid(PaymentAttemptStatus to, string reason, PaymentChange change)
+    {
+        if (!IsVoidInProgress)
+        {
+            return Failure(Status is PaymentAttemptStatus.Voided or PaymentAttemptStatus.Canceled ? PaymentAttemptTransitionError.AlreadyFinal : PaymentAttemptTransitionError.Illegal);
+        }
+
+        if (to is not (PaymentAttemptStatus.Voided or PaymentAttemptStatus.Canceled or PaymentAttemptStatus.VoidUnknown or PaymentAttemptStatus.ManualReview))
+        {
+            return Failure(PaymentAttemptTransitionError.Illegal);
+        }
+
+        return MoveTo(to, reason, change, ProviderPaymentId);
+    }
+
+    private static Result<PaymentAttemptStatus, PaymentAttemptTransitionError> Failure(PaymentAttemptTransitionError error) =>
+        Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Failure(error);
+
+    private Result<PaymentAttemptStatus, PaymentAttemptTransitionError> MoveTo(PaymentAttemptStatus to, string reason, PaymentChange change, string? providerReference)
+    {
         if (to == Status)
         {
             UpdatedAt = change.At;
@@ -146,7 +230,7 @@ internal sealed class PaymentAttempt
         {
             var from = Status;
             Status = to;
-            Record(from, reason, change, providerPaymentId);
+            Record(from, reason, change, providerReference);
         }
 
         return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status);

@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Time.Testing;
 using TravelBooking.BuildingBlocks;
+using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Application;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 using TravelBooking.Modules.Payments.Contracts;
 
@@ -180,6 +182,8 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         _order.Timeline.Count.ShouldBe(entries);
         _order.PaymentAuthorizationId.ShouldBeNull();
+        var release = _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>(); // F-22: one release request
+        (release.OrderId, release.PaymentId).ShouldBe((_order.Id, _payments.PaymentId));
     }
 
     [Fact]
@@ -277,6 +281,8 @@ public sealed class AuthorizeCheckoutHandlerTests
                 : Result<OrderPaymentResult, OrderPaymentFailure>.Success(new OrderPaymentResult(PaymentId, Status, Amount)));
         }
 
+        public Task<LiveOrderPayment?> FindLiveAsync(Guid orderId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<OrderPaymentResult?> ResumeAsync(Guid orderId, string customerId, string idempotencyKey, string? correlationId, CancellationToken cancellationToken)
         {
             if (!Resumable)
@@ -307,5 +313,15 @@ public sealed class AuthorizeCheckoutHandlerTests
         public Task<bool> TryAddAsync(Order order, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(SaveSucceeds);
+
+        public List<IIntegrationEvent> Published { get; } = [];
+
+        public void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
+            where TEvent : IIntegrationEvent => Published.Add(integrationEvent);
+
+        public Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> IsReleaseRequestPendingAsync(Guid paymentId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }
