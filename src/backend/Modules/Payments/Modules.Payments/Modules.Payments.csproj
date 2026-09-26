@@ -5,12 +5,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <!-- Migrations tooling only (dotnet ef); never flows to consumers. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Modules.Payments.UnitTests" />
     <InternalsVisibleTo Include="Api.IntegrationTests" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Modules.Payments.Contracts\Modules.Payments.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

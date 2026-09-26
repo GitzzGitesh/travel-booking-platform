@@ -30,7 +30,7 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((doc
 }));
 builder.Services.AddFlightsModule(builder.Configuration);
 builder.Services.AddOrdersModule(builder.Configuration);
-builder.Services.AddPaymentsModule();
+builder.Services.AddPaymentsModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {
