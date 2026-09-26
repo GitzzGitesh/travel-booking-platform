@@ -86,7 +86,9 @@ Notes:
 | Job | Trigger | Action |
 |---|---|---|
 | Reconcile pending bookings | Items in `PendingConfirmation` / `CancellationPending` | Query the supplier with backoff; transition; escalate to `ManualReview` after a limit (TBD) |
-| Expire offers/drafts | Offer expiry passed | `Draft → Expired` |
+| Expire unpaid orders (`orders.expire-unpaid`, built) | An item `AwaitingPayment` whose offer expired | With no live payment attempt: `AwaitingPayment → Abandoned`. With an authorized hold or an unfinished challenge: a timeline note plus `OrderPaymentReleaseRequested` (once), and the order waits. With an unknown outcome, a void in progress or a manual review: it waits |
+| Reconcile payment attempts (`payments.reconcile-attempts`, built) | Open attempts; holds Orders will not use | Look up by our reference; void the hold once (see payment lifecycle) |
+| Orders outbox (`orders.outbox`, built) | Pending Orders integration events | Deliver to in-process handlers at least once, oldest first, with back-off; given up after 10 attempts (`FailedAt`, error log) |
 | Authorization expiry guard | Authorized payments approaching expiry | Alert/escalate (should not occur for instant flows) |
 | Fulfilment | `OrderConfirmed` outbox event | Ticketing/voucher retrieval, then email |
 

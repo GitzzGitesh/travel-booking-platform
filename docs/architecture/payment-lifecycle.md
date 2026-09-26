@@ -25,7 +25,14 @@
   - `IOrderPayments.ResumeAsync(order, customer, key)` brings the attempt made with a key up to date, so a caller can finish it before anything else about the order changes.
   - The payment-method token is never stored, so the same key with another token returns the original attempt (no second effect) rather than a 409. Request and result records never print the token or the customer action.
   - Payments trusts the caller's customer id; an architecture test allows only Orders (which checks ownership) to call `IOrderPayments`.
-- **Not yet built, and gates for exposing checkout:** capture and void on the attempt; releasing a hold no booking will use (noted on the order's timeline today); a reconciliation job whose work list includes **ActionRequired** as well as the unknown states (an abandoned challenge otherwise keeps the order's one live slot, F-21); an audited operator way out of ManualReview; a cap on attempts per order and customer with generic declines to clients (card testing; a fraud-policy question, Q10); webhooks; and any endpoint. The real provider waits for ADR 0006, whose not-found consistency window must be set from that provider's behaviour: if it is too short, a later attempt could hold funds twice.
+- **Background reconciliation and hold release (Phase 3, row 4):** the Worker's `payments.reconcile-attempts` job looks up open attempts (Authorizing, AuthorizationUnknown, ActionRequired) once they have been unchanged for `Payments:Reconciliation:LookupAfter` (1 minute by default). When Orders will not use a payment, it publishes `OrderPaymentReleaseRequested` (Orders outbox). Payments records it once (inbox) as `ReleaseRequestedAt`, and the job then releases the hold once its outcome is known:
+  - Authorized → `Voiding` (saved first) → `Voided`;
+  - an unfinished challenge → `Canceled`;
+  - a timed-out void → `VoidUnknown`, looked up, then voided again with the same key (`{attempt}:void`) only while still held;
+  - a refused void, or an unexpected lookup → `ManualReview`.
+  - Voiding and VoidUnknown count as live, so no new attempt starts while a hold may exist. Nothing is captured.
+  - The mock keeps payments in memory per process, so a separately started Worker cannot see the Api's mock payments.
+- **Not yet built, and gates for exposing checkout:** capture on the attempt; an audited operator way out of ManualReview; a cap on attempts per order and customer with generic declines to clients (card testing; a fraud-policy question, Q10); webhooks; and any endpoint. The real provider waits for ADR 0006, whose not-found consistency window must be set from that provider's behaviour: if it is too short, a later attempt could hold funds twice.
 
 ## Principles
 - Card data never touches our servers: Stripe Elements collects it; we hold PaymentIntent IDs only.

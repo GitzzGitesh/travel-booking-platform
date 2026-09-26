@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\BuildingBlocks.csproj" />
     <ProjectReference Include="..\Modules.Payments.Contracts\Modules.Payments.Contracts.csproj" />
+    <ProjectReference Include="..\..\Orders\Modules.Orders.Contracts\Modules.Orders.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

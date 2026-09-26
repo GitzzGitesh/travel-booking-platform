@@ -1,6 +1,9 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using TravelBooking.BuildingBlocks.Background;
+using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Orders.Application;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 
 namespace TravelBooking.Modules.Orders.Infrastructure;
@@ -52,6 +55,27 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             return false;
         }
     }
+
+    public void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
+        where TEvent : IIntegrationEvent =>
+        db.Set<OutboxMessage>().Add(OutboxMessage.From(integrationEvent, correlationId));
+
+    public Task<bool> IsReleaseRequestPendingAsync(Guid paymentId, CancellationToken cancellationToken)
+    {
+        var type = typeof(OrderPaymentReleaseRequested).FullName!;
+        var payment = paymentId.ToString();
+        return db.Set<OutboxMessage>().AnyAsync(
+            m => m.Type == type && m.ProcessedAt == null && m.FailedAt == null && m.Payload.Contains(payment), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
+        await db.Set<FlightOrderItem>().AsNoTracking()
+            .Where(i => i.Status == FlightOrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= now)
+            .GroupBy(i => EF.Property<Guid>(i, "OrderId"))
+            .OrderBy(g => g.Min(i => i.OfferExpiresAt))
+            .Select(g => g.Key)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
 
     private IQueryable<Order> Load() => db.Orders.Include(o => o.Items).Include(o => o.Timeline).AsSplitQuery();
 }

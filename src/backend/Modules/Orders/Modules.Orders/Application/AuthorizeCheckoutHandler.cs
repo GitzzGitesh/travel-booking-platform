@@ -243,8 +243,8 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
 
     private async Task<Result<CheckoutResult, CheckoutFailure>> Unused(Order order, Guid paymentId, string reason, TransitionContext context, CancellationToken cancellationToken)
     {
-        order.NoteUnusedPaymentHold(paymentId.ToString(), reason, context);
-        await store.TrySaveAsync(cancellationToken); // a lost race leaves the note to the next repeat of this request
+        PaymentHolds.RequestRelease(store, order, paymentId, reason, context);
+        await store.TrySaveAsync(cancellationToken); // a lost race leaves the note, and the request, to the next repeat
         return Failure(new CheckoutFailure.AuthorizedButNotBookable(paymentId));
     }
 

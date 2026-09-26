@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using TravelBooking.BuildingBlocks;
+using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Orders.Domain;
 
 namespace TravelBooking.Modules.Orders.Infrastructure;
@@ -16,6 +17,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
+        modelBuilder.AddOutbox().AddJobLeases(); // ADR 0007: events for other modules, and the Orders jobs' leases
 
         var order = modelBuilder.Entity<Order>();
         order.ToTable("Orders");
@@ -43,6 +45,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         item.HasKey(i => i.Id);
         item.Property(i => i.Id).ValueGeneratedNever();
         item.HasIndex(i => i.SelectedOfferId).IsUnique(); // at most one order item books a selection
+        item.HasIndex(i => new { i.Status, i.OfferExpiresAt }); // the offer-expiry job's work list
         item.ComplexProperty(i => i.AgreedPrice, money =>
         {
             money.Property(m => m.Amount).HasColumnName("AgreedAmount").HasPrecision(19, 4);

@@ -1,5 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Cross-cutting primitives shared by modules and integrations (architecture overview). No framework dependencies. -->
+  <!--
+    Cross-cutting primitives shared by modules and integrations (architecture overview). Money, results and the provider
+    error taxonomy have no framework dependencies. The outbox, inbox and job-lease plumbing (Background/, ADR 0007) needs
+    hosting and EF Core; each module maps those tables in its own schema.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+  </ItemGroup>
 
 </Project>

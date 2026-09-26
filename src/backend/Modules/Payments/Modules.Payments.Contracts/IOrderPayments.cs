@@ -25,7 +25,17 @@ public interface IOrderPayments
     /// before anything else about the order changes.
     /// </summary>
     Task<OrderPaymentResult?> ResumeAsync(Guid orderId, string customerId, string idempotencyKey, string? correlationId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The order's live payment attempt (one that holds, or may hold, funds) as stored, without asking the provider; null
+    /// if there is none. A query (ADR 0002): Orders never abandons an order while one exists.
+    /// </summary>
+    Task<LiveOrderPayment?> FindLiveAsync(Guid orderId, CancellationToken cancellationToken);
 }
+
+/// <param name="Status">Authorized or ActionRequired (releasable), Pending (an outcome or a void still unknown), or ManualReview.</param>
+/// <param name="ReleaseRequested">Orders already asked for the hold to be released.</param>
+public sealed record LiveOrderPayment(Guid PaymentId, OrderPaymentStatus Status, bool ReleaseRequested);
 
 /// <param name="PaymentMethodToken">The provider's opaque token from its hosted card fields; never card data.</param>
 public sealed record OrderPaymentRequest(Guid OrderId, string CustomerId, string IdempotencyKey, Money Amount, string PaymentMethodToken, string? CorrelationId = null)

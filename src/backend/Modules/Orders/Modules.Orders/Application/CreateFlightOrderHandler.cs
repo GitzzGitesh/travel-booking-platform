@@ -1,4 +1,5 @@
 using TravelBooking.BuildingBlocks;
+using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 
@@ -22,6 +23,16 @@ internal interface IOrderStore
 
     /// <summary>Saves a loaded order; false if another request changed it first (optimistic concurrency).</summary>
     Task<bool> TrySaveAsync(CancellationToken cancellationToken);
+
+    /// <summary>Adds an integration event to the Orders outbox, saved atomically with the next <see cref="TrySaveAsync"/> (ADR 0007).</summary>
+    void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
+        where TEvent : IIntegrationEvent;
+
+    /// <summary>Whether a release request for this payment is still waiting in the outbox (neither delivered nor given up).</summary>
+    Task<bool> IsReleaseRequestPendingAsync(Guid paymentId, CancellationToken cancellationToken);
+
+    /// <summary>Orders with an item still awaiting payment whose offer expired at or before <paramref name="now"/>, oldest first.</summary>
+    Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken);
 }
 
 /// <summary><paramref name="CustomerId"/> is the authenticated customer (Q8); the actor recorded on the timeline.</summary>

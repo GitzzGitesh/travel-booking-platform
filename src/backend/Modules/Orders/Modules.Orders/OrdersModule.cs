@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Infrastructure;
 
@@ -32,4 +33,18 @@ public static class OrdersModule
         services.AddScoped<IOrderStore, SqlOrderStore>();
         return services;
     }
+
+    /// <summary>
+    /// The Worker's Orders jobs (ADR 0007): dispatching the Orders outbox, and expiring orders whose offer lapsed before
+    /// payment. Never registered in the Api.
+    /// </summary>
+    public static IServiceCollection AddOrdersBackgroundJobs(this IServiceCollection services)
+    {
+        services.AddScoped<ExpireUnpaidOrderHandler>();
+        services.AddOutboxDispatcher<OrdersDbContext>(OrdersOutboxJobName, TimeSpan.FromSeconds(5));
+        services.AddBackgroundJob<ExpireUnpaidOrdersJob, OrdersDbContext>(ExpireUnpaidOrdersJob.Name, TimeSpan.FromMinutes(1));
+        return services;
+    }
+
+    internal const string OrdersOutboxJobName = "orders.outbox";
 }
