@@ -4,7 +4,7 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 
 ## Current phase: 3 — First vertical slice (flights), in progress
 
-**Q1 answered 2026-09-25: we are merchant of record for flights (Option A).** **Q8 answered 2026-09-26: customers sign in before booking (no guest checkout).** Hotels (Q1), markets (Q2), currencies and FX (Q5), suppliers (Q6), retention (Q9), fraud (Q10), refund thresholds (Q11) and group or child-only bookings (Q13) stay open. **ADR 0005 was accepted for flights**, since its Q1 gate is now met. **ADR 0006 stays Proposed**: accepting it also fixes the payment provider (Stripe), which depends on Q2 and Q5.
+**Q1 answered 2026-09-25: we are merchant of record for flights (Option A).** **Q8 answered 2026-09-26: customers sign in before booking (no guest checkout).** **Q6 answered 2026-09-27: Amadeus is the first production flight supplier (ADR 0019), not yet credentialed or verified.** Hotels (Q1), markets (Q2), currencies and FX (Q5), retention (Q9), fraud (Q10), refund thresholds (Q11) and group or child-only bookings (Q13) stay open. **ADR 0005 was accepted for flights**, since its Q1 gate is now met. **ADR 0006 stays Proposed**: accepting it also fixes the payment provider (Stripe), which depends on Q2 and Q5.
 
 ### Phase 3: plan
 | # | Chunk | Status / depends on |
@@ -23,6 +23,7 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 | 4 | **Background money safety** (one batch, ADR 0007) | **Done.** Worker jobs under DB leases, over a BuildingBlocks outbox, inbox and lease store in each module's schema. Payment attempts are reconciled by lookup (Authorizing, AuthorizationUnknown, ActionRequired), and holds Orders will not use are voided once, keyed by the attempt (`Voiding`, `VoidUnknown`, `Voided`; F-21, F-22), after an `OrderPaymentReleaseRequested` event (Orders outbox → Payments inbox). Orders whose offer expired are abandoned only when no live payment attempt remains (F-02). Migrations `AddOutboxAndJobLeases` (orders) and `AddHoldReleaseAndInbox` (payments). Runbook `payment-hold-release.md` |
 | 4b | **Flights model readiness** (audit batch 2): fare model enrichment, provider resolution by id, airport reference data | **Done.** See "Phase 3: flights model readiness" below |
 | 4b-q6 | **Flight supplier preparation (Q6)**: Amadeus, Sabre, Travelport and Duffel adapters | **Done (technical preparation only, ADR 0018).** Capability model and adapter stages; startup composition rules (a search provider must implement search; only ProductionReady adapters outside Development and Staging); operations an adapter does not implement are never called. Duffel and Amadeus search and revalidation are mapped from documentation (fixture-tested); Sabre and Travelport are scaffolds. Booking is implemented for none; sandbox contract tests are credential-gated. Q6 itself stays open: see `docs/architecture/flight-suppliers.md` |
+| 4b-amadeus | **Q6 answered: Amadeus first (ADR 0019)** | **Done (decision and safe adapter work).** Amadeus is the first production supplier; we are merchant of record; Sabre, Travelport and Duffel stay future integrations. Adapter: the optional `Currency` setting (`currencyCode`), and numbered Amadeus error codes recorded on failures (never supplier text; no code changes an error kind until sandbox-confirmed). Still MappedFromDocumentation: no credentials, no sandbox run, no booking. Remaining requirements R1–R13 in ADR 0019 |
 | 4c | **Next (audit):** identity and the customer booking path (token validation, internal customer id, customer endpoints, supplier booking then capture) | **Blocked on decisions:** the identity provider tenant (ADR 0008), Q9 (traveller data), and ADR 0006 for card entry |
 | 5 | Supplier booking after authorization (`FlightSupplierBooking` behind a Flights Contracts entry point), then capture or void | **Blocked on traveller data:** names are PII, documents Sensitive PII, retention is Q9 |
 
@@ -40,6 +41,8 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 - A cap on payment attempts per order and customer, a per-customer rate limit, generic declines to clients and a velocity security event (card testing; fraud policy, Q10).
 - The HTTP permission matrix, including cross-customer attempts.
 - Create `Modules.Orders.Contracts` with its first consumer.
+
+**Amadeus next (gated):** R1 (Amadeus product) and R2 (test credentials) unblock the sandbox contract run and SandboxVerified; R5–R7 then allow the Amadeus booking ADR and booking and lookup; R3, R4 and R8–R13 are needed for ProductionReady (ADR 0019).
 
 **Follow-ups from the Q6 preparation:** the resilience package at the marked hook (ADR 0003; ask first); the provider id on Orders items with booking orchestration; an optional cabin-bag allowance in the port; market and charge-currency context on search (ADR 0017); per supplier, the steps in the onboarding runbook.
 

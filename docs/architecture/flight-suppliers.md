@@ -1,5 +1,7 @@
 # Flight suppliers: readiness and capabilities (Q6)
 
+**Q6 answered 2026-09-27: Amadeus is the first production flight supplier** ([ADR 0019](../adr/0019-amadeus-first-production-flight-supplier.md)), and our company is the merchant of record. Sabre, Travelport and Duffel remain future integrations. Amadeus is **not production-ready**: its remaining requirements (R1–R13) are listed in ADR 0019.
+
 **Status: preparation.** No supplier is chosen, credentialed, commercially approved or production-ready. This page records what is **technically prepared** and what still needs **credentials**, **supplier confirmation** or **commercial verification**. Anything not verified is marked as such, never assumed. Structure and rules: ADR 0018.
 
 ## Readiness levels
@@ -63,8 +65,9 @@ The declarations are the readiness record; the runtime acts only on the stage an
   - the offer currency rules;
   - market coverage.
 
-### Amadeus (Self-Service APIs)
-- **Configuration:** `Integrations:Flights:Amadeus`: `Enabled`, `BaseUrl` (test or production environment), `ClientId` and `ClientSecret` (secrets), `MaxOffers`, `OfferLifetime`.
+### Amadeus (Self-Service APIs): first production supplier (ADR 0019)
+- **Configuration:** `Integrations:Flights:Amadeus`: `Enabled`, `BaseUrl` (test or production environment), `ClientId` and `ClientSecret` (secrets), `MaxOffers`, `OfferLifetime`, and `Currency` (optional ISO-4217 code sent as `currencyCode`; unset means the supplier's default).
+- **Errors:** the numbered Amadeus codes (`errors[].code`) are recorded in the error message and logs; the supplier's titles and details are not. The HTTP status decides the error kind until the sandbox confirms which codes mean sold out, expired or price changed (R13).
 - **Authentication:** OAuth2 client credentials; the token is cached and refreshed. A rejected token is replaced once.
 - **Mapped:**
   - search is Flight Offers Search, sent as a POST with a method-override header;
@@ -80,8 +83,9 @@ The declarations are the readiness record; the runtime acts only on the stage an
   - lookup by our reference (not documented): otherwise the adapter must keep the Amadeus order id before returning, which needs an ADR;
   - idempotency of order creation;
   - cancellation and refunds;
-  - currency parameter behaviour;
-  - content and markets.
+  - whether `currencyCode` is honoured for every fare, and the settlement currency;
+  - content and markets;
+  - the full list, with owners: R1–R13 in ADR 0019.
 
 ### Sabre (scaffolded)
 - **Configuration:** `Integrations:Flights:Sabre`: `Enabled`, `BaseUrl`, `ClientId`, `ClientSecret` (secrets) and `PseudoCityCode`.
@@ -104,4 +108,4 @@ The declarations are the readiness record; the runtime acts only on the stage an
   - content and markets.
 
 ## Currency (Q5 policy)
-An offer's price is in the **supplier's currency**. The customer's charge currency is a separate, later pricing step (the FX policy), and adapters never convert. Whether a supplier can be asked for a particular currency is the `RequestedCurrency` capability, which requires confirmation for all four.
+An offer's price is in the **supplier's currency**. The customer's charge currency is a separate, later pricing step (the FX policy), and adapters never convert. Whether a supplier can be asked for a particular currency is the `RequestedCurrency` capability, which requires confirmation for all four. Amadeus sends `currencyCode` when its `Currency` setting is configured; whether every fare honours it is R9 in ADR 0019.

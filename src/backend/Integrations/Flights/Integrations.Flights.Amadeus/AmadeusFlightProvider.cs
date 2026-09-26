@@ -11,7 +11,8 @@ using TravelBooking.Modules.Flights.Ports;
 namespace TravelBooking.Integrations.Flights.Amadeus;
 
 /// <summary>
-/// Amadeus Self-Service adapter (Q6 candidate). Search (Flight Offers Search) and revalidation (Flight Offers Price) are
+/// Amadeus Self-Service adapter: the first production flight supplier (Q6, ADR 0019), not yet verified against the
+/// sandbox or approved for production (stage MappedFromDocumentation). Search (Flight Offers Search) and revalidation (Flight Offers Price) are
 /// mapped from the public documentation and tested against documentation-shaped fixtures only. Booking and lookup are
 /// NOT implemented: production ticketing needs a consolidator agreement, and lookup by our own reference is not a
 /// documented feature, so the adapter would have to keep the Amadeus order id before returning, which needs a
@@ -48,7 +49,7 @@ internal sealed partial class AmadeusFlightProvider : IFlightProvider
     public async Task<Result<FlightSearchResult, ProviderError>> SearchAsync(FlightSearchCriteria criteria, CancellationToken cancellationToken)
     {
         var response = await SendAsync(
-            () => Post("v2/shopping/flight-offers", AmadeusMapping.ToSearchRequest(criteria, _options.Value.MaxOffers)),
+            () => Post("v2/shopping/flight-offers", AmadeusMapping.ToSearchRequest(criteria, _options.Value.MaxOffers, _options.Value.Currency)),
             _options.Value.SearchTimeout,
             "search",
             cancellationToken);
@@ -122,13 +123,13 @@ internal sealed partial class AmadeusFlightProvider : IFlightProvider
             var token = await _tokens.GetAsync(cancellationToken);
             if (!token.IsSuccess)
             {
-                LogFailure(_logger, ProviderId, "authenticate", token.Error.Kind);
+                LogFailure(_logger, ProviderId, "authenticate", token.Error.Kind, token.Error.Message);
                 return Result<SupplierResponse, ProviderError>.Failure(token.Error);
             }
 
             using var request = build();
             request.Headers.Authorization = SupplierHttp.Bearer(token.Value);
-            var response = await SupplierHttp.SendAsync(_httpClients.CreateClient(HttpClientName), request, timeout, SupplierCallKind.Read, cancellationToken);
+            var response = await SupplierHttp.SendAsync(_httpClients.CreateClient(HttpClientName), request, timeout, SupplierCallKind.Read, cancellationToken, DescribeFailure);
             if (!response.IsSuccess && response.Error.Kind == ProviderErrorKind.AuthFailure && attempt == 1)
             {
                 _tokens.Invalidate();
@@ -137,10 +138,30 @@ internal sealed partial class AmadeusFlightProvider : IFlightProvider
 
             if (!response.IsSuccess)
             {
-                LogFailure(_logger, ProviderId, operation, response.Error.Kind);
+                LogFailure(_logger, ProviderId, operation, response.Error.Kind, response.Error.Message);
             }
 
             return response;
+        }
+    }
+
+    /// <summary>
+    /// The numbered Amadeus error codes (<c>errors[].code</c>), added to the error message for operators and sandbox
+    /// verification. Only the numbers are kept, never the title or detail, which can echo request data. No code changes
+    /// the error kind yet: which codes mean sold out, expired or price changed is confirmed in the sandbox first
+    /// (ADR 0019), so until then the HTTP status decides.
+    /// </summary>
+    internal static string? DescribeFailure(SupplierResponse response)
+    {
+        try
+        {
+            var codes = JsonSerializer.Deserialize<AmadeusErrors>(response.Body, Json)?.Errors?
+                .Select(e => e.Code).OfType<int>().Distinct().Take(5).ToList();
+            return codes is { Count: > 0 } ? $"Amadeus error code {string.Join(", ", codes)}" : null;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
@@ -186,8 +207,8 @@ internal sealed partial class AmadeusFlightProvider : IFlightProvider
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Flight provider {ProviderId} {Operation} failed: {ErrorKind}")]
-    private static partial void LogFailure(ILogger logger, string providerId, string operation, ProviderErrorKind errorKind);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Flight provider {ProviderId} {Operation} failed: {ErrorKind} ({Detail})")]
+    private static partial void LogFailure(ILogger logger, string providerId, string operation, ProviderErrorKind errorKind, string detail);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Flight provider {ProviderId} returned a response the adapter cannot map ({ExceptionType})")]
     private static partial void LogUnmappable(ILogger logger, string providerId, string exceptionType);

@@ -170,6 +170,40 @@ public sealed class SupplierAdapterTests
         body.GetProperty("travelers").EnumerateArray().Select(t => (t.GetProperty("travelerType").GetString(), t.TryGetProperty("associatedAdultId", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null))
             .ShouldBe([("ADULT", null), ("HELD_INFANT", "1")]);
         body.GetProperty("searchCriteria").GetProperty("flightFilters").GetProperty("cabinRestrictions")[0].GetProperty("cabin").GetString().ShouldBe("BUSINESS");
+        body.TryGetProperty("currencyCode", out _).ShouldBeFalse(); // no currency configured: the supplier's default
+    }
+
+    [Fact]
+    public async Task Amadeus_search_asks_for_the_configured_currency()
+    {
+        var handler = new FakeHandler().Respond(HttpStatusCode.OK, _token).Respond(HttpStatusCode.OK, """{"data":[]}""");
+
+        await Composed("Amadeus", _amadeusSettings.With("Integrations:Flights:Amadeus:Currency", "USD"), handler)!.SearchAsync(_oneWayWithInfant, Ct);
+
+        JsonDocument.Parse(handler.Requests[1].Body!).RootElement.GetProperty("currencyCode").GetString().ShouldBe("USD");
+    }
+
+    [Theory]
+    [InlineData("usd")]
+    [InlineData("US")]
+    [InlineData("")]
+    public void An_amadeus_currency_that_is_not_an_iso_code_fails_at_startup(string currency) =>
+        Should.Throw<OptionsValidationException>(() => Composed("Amadeus", _amadeusSettings.With("Integrations:Flights:Amadeus:Currency", currency)));
+
+    [Fact]
+    public async Task Amadeus_errors_keep_the_numbered_codes_but_never_the_supplier_text()
+    {
+        var handler = new FakeHandler().Respond(HttpStatusCode.OK, _token)
+            .Respond(HttpStatusCode.BadRequest, """{"errors":[{"status":400,"code":4926,"title":"INVALID DATA RECEIVED","detail":"echoed request data"},{"status":400,"code":4926,"title":"INVALID DATA RECEIVED"}]}""")
+            .Respond(HttpStatusCode.InternalServerError, "<html>gateway</html>");
+        var provider = Amadeus(handler);
+
+        var rejected = (await provider.SearchAsync(_oneWayWithInfant, Ct)).Error;
+        var failed = (await provider.SearchAsync(_oneWayWithInfant, Ct)).Error;
+
+        // The status still decides the kind: code-to-kind mapping waits for sandbox verification (ADR 0019).
+        rejected.ShouldBe(new ProviderError(ProviderErrorKind.InvalidRequest, "HTTP 400, Amadeus error code 4926"));
+        failed.ShouldBe(new ProviderError(ProviderErrorKind.Unavailable, "HTTP 500"));
     }
 
     [Fact]

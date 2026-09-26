@@ -23,5 +23,8 @@ public enum ProviderErrorKind
     OperationInProgress,
 }
 
-/// <param name="Message">Safe for logs: never a supplier payload or personal data.</param>
+/// <param name="Message">
+/// Safe for logs: never a supplier payload or personal data. Opaque diagnostic text (it may carry a supplier's numeric
+/// error code): the core decides only on <paramref name="Kind"/> and never parses the message.
+/// </param>
 public sealed record ProviderError(ProviderErrorKind Kind, string Message);
