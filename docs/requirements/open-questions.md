@@ -13,7 +13,7 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 | Q5 | **Charge currencies** and FX policy: charge in the customer's currency or the supplier's? Who carries FX risk? | Money model, Stripe configuration, reconciliation | **Gate:** before real payment/currency integration (Phase 5). Produces a separate FX-policy ADR; ADR 0010's technical conventions do not wait for it | Open |
 | Q6 | **Target suppliers** and their contract/commercial model (aggregator with balance, GDS with BSP/ARC accreditation, bed bank)? | Shapes provider ports and payment flows | **Gate:** before the supplier provider ports are frozen (ADR 0004) and before Phase 5 | Open |
 | Q7 | Are **combined flight + hotel orders** in scope, and when? | Package travel liability (Q2) and Order aggregate design | Phase "second product" | Open |
-| Q8 | **Customer accounts**: is guest checkout allowed? | Identity flows, booking retrieval by reference + email | Phase 4 | Open |
+| Q8 | **Customer accounts**: is guest checkout allowed? | Identity flows, booking retrieval by reference + email | Phase 4 | **Answered 2026-09-26:** no guest checkout; login is required before booking (see below) |
 | Q9 | **Data retention periods** for PII, bookings, and financial records? | Privacy compliance vs financial/legal retention | Data design, Phase 4 | Open |
 | Q10 | **Fraud tolerance and review process**: automatic block vs manual review queue? | Checkout UX, ops staffing, Stripe Radar rules | Phase 5 | Open |
 | Q11 | **Refund approval policy**: which refunds need maker-checker, and what are the thresholds? | Admin permissions and workflow | Refund phase | Open |
@@ -24,6 +24,9 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 
 ### Q1. Merchant of record: flights (answered 2026-09-25)
 **Answer:** **Option A. Our company is the merchant of record for flights**: we charge the customer, and the supplier is settled separately. This keeps card entry on our payment provider's hosted fields (PCI SAQ-A, ADR 0006) and supports the authorize → book → capture flow (ADR 0005). **Not decided:** the hotel model, charge currencies and FX (Q5), the payment provider's commercial terms, fraud rules (Q10), refund thresholds (Q11), and supplier settlement (Q6).
+
+### Q8. Customer accounts (answered 2026-09-26)
+**Answer:** **a customer must be signed in before proceeding to booking.** There is no guest checkout, so booking retrieval by reference, email and one-time code is not needed. Every order belongs to an authenticated customer. **Not decided:** the identity provider's tenant and configuration (ADR 0008 stays Proposed), whether search and offer selection need sign-in (today they are anonymous), and data retention (Q9).
 
 ### Q3. First product (answered 2026-09-25)
 **Answer:** **flights** are the first real product slice. Phase 2 starts with the flight search port, a deterministic mock provider, and the provider contract suite (ADR 0004, ADR 0014). This answer does not settle Q1 (merchant of record), Q2 (markets), or Q6 (suppliers).

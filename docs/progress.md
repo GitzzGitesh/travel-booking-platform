@@ -4,7 +4,7 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 
 ## Current phase: 3 — First vertical slice (flights), in progress
 
-**Q1 answered 2026-09-25: we are merchant of record for flights (Option A).** Hotels (Q1), markets (Q2), currencies and FX (Q5), suppliers (Q6), fraud (Q10), refund thresholds (Q11) and group or child-only bookings (Q13) stay open. **ADR 0005 was accepted for flights**, since its Q1 gate is now met. **ADR 0006 stays Proposed**: accepting it also fixes the payment provider (Stripe), which depends on Q2 and Q5.
+**Q1 answered 2026-09-25: we are merchant of record for flights (Option A).** **Q8 answered 2026-09-26: customers sign in before booking (no guest checkout).** Hotels (Q1), markets (Q2), currencies and FX (Q5), suppliers (Q6), retention (Q9), fraud (Q10), refund thresholds (Q11) and group or child-only bookings (Q13) stay open. **ADR 0005 was accepted for flights**, since its Q1 gate is now met. **ADR 0006 stays Proposed**: accepting it also fixes the payment provider (Stripe), which depends on Q2 and Q5.
 
 ### Phase 3: plan
 | # | Chunk | Status / depends on |
@@ -16,12 +16,12 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 - There is one capture per payment. Refunds are records with status and a lookup by our key. A reference is one attempt, so another card after a decline gets a new reference.
 - There are `Canceled` and `Expired` states, and a replayed authorization is classified by the actual state.
 - The card guard strips separators and checks any 13–19-digit group with Luhn, and the customer action token is redacted. `PaymentProviderContract` is the suite every future adapter must pass. **Nothing is persisted and there is no endpoint**; Orders is unchanged, since `StartBooking` already requires the order's authorization reference |
-| 3 | **Next (proposed):** the persisted Payment record (its own state machine, including an unknown authorization that is reconciled and never `Abandoned`), then the checkout orchestration without an endpoint: re-revalidate with an exact price → authorize → `StartBooking` → `FlightSupplierBooking` behind a Flights Contracts entry point → capture or void, plus Worker reconciliation | Booking needs **traveller data** (names are PII; documents are Sensitive PII; retention Q9), and the traveller story needs a decision on where travellers come from (Q8 guest checkout vs accounts). The Payment record and the orchestration up to authorization are technically unblocked |
-| 3 (criteria) | Carried into chunk 3 from the chunk 1 reviews. (The ADR 0006 gate that this row used to name was resolved on 2026-09-26: provider-neutral port and mock only.) The original plan was: the payment port (`IPaymentProvider`) and its deterministic mock (authorize with manual capture, capture, void), then the booking orchestration: `AwaitingPayment` → authorize → `Booking` → `FlightSupplierBooking` behind a Flights Contracts entry point (chunk 6 criteria) → capture or void, plus Worker reconciliation of `PendingConfirmation` | Needs **ADR 0006 accepted** (it names Stripe; Q2 and Q5 bear on that) or a decision to build only the provider-neutral port and mock first. Traveller data for bookings needs the traveller story (names are PII; documents are Sensitive PII; Q9 retention). **Chunk 2 acceptance criteria (from the reviews):**
-- Right before authorizing, re-revalidate the selection with the supplier and require an exact match to `item.AgreedPrice`; otherwise show a price change. Flights still allows revalidating an ordered selection, and "Confirmed at creation" is not enough.
-- Authorization declined → the item stays `AwaitingPayment`. Authorization unknown (timeout) → a payment-side pending state reconciled with the provider, never `Abandoned` while a hold may exist.
-- An expiry job moves items whose offer expired to `Abandoned`.
-- Decide (business) whether a confirmation from ManualReview must record the actual supplier price. |
+| 3 | **Checkout foundation** (one batch: Q8, payment attempts, checkout payment step; no endpoint) | **Done.** Q8 answered 2026-09-26 (sign-in required before booking, no guest checkout); the identity provider stays open (ADR 0008 Proposed).
+- **Orders belong to a signed-in customer:** `Order.CustomerId`, unique `(CustomerId, IdempotencyKey)`, owner-scoped lookups (another customer's order is not found), actor `customer:{id}` on the timeline (migrations `AddOrderCustomer`, `WidenTimelineActor`).
+- **Payment attempts** (`Modules.Payments.Contracts`: `IOrderPayments`; schema `payments`, migration `InitialPayments`): saved as Authorizing before the provider call; unique per order and key; **one live attempt per order** (filtered unique index, F-32); unknown, crashed or challenged attempts are looked up by our reference, never re-authorized; "not found" is conclusive only after `Payments:Reconciliation:NotFoundConclusiveAfter` (15 minutes by default); amount mismatches and later-phase states go to ManualReview; history with actor and correlation id; token and customer action never printed.
+- **Checkout payment step** (`AuthorizeCheckoutHandler`, Orders): finish an attempt already made with the key first; otherwise revalidate every item with the supplier now (`IFlightSelections.RevalidateAsync`), adopt a new expiry and, only with a newly accepted quote, a new price (F-01); refuse offers with under two minutes left; authorize the server-side total; `Booking` only on an authorization of exactly that total. An authorization the order will not book on is noted on the timeline for release (F-22). |
+| 4 | **Next (proposed):** release and reconciliation of payment holds: void an unused or failed authorization (F-22), a Worker job that looks up open attempts (Authorizing, AuthorizationUnknown **and ActionRequired**, F-21) and releases or records what it finds, and an audited operator way out of ManualReview | Technically unblocked. The Worker host needs its first job; the challenge timeout and the operator path may need policy input |
+| 5 | Supplier booking after authorization (`FlightSupplierBooking` behind a Flights Contracts entry point), then capture or void | **Blocked on traveller data:** names are PII, documents Sensitive PII, retention is Q9 |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.
@@ -30,7 +30,15 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 - `*Details` records are never logged or serialized.
 - In Production, `PaymentOperations` must fail at startup without a provider.
 
-**Preconditions for any Orders endpoint:** the guest-checkout decision (Q8); a customer or owner on `Order`; a unique idempotency key per customer, `(CustomerId, IdempotencyKey)`; and never returning another customer's `OrderId` (e.g. in `SelectionAlreadyOrdered`, F-60). Create `Modules.Orders.Contracts` with its first consumer.
+**Preconditions for any Orders or checkout endpoint:** Q8 is answered and the order owner, per-customer keys and hidden foreign order ids are done (chunk 3). Still needed:
+- ADR 0008 accepted with a configured identity provider; the customer id taken from the token only.
+- The IdP subject mapped to an internal customer id (it is pseudonymous PII in append-only rows; security review, chunk 3).
+- Payment-hold release, the reconciliation job including ActionRequired, and the ManualReview way out (row 4).
+- A cap on payment attempts per order and customer, a per-customer rate limit, generic declines to clients and a velocity security event (card testing; fraud policy, Q10).
+- The HTTP permission matrix, including cross-customer attempts.
+- Create `Modules.Orders.Contracts` with its first consumer.
+
+**Follow-ups from the chunk 3 reviews:** a later Orders migration can drop the `CustomerId` default and add `CHECK (CustomerId <> '')` once no dev rows lack an owner. The ARCHITECTURE REVIEW on synchronous cross-module commands is **resolved by ADR 0015 (Accepted 2026-09-26)**. Checkout's `IFlightSelections.RevalidateAsync` and `IOrderPayments.AuthorizeAsync`/`ResumeAsync` are allowed as idempotent, supplier-neutral commands with explicit unknown states. Durable side effects and background work stay on the outbox and Worker, and any other synchronous command needs its own ADR.
 
 ## Phase 2 — Flights slice (complete)
 

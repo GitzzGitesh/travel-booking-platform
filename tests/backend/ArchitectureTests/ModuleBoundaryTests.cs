@@ -82,6 +82,15 @@ public sealed class ModuleBoundaryTests
             .Because("only HTTP request types may be public, and they belong to the module's endpoints")
             .Check(_architecture);
 
+    // Payments trusts the customer id it is given: only Orders, which checks that the customer owns the order, may ask
+    // it to authorize a payment (security review, Phase 3 chunk 3; ADR 0015, condition 5).
+    [Fact]
+    public void Only_orders_authorizes_order_payments() =>
+        Types().That().DoNotResideInNamespaceMatching(@"^TravelBooking\.Modules\.(Orders|Payments)(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().HaveFullName("TravelBooking.Modules.Payments.Contracts.IOrderPayments"))
+            .Because("Payments relies on its caller for the order-ownership check")
+            .Check(_architecture);
+
     [Fact]
     public void Module_domain_code_does_not_depend_on_web_data_or_http_frameworks() =>
         Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Domain(\..+)?$")

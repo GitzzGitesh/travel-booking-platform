@@ -10,10 +10,11 @@ using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MsSql;
 using TravelBooking.Modules.Flights.Infrastructure;
 using TravelBooking.Modules.Orders.Infrastructure;
+using TravelBooking.Modules.Payments.Infrastructure;
 
 namespace TravelBooking.Api.IntegrationTests;
 
-/// <summary>The Api with a real SQL Server (Testcontainers), the Flights migrations applied, and a controllable clock.</summary>
+/// <summary>The Api with a real SQL Server (Testcontainers), every module's migrations applied, and a controllable clock.</summary>
 public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly MsSqlContainer _sql = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
@@ -26,6 +27,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         using var scope = Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<FlightsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Database.MigrateAsync();
     }
 
     public new async ValueTask DisposeAsync()
@@ -44,6 +46,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
     {
         builder.UseSetting("ConnectionStrings:Flights", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Orders", _sql.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:Payments", _sql.GetConnectionString());
         builder.ConfigureTestServices(services => services.AddSingleton<TimeProvider>(Clock));
     }
 }

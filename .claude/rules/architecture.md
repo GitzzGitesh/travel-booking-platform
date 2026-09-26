@@ -5,6 +5,7 @@ Applies to all work. Background: ADR 0002 (modular monolith), 0004 (providers), 
 ## Boundaries
 - A module may reference another module **only** through its `Modules.X.Contracts` project (public interfaces, DTOs, integration events). Never reference another module's internal types.
 - A module owns its database schema. **No cross-module joins, queries, or foreign keys.** Get data through contracts or keep a local read copy fed by integration events.
+- Cross-module calls through Contracts are for queries. Side effects go through the outbox and Worker (ADR 0002, 0007). The **only** exception is ADR 0015: synchronous commands in checkout orchestration, when the caller needs the result immediately (revalidation, payment authorization). They must be idempotent (key plus unique constraint), supplier-neutral, and have explicit unknown-state handling. Any other synchronous cross-module command needs its own ADR.
 - Inside a module: Domain has no dependencies on Application, Infrastructure, EF Core, ASP.NET, or HTTP. Application depends on Domain only (plus BuildingBlocks). Infrastructure implements Application ports.
 - Supplier/provider DTOs, SDK types, and error codes stay inside their `Integrations.*` project. They are mapped to domain types at the adapter boundary (anti-corruption layer).
 - The core depends on `IFlightProvider` / `IHotelProvider` / `IPaymentProvider` ports, never on a concrete supplier.

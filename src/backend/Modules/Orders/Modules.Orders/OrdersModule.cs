@@ -9,7 +9,7 @@ namespace TravelBooking.Modules.Orders;
 
 /// <summary>
 /// The Orders module's entry point (ADR 0005). It maps no endpoints yet: creating orders over HTTP waits for the
-/// customer-identity decision (guest checkout, Q8) and payments (ADR 0006).
+/// identity provider (ADR 0008; Q8: sign-in required) and the payment provider (ADR 0006).
 /// </summary>
 public static class OrdersModule
 {
@@ -17,6 +17,7 @@ public static class OrdersModule
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<CreateFlightOrderHandler>();
+        services.AddScoped<AuthorizeCheckoutHandler>();
 
         // The module's own schema. The connection string is resolved on first use; migrations are never applied at
         // startup (database rules).

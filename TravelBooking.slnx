@@ -23,6 +23,7 @@
     <Project Path="src/backend/Modules/Orders/Modules.Orders/Modules.Orders.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Payments/">
+    <Project Path="src/backend/Modules/Payments/Modules.Payments.Contracts/Modules.Payments.Contracts.csproj" />
     <Project Path="src/backend/Modules/Payments/Modules.Payments/Modules.Payments.csproj" />
   </Folder>
   <Folder Name="/tests/" />

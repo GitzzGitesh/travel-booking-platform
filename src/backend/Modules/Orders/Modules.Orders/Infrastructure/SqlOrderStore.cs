@@ -13,8 +13,11 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
     public Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken) =>
         Load().SingleOrDefaultAsync(o => o.Id == orderId, cancellationToken);
 
-    public Task<Order?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
-        Load().AsNoTracking().SingleOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey, cancellationToken);
+    public Task<Order?> FindOwnedAsync(Guid orderId, string customerId, CancellationToken cancellationToken) =>
+        Load().SingleOrDefaultAsync(o => o.Id == orderId && o.CustomerId == customerId, cancellationToken);
+
+    public Task<Order?> FindByIdempotencyKeyAsync(string customerId, string idempotencyKey, CancellationToken cancellationToken) =>
+        Load().AsNoTracking().SingleOrDefaultAsync(o => o.CustomerId == customerId && o.IdempotencyKey == idempotencyKey, cancellationToken);
 
     public async Task<Guid?> FindOrderIdBySelectedOfferAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
         await db.Orders.AsNoTracking()

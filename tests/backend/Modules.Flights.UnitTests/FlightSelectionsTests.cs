@@ -75,7 +75,9 @@ public sealed class FlightSelectionsTests
         (await Selections(SelectedOfferStateTests.NewSelection()).GetBookableAsync(Guid.NewGuid(), TestContext.Current.CancellationToken))
             .Error.ShouldBe(FlightSelectionUnavailable.NotFound);
 
-    private FlightSelections Selections(SelectedOffer offer) => new(new SingleOfferStore(offer), _clock);
+    // GetBookableAsync reads the store only: the revalidation handler is never called here.
+    private FlightSelections Selections(SelectedOffer offer) =>
+        new(new SingleOfferStore(offer), new RevalidateSelectedOfferHandler(new SingleOfferStore(offer), null!, _clock), _clock);
 
     private sealed class SingleOfferStore(SelectedOffer offer) : ISelectedOfferStore
     {

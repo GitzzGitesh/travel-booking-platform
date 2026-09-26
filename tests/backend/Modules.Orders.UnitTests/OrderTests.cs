@@ -44,7 +44,7 @@ public sealed class OrderTests
     {
         var quote = Guid.NewGuid();
 
-        var order = Order.CreateForFlight("key-1", Guid.NewGuid(), Price, Now.AddMinutes(30), new PriceConsent(quote, Now.AddMinutes(-2)), new TransitionContext(Now, "customer"));
+        var order = Order.CreateForFlight("cust-1", "key-1", Guid.NewGuid(), Price, Now.AddMinutes(30), new PriceConsent(quote, Now.AddMinutes(-2)), new TransitionContext(Now, "customer"));
 
         order.Items[0].AcceptedPriceQuoteId.ShouldBe(quote);
         order.Items[0].PriceAcceptedAt.ShouldBe(Now.AddMinutes(-2));
@@ -192,8 +192,64 @@ public sealed class OrderTests
         Order.Derive([FlightOrderItemStatus.Abandoned]).ShouldBe(OrderStatus.Abandoned);
     }
 
+    [Fact]
+    public void Refreshing_the_offer_takes_the_new_expiry_without_a_timeline_entry()
+    {
+        var order = NewOrder();
+        var (item, revision, entries) = (order.Items[0], order.Revision, order.Timeline.Count);
+
+        order.RefreshOffer(item.Id, Price, Now.AddMinutes(50), null, _system).IsSuccess.ShouldBeTrue();
+
+        (item.OfferExpiresAt, item.AgreedPrice).ShouldBe((Now.AddMinutes(50), Price));
+        order.Revision.ShouldBeGreaterThan(revision);
+        order.Timeline.Count.ShouldBe(entries);
+    }
+
+    [Fact]
+    public void F01_an_accepted_price_change_is_adopted_with_its_consent_and_recorded()
+    {
+        var order = NewOrder();
+        var item = order.Items[0];
+        var consent = new PriceConsent(Guid.NewGuid(), Now);
+
+        order.RefreshOffer(item.Id, Price with { Amount = 310.5m }, Now.AddMinutes(40), consent, _system).IsSuccess.ShouldBeTrue();
+
+        (item.AgreedPrice.Amount, item.AcceptedPriceQuoteId, item.PriceAcceptedAt).ShouldBe((310.5m, consent.AcceptedPriceQuoteId, consent.AcceptedAt));
+        order.Total.Amount.ShouldBe(310.5m);
+        var entry = order.Timeline[^1];
+        (entry.FromStatus, entry.ToStatus).ShouldBe(("AwaitingPayment", "AwaitingPayment"));
+        entry.Reason.ShouldContain("310.5");
+    }
+
+    [Fact]
+    public void F01_a_different_price_without_new_consent_is_refused()
+    {
+        var order = NewOrder();
+        var item = order.Items[0];
+        var consent = new PriceConsent(Guid.NewGuid(), Now);
+        order.RefreshOffer(item.Id, Price with { Amount = 300m }, Now.AddMinutes(40), consent, _system);
+
+        order.RefreshOffer(item.Id, Price with { Amount = 350m }, Now.AddMinutes(40), null, _system).Error.ShouldBeOfType<OrderTransitionError.PriceNotAccepted>();
+        order.RefreshOffer(item.Id, Price with { Amount = 350m }, Now.AddMinutes(40), consent, _system).Error.ShouldBeOfType<OrderTransitionError.PriceNotAccepted>();
+        order.RefreshOffer(item.Id, new Money(300m, new CurrencyCode("EUR")), Now.AddMinutes(40), new PriceConsent(Guid.NewGuid(), Now), _system)
+            .Error.ShouldBeOfType<OrderTransitionError.PriceNotAccepted>();
+        item.AgreedPrice.Amount.ShouldBe(300m);
+    }
+
+    [Theory]
+    [InlineData("Booking")]
+    [InlineData("Abandoned")]
+    [InlineData("Confirmed")]
+    public void Only_an_item_awaiting_payment_takes_new_terms(string status)
+    {
+        var order = OrderAt(Enum.Parse<FlightOrderItemStatus>(status), out var item);
+
+        order.RefreshOffer(item, Price, Now.AddMinutes(50), null, _system).Error.ShouldBeOfType<OrderTransitionError.Illegal>();
+        order.RefreshOffer(Guid.NewGuid(), Price, Now.AddMinutes(50), null, _system).Error.ShouldBeOfType<OrderTransitionError.ItemNotFound>();
+    }
+
     internal static Order NewOrder(Guid? selectedOfferId = null) =>
-        Order.CreateForFlight("key-1", selectedOfferId ?? Guid.NewGuid(), Price, Now.AddMinutes(30), null, new TransitionContext(Now, "customer", "trace-0"));
+        Order.CreateForFlight("cust-1", "key-1", selectedOfferId ?? Guid.NewGuid(), Price, Now.AddMinutes(30), null, new TransitionContext(Now, "customer", "trace-0"));
 
     private static Result<FlightOrderItemStatus, OrderTransitionError> Apply(Order order, Guid item, FlightOrderItemStatus to) => to switch
     {

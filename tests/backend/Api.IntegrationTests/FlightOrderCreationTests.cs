@@ -5,10 +5,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TravelBooking.Integrations.Flights.Mock;
+using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Domain;
 using TravelBooking.Modules.Orders.Infrastructure;
+using TravelBooking.Modules.Payments.Domain;
+using TravelBooking.Modules.Payments.Infrastructure;
 
 namespace TravelBooking.Api.IntegrationTests;
 
@@ -34,7 +37,8 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         item.SelectedOfferId.ShouldBe(selection.Id);
         item.AgreedPrice.ShouldBe(selection.AgreedPrice);
         stored.Timeline.Select(e => e.ToStatus).ShouldBe(["Draft", "AwaitingPayment"]);
-        stored.Timeline.ShouldAllBe(e => e.Actor == "customer" && e.CorrelationId == "test-trace");
+        stored.CustomerId.ShouldBe(_customer);
+        stored.Timeline.ShouldAllBe(e => e.Actor == $"customer:{_customer}" && e.CorrelationId == "test-trace");
     }
 
     [Fact]
@@ -91,6 +95,24 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         results.Count(r => r.IsSuccess).ShouldBe(1);
         results.Where(r => !r.IsSuccess).ShouldAllBe(r => r.Error is CreateFlightOrderFailure.SelectionAlreadyOrdered);
         (await CountOrdersFor(selection.Id)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Customers_are_isolated_one_cannot_load_or_learn_anothers_order()
+    {
+        var selection = await ConfirmedSelection("JFK");
+        var key = NewKey();
+        var mine = (await Create(key, selection.Id)).Value.Order;
+
+        var theirs = await Create(NewKey(), selection.Id, customer: "test-customer-2");
+        var sameKey = await Create(key, (await ConfirmedSelection("JFK")).Id, customer: "test-customer-2");
+
+        theirs.Error.ShouldBe(new CreateFlightOrderFailure.SelectionAlreadyOrdered(null));
+        sameKey.Value.Created.ShouldBeTrue(); // keys are per customer
+        using var scope = api.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
+        (await store.FindOwnedAsync(mine.Id, "test-customer-2", TestContext.Current.CancellationToken)).ShouldBeNull();
+        (await store.FindOwnedAsync(mine.Id, _customer, TestContext.Current.CancellationToken)).ShouldNotBeNull();
     }
 
     [Fact]
@@ -156,13 +178,82 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         (await Load(created.Id)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Booking);
     }
 
+    [Fact]
+    public async Task Checkout_revalidates_authorizes_the_order_total_and_starts_the_booking()
+    {
+        var order = (await Create(NewKey(), (await ConfirmedSelection("JFK")).Id)).Value.Order;
+
+        var result = (await Checkout(order.Id, MockPaymentMethods.Approved)).Value;
+
+        result.Status.ShouldBe(CheckoutStatus.BookingStarted);
+        var stored = await Load(order.Id);
+        stored.PaymentAuthorizationId.ShouldBe(result.PaymentId.ToString());
+        stored.Items[0].Status.ShouldBe(FlightOrderItemStatus.Booking);
+        stored.Timeline[^1].ProviderReference.ShouldBe(result.PaymentId.ToString());
+        var payment = await LoadPayment(result.PaymentId!.Value);
+        (payment.OrderId, payment.Amount, payment.CustomerId).ShouldBe((order.Id, order.Total, _customer));
+    }
+
+    [Fact]
+    public async Task F01_checkout_authorizes_the_accepted_changed_price()
+    {
+        var selection = await ConfirmedSelection(MockRevalidationScenarios.PriceChangedDestination);
+        var order = (await Create(NewKey(), selection.Id)).Value.Order;
+
+        var result = (await Checkout(order.Id, MockPaymentMethods.Approved)).Value;
+
+        result.Status.ShouldBe(CheckoutStatus.BookingStarted);
+        (await LoadPayment(result.PaymentId!.Value)).Amount.ShouldBe(selection.AgreedPrice);
+    }
+
+    [Fact]
+    public async Task F20_after_a_decline_the_order_awaits_payment_and_a_new_key_can_pay()
+    {
+        var order = (await Create(NewKey(), (await ConfirmedSelection("JFK")).Id)).Value.Order;
+
+        var declined = (await Checkout(order.Id, MockPaymentMethods.Declined)).Value;
+        (await Load(order.Id)).Status.ShouldBe(OrderStatus.AwaitingPayment);
+        var paid = (await Checkout(order.Id, MockPaymentMethods.Approved)).Value;
+
+        declined.Status.ShouldBe(CheckoutStatus.Declined);
+        paid.Status.ShouldBe(CheckoutStatus.BookingStarted);
+        paid.PaymentId.ShouldNotBe(declined.PaymentId);
+    }
+
+    [Fact]
+    public async Task Checkout_of_another_customers_order_is_not_found_and_charges_nothing()
+    {
+        var order = (await Create(NewKey(), (await ConfirmedSelection("JFK")).Id)).Value.Order;
+
+        (await Checkout(order.Id, MockPaymentMethods.Approved, customer: "test-customer-2")).Error.ShouldBeOfType<CheckoutFailure.NotFound>();
+
+        using var scope = api.Services.CreateScope();
+        (await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().PaymentAttempts.CountAsync(a => a.OrderId == order.Id, TestContext.Current.CancellationToken)).ShouldBe(0);
+    }
+
+    private async Task<TravelBooking.BuildingBlocks.Result<CheckoutResult, CheckoutFailure>> Checkout(Guid orderId, string token, string? customer = null)
+    {
+        using var scope = api.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<AuthorizeCheckoutHandler>().HandleAsync(
+            new AuthorizeCheckout(orderId, customer ?? _customer, $"pay-{Guid.NewGuid():N}", token, "test-trace"), TestContext.Current.CancellationToken);
+    }
+
+    private async Task<PaymentAttempt> LoadPayment(Guid paymentId)
+    {
+        using var scope = api.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().PaymentAttempts.AsNoTracking()
+            .SingleAsync(a => a.Id == paymentId, TestContext.Current.CancellationToken);
+    }
+
     private TransitionContext Context() => new(api.Clock.GetUtcNow(), "system", "test-trace");
 
-    private async Task<TravelBooking.BuildingBlocks.Result<CreatedOrder, CreateFlightOrderFailure>> Create(string key, Guid selectedOfferId)
+    private const string _customer = "test-customer-1";
+
+    private async Task<TravelBooking.BuildingBlocks.Result<CreatedOrder, CreateFlightOrderFailure>> Create(string key, Guid selectedOfferId, string? customer = null)
     {
         using var scope = api.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<CreateFlightOrderHandler>()
-            .HandleAsync(new CreateFlightOrder(key, selectedOfferId, "customer", "test-trace"), TestContext.Current.CancellationToken);
+            .HandleAsync(new CreateFlightOrder(customer ?? _customer, key, selectedOfferId, "test-trace"), TestContext.Current.CancellationToken);
     }
 
     private async Task Change(Guid orderId, Func<Order, bool> transition)

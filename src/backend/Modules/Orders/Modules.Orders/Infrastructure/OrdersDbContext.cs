@@ -22,7 +22,10 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         order.HasKey(o => o.Id);
         order.Property(o => o.Id).ValueGeneratedNever();
         order.Property(o => o.IdempotencyKey).HasMaxLength(Application.CreateFlightOrderHandler.MaxIdempotencyKeyLength).IsUnicode(false);
-        order.HasIndex(o => o.IdempotencyKey).IsUnique(); // idempotent creation, enforced by the database
+        order.Property(o => o.CustomerId).HasMaxLength(Order.MaxCustomerIdLength);
+
+        // Idempotent creation per customer, enforced by the database; also the customer's order-history lookup path.
+        order.HasIndex(o => new { o.CustomerId, o.IdempotencyKey }).IsUnique();
         order.Ignore(o => o.Total);
         order.Ignore(o => o.Status); // derived from the items
         order.Property(o => o.PaymentAuthorizationId).HasMaxLength(100);
@@ -55,7 +58,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         timeline.HasKey(e => e.Id);
         timeline.Property(e => e.Id).UseIdentityColumn();
         timeline.HasIndex(e => new { e.OrderId, e.Id });
-        timeline.Property(e => e.Actor).HasMaxLength(100);
+        timeline.Property(e => e.Actor).HasMaxLength(150); // "customer:" + a customer id of up to 128
         timeline.Property(e => e.FromStatus).HasMaxLength(30);
         timeline.Property(e => e.ToStatus).HasMaxLength(30);
         timeline.Property(e => e.Reason).HasMaxLength(500);

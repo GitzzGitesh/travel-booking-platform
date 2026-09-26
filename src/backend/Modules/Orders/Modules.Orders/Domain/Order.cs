@@ -54,6 +54,9 @@ internal abstract record OrderTransitionError
 
     /// <summary>F-02: the supplier's offer for this item has expired; it cannot be booked.</summary>
     internal sealed record OfferExpired(Guid ItemId) : OrderTransitionError;
+
+    /// <summary>F-01: a different price without new consent evidence (or in another currency) is never adopted.</summary>
+    internal sealed record PriceNotAccepted(Guid ItemId) : OrderTransitionError;
 }
 
 /// <summary>
@@ -72,7 +75,15 @@ internal sealed class Order
 
     public Guid Id { get; private set; }
 
-    /// <summary>The creating request's idempotency key: unique, so a replay returns this order (booking rules).</summary>
+    public const int MaxCustomerIdLength = 128;
+
+    /// <summary>
+    /// The signed-in customer who owns the order (Q8: sign-in is required before booking): the identity provider's
+    /// opaque subject id. Every read and change is scoped to it (no IDOR).
+    /// </summary>
+    public string CustomerId { get; private set; } = string.Empty;
+
+    /// <summary>The creating request's idempotency key: unique per customer, so a replay returns this order (booking rules).</summary>
     public string IdempotencyKey { get; private set; } = string.Empty;
 
     public DateTimeOffset CreatedAt { get; private set; }
@@ -102,11 +113,13 @@ internal sealed class Order
     /// payment (Draft → AwaitingPayment, both on the timeline).
     /// </summary>
     public static Order CreateForFlight(
+        string customerId,
         string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context)
     {
         var order = new Order
         {
             Id = Guid.NewGuid(),
+            CustomerId = IsValidCustomerId(customerId) ? customerId : throw new ArgumentException("A customer id is required.", nameof(customerId)),
             IdempotencyKey = idempotencyKey,
             CreatedAt = context.At,
             UpdatedAt = context.At,
@@ -128,6 +141,49 @@ internal sealed class Order
     /// </summary>
     public Result<FlightOrderItemStatus, OrderTransitionError> Abandon(Guid itemId, string reason, TransitionContext context) =>
         Transition(itemId, FlightOrderItemStatus.Abandoned, reason, context, providerReference: null, FlightOrderItemStatus.AwaitingPayment);
+
+    /// <summary>
+    /// Adopts an item's terms from a fresh supplier revalidation, right before payment: the offer's new expiry and, when
+    /// the customer accepted a changed price in Flights (F-01), that price with its consent evidence. A different price
+    /// without a newly accepted quote is refused. Only while the item awaits payment; a price change is on the timeline.
+    /// </summary>
+    public Result<FlightOrderItemStatus, OrderTransitionError> RefreshOffer(
+        Guid itemId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context)
+    {
+        if (Find(itemId) is not { } item)
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId));
+        }
+
+        if (item.Status is not FlightOrderItemStatus.AwaitingPayment)
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, FlightOrderItemStatus.AwaitingPayment));
+        }
+
+        var repriced = agreedPrice != item.AgreedPrice;
+        if (repriced && (agreedPrice.Currency != item.AgreedPrice.Currency || consent is null || consent.AcceptedPriceQuoteId == item.AcceptedPriceQuoteId))
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
+        }
+
+        if (!repriced && offerExpiresAt == item.OfferExpiresAt)
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Success(item.Status); // nothing new
+        }
+
+        item.RefreshTerms(offerExpiresAt, repriced ? agreedPrice : null, repriced ? consent : null);
+        if (repriced)
+        {
+            Record(item, item.Status, $"Agreed price changed to {agreedPrice.Amount} {agreedPrice.Currency.Value} (quote {consent!.AcceptedPriceQuoteId}, accepted {consent.AcceptedAt:O})", context, providerReference: null);
+        }
+        else
+        {
+            UpdatedAt = context.At;
+            Revision++;
+        }
+
+        return Result<FlightOrderItemStatus, OrderTransitionError>.Success(item.Status);
+    }
 
     /// <summary>
     /// The order's payment is authorized, so the supplier bookings may start (authorize → book → capture): every item
@@ -165,6 +221,24 @@ internal sealed class Order
         }
 
         return Result<OrderStatus, OrderTransitionError>.Success(Status);
+    }
+
+    /// <summary>
+    /// Records on the timeline that a payment authorization exists that this order will not book on (its offer expired,
+    /// or the held amount is not the order's total): the hold must be released (payment-lifecycle.md). No status changes.
+    /// Idempotent per authorization.
+    /// </summary>
+    public void NoteUnusedPaymentHold(string paymentAuthorizationId, string reason, TransitionContext context)
+    {
+        if (_timeline.Any(e => e.ProviderReference == paymentAuthorizationId))
+        {
+            return;
+        }
+
+        foreach (var item in _items)
+        {
+            Record(item, item.Status, $"Payment authorized but not used: {reason}. The hold must be released", context, paymentAuthorizationId);
+        }
     }
 
     /// <summary>The supplier confirmed the booking at the agreed price, directly or found by reconciliation.</summary>
@@ -210,6 +284,9 @@ internal sealed class Order
     public Result<FlightOrderItemStatus, OrderTransitionError> RequireManualReview(Guid itemId, string reason, TransitionContext context) =>
         Transition(itemId, FlightOrderItemStatus.ManualReview, reason, context, providerReference: null,
             FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation);
+
+    public static bool IsValidCustomerId(string? customerId) =>
+        !string.IsNullOrWhiteSpace(customerId) && customerId.Length <= MaxCustomerIdLength;
 
     internal static OrderStatus Derive(IReadOnlyList<FlightOrderItemStatus> items)
     {
@@ -324,6 +401,17 @@ internal sealed class FlightOrderItem
     public string? SupplierLocator { get; private set; }
 
     internal void MoveTo(FlightOrderItemStatus status) => Status = status;
+
+    internal void RefreshTerms(DateTimeOffset offerExpiresAt, Money? agreedPrice, PriceConsent? consent)
+    {
+        OfferExpiresAt = offerExpiresAt;
+        if (agreedPrice is { } price && consent is not null)
+        {
+            AgreedPrice = price;
+            AcceptedPriceQuoteId = consent.AcceptedPriceQuoteId;
+            PriceAcceptedAt = consent.AcceptedAt;
+        }
+    }
 
     internal void RecordSupplierBooking(string providerId, string supplierLocator)
     {

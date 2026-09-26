@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TravelBooking.Modules.Orders.Infrastructure;
 
@@ -12,9 +13,11 @@ using TravelBooking.Modules.Orders.Infrastructure;
 namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 {
     [DbContext(typeof(OrdersDbContext))]
-    partial class OrdersDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926073530_AddOrderCustomer")]
+    partial class AddOrderCustomer
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -137,8 +140,8 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                     b.Property<string>("Actor")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<DateTimeOffset>("At")
                         .HasColumnType("datetimeoffset");
