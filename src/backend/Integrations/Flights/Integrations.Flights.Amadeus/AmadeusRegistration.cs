@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Providers.Http;
 using TravelBooking.Modules.Flights.Ports;
 
@@ -29,6 +30,13 @@ public sealed class AmadeusOptions : SupplierHttpOptions
     /// </summary>
     public TimeSpan OfferLifetime { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// The ISO-4217 currency searches ask Amadeus to price in (<c>currencyCode</c>), or unset for the supplier's
+    /// default. Which currency we settle with Amadeus in is commercial (Q6 blockers, ADR 0019); the charge currency is
+    /// decided separately (Q5), and a supplier currency is never relabelled as another.
+    /// </summary>
+    public string? Currency { get; set; }
+
     public override IEnumerable<string> Problems()
     {
         foreach (var problem in base.Problems())
@@ -46,6 +54,11 @@ public sealed class AmadeusOptions : SupplierHttpOptions
             yield return "MaxOffers must be between 1 and 250.";
         }
 
+        if (Currency is not null && !CurrencyCode.IsValid(Currency))
+        {
+            yield return "Currency must be an ISO-4217 code (three upper-case letters) or unset.";
+        }
+
         if (OfferLifetime <= TimeSpan.Zero || OfferLifetime > TimeSpan.FromHours(2))
         {
             yield return "OfferLifetime must be between 0 and 2 hours.";
@@ -55,7 +68,7 @@ public sealed class AmadeusOptions : SupplierHttpOptions
 
 public static class AmadeusRegistration
 {
-    /// <summary>What Amadeus Self-Service supports, as far as verified. Revise by configuration after verification.</summary>
+    /// <summary>What Amadeus Self-Service supports, as far as verified (ADR 0019: nothing is sandbox-verified yet). Revise by configuration after verification.</summary>
     internal static FlightProviderCapabilities Declared { get; } = new(
         AdapterStage.MappedFromDocumentation,
         [ProviderOperation.Search, ProviderOperation.Revalidate],
@@ -82,7 +95,7 @@ public static class AmadeusRegistration
             [FlightCapability.Ticketing] = new(CapabilitySupport.RequiresConfirmation, "Through a consolidator in production"),
             [FlightCapability.Ancillaries] = new(CapabilitySupport.RequiresConfirmation),
             [FlightCapability.SeatSelection] = new(CapabilitySupport.RequiresConfirmation),
-            [FlightCapability.RequestedCurrency] = new(CapabilitySupport.RequiresConfirmation, "A currency parameter is documented; confirm behaviour (Q5: supplier currency is not the charge currency)"),
+            [FlightCapability.RequestedCurrency] = new(CapabilitySupport.RequiresConfirmation, "currencyCode is sent when Currency is configured (documented); confirm it is honoured for every fare and matches our settlement currency"),
             [FlightCapability.MarketCoverage] = new(CapabilitySupport.RequiresConfirmation, "Content and markets per commercial agreement"),
         });
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TravelBooking.Integrations.Flights.Amadeus.Dtos;
 
@@ -12,7 +13,8 @@ internal sealed record AmadeusSearchRequest(
     List<AmadeusOriginDestination> OriginDestinations,
     List<AmadeusTraveler> Travelers,
     List<string> Sources,
-    AmadeusSearchCriteria SearchCriteria);
+    AmadeusSearchCriteria SearchCriteria,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CurrencyCode = null);
 
 internal sealed record AmadeusOriginDestination(string Id, string OriginLocationCode, string DestinationLocationCode, AmadeusDateRange DepartureDateTimeRange);
 

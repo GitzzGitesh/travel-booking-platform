@@ -16,7 +16,8 @@ internal static class AmadeusMapping
 {
     public const string Source = "GDS";
 
-    public static AmadeusSearchRequest ToSearchRequest(FlightSearchCriteria criteria, int maxOffers)
+    /// <param name="currency">The currency to price in (<c>currencyCode</c>), or null for the supplier's default.</param>
+    public static AmadeusSearchRequest ToSearchRequest(FlightSearchCriteria criteria, int maxOffers, string? currency = null)
     {
         var legs = new List<AmadeusOriginDestination> { new("1", criteria.Origin.Value, criteria.Destination.Value, new(Date(criteria.DepartureDate))) };
         if (criteria.ReturnDate is { } returnDate)
@@ -51,7 +52,8 @@ internal static class AmadeusMapping
         };
 
         return new AmadeusSearchRequest(legs, travelers, [Source],
-            new AmadeusSearchCriteria(maxOffers, new AmadeusFlightFilters([new(cabin, "MOST_SEGMENTS", legs.Select(l => l.Id).ToList())])));
+            new AmadeusSearchCriteria(maxOffers, new AmadeusFlightFilters([new(cabin, "MOST_SEGMENTS", legs.Select(l => l.Id).ToList())])),
+            currency);
     }
 
     /// <param name="rawOffer">The offer exactly as Amadeus returned it: kept as the reference for pricing.</param>
