@@ -34,7 +34,8 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         item.SelectedOfferId.ShouldBe(selection.Id);
         item.AgreedPrice.ShouldBe(selection.AgreedPrice);
         stored.Timeline.Select(e => e.ToStatus).ShouldBe(["Draft", "AwaitingPayment"]);
-        stored.Timeline.ShouldAllBe(e => e.Actor == "customer" && e.CorrelationId == "test-trace");
+        stored.CustomerId.ShouldBe(_customer);
+        stored.Timeline.ShouldAllBe(e => e.Actor == $"customer:{_customer}" && e.CorrelationId == "test-trace");
     }
 
     [Fact]
@@ -91,6 +92,24 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         results.Count(r => r.IsSuccess).ShouldBe(1);
         results.Where(r => !r.IsSuccess).ShouldAllBe(r => r.Error is CreateFlightOrderFailure.SelectionAlreadyOrdered);
         (await CountOrdersFor(selection.Id)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Customers_are_isolated_one_cannot_load_or_learn_anothers_order()
+    {
+        var selection = await ConfirmedSelection("JFK");
+        var key = NewKey();
+        var mine = (await Create(key, selection.Id)).Value.Order;
+
+        var theirs = await Create(NewKey(), selection.Id, customer: "test-customer-2");
+        var sameKey = await Create(key, (await ConfirmedSelection("JFK")).Id, customer: "test-customer-2");
+
+        theirs.Error.ShouldBe(new CreateFlightOrderFailure.SelectionAlreadyOrdered(null));
+        sameKey.Value.Created.ShouldBeTrue(); // keys are per customer
+        using var scope = api.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
+        (await store.FindOwnedAsync(mine.Id, "test-customer-2", TestContext.Current.CancellationToken)).ShouldBeNull();
+        (await store.FindOwnedAsync(mine.Id, _customer, TestContext.Current.CancellationToken)).ShouldNotBeNull();
     }
 
     [Fact]
@@ -158,11 +177,13 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
     private TransitionContext Context() => new(api.Clock.GetUtcNow(), "system", "test-trace");
 
-    private async Task<TravelBooking.BuildingBlocks.Result<CreatedOrder, CreateFlightOrderFailure>> Create(string key, Guid selectedOfferId)
+    private const string _customer = "test-customer-1";
+
+    private async Task<TravelBooking.BuildingBlocks.Result<CreatedOrder, CreateFlightOrderFailure>> Create(string key, Guid selectedOfferId, string? customer = null)
     {
         using var scope = api.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<CreateFlightOrderHandler>()
-            .HandleAsync(new CreateFlightOrder(key, selectedOfferId, "customer", "test-trace"), TestContext.Current.CancellationToken);
+            .HandleAsync(new CreateFlightOrder(customer ?? _customer, key, selectedOfferId, "test-trace"), TestContext.Current.CancellationToken);
     }
 
     private async Task Change(Guid orderId, Func<Order, bool> transition)

@@ -44,7 +44,7 @@ public sealed class OrderTests
     {
         var quote = Guid.NewGuid();
 
-        var order = Order.CreateForFlight("key-1", Guid.NewGuid(), Price, Now.AddMinutes(30), new PriceConsent(quote, Now.AddMinutes(-2)), new TransitionContext(Now, "customer"));
+        var order = Order.CreateForFlight("cust-1", "key-1", Guid.NewGuid(), Price, Now.AddMinutes(30), new PriceConsent(quote, Now.AddMinutes(-2)), new TransitionContext(Now, "customer"));
 
         order.Items[0].AcceptedPriceQuoteId.ShouldBe(quote);
         order.Items[0].PriceAcceptedAt.ShouldBe(Now.AddMinutes(-2));
@@ -193,7 +193,7 @@ public sealed class OrderTests
     }
 
     internal static Order NewOrder(Guid? selectedOfferId = null) =>
-        Order.CreateForFlight("key-1", selectedOfferId ?? Guid.NewGuid(), Price, Now.AddMinutes(30), null, new TransitionContext(Now, "customer", "trace-0"));
+        Order.CreateForFlight("cust-1", "key-1", selectedOfferId ?? Guid.NewGuid(), Price, Now.AddMinutes(30), null, new TransitionContext(Now, "customer", "trace-0"));
 
     private static Result<FlightOrderItemStatus, OrderTransitionError> Apply(Order order, Guid item, FlightOrderItemStatus to) => to switch
     {

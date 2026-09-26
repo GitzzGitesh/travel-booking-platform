@@ -72,7 +72,15 @@ internal sealed class Order
 
     public Guid Id { get; private set; }
 
-    /// <summary>The creating request's idempotency key: unique, so a replay returns this order (booking rules).</summary>
+    public const int MaxCustomerIdLength = 128;
+
+    /// <summary>
+    /// The signed-in customer who owns the order (Q8: sign-in is required before booking): the identity provider's
+    /// opaque subject id. Every read and change is scoped to it (no IDOR).
+    /// </summary>
+    public string CustomerId { get; private set; } = string.Empty;
+
+    /// <summary>The creating request's idempotency key: unique per customer, so a replay returns this order (booking rules).</summary>
     public string IdempotencyKey { get; private set; } = string.Empty;
 
     public DateTimeOffset CreatedAt { get; private set; }
@@ -102,11 +110,13 @@ internal sealed class Order
     /// payment (Draft → AwaitingPayment, both on the timeline).
     /// </summary>
     public static Order CreateForFlight(
+        string customerId,
         string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context)
     {
         var order = new Order
         {
             Id = Guid.NewGuid(),
+            CustomerId = IsValidCustomerId(customerId) ? customerId : throw new ArgumentException("A customer id is required.", nameof(customerId)),
             IdempotencyKey = idempotencyKey,
             CreatedAt = context.At,
             UpdatedAt = context.At,
@@ -210,6 +220,9 @@ internal sealed class Order
     public Result<FlightOrderItemStatus, OrderTransitionError> RequireManualReview(Guid itemId, string reason, TransitionContext context) =>
         Transition(itemId, FlightOrderItemStatus.ManualReview, reason, context, providerReference: null,
             FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation);
+
+    public static bool IsValidCustomerId(string? customerId) =>
+        !string.IsNullOrWhiteSpace(customerId) && customerId.Length <= MaxCustomerIdLength;
 
     internal static OrderStatus Derive(IReadOnlyList<FlightOrderItemStatus> items)
     {

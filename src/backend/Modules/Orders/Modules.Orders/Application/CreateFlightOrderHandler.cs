@@ -9,7 +9,10 @@ internal interface IOrderStore
 {
     Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken);
 
-    Task<Order?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken);
+    /// <summary>The customer's own order, for a change; null if it does not exist OR belongs to someone else (no IDOR).</summary>
+    Task<Order?> FindOwnedAsync(Guid orderId, string customerId, CancellationToken cancellationToken);
+
+    Task<Order?> FindByIdempotencyKeyAsync(string customerId, string idempotencyKey, CancellationToken cancellationToken);
 
     /// <summary>The order that already books this flight selection, if any.</summary>
     Task<Guid?> FindOrderIdBySelectedOfferAsync(Guid selectedOfferId, CancellationToken cancellationToken);
@@ -21,7 +24,8 @@ internal interface IOrderStore
     Task<bool> TrySaveAsync(CancellationToken cancellationToken);
 }
 
-internal sealed record CreateFlightOrder(string IdempotencyKey, Guid SelectedOfferId, string Actor, string? CorrelationId);
+/// <summary><paramref name="CustomerId"/> is the authenticated customer (Q8); the actor recorded on the timeline.</summary>
+internal sealed record CreateFlightOrder(string CustomerId, string IdempotencyKey, Guid SelectedOfferId, string? CorrelationId);
 
 internal sealed record CreatedOrder(Order Order, bool Created);
 
@@ -33,11 +37,17 @@ internal abstract record CreateFlightOrderFailure
 
     internal sealed record InvalidIdempotencyKey : CreateFlightOrderFailure;
 
+    /// <summary>No authenticated customer: orders need a signed-in customer (Q8).</summary>
+    internal sealed record CustomerRequired : CreateFlightOrderFailure;
+
     /// <summary>The key was already used for a different selection (409: never a second effect).</summary>
     internal sealed record IdempotencyKeyReused : CreateFlightOrderFailure;
 
-    /// <summary>Another order (another key) already books this selection: at most one booking per selection.</summary>
-    internal sealed record SelectionAlreadyOrdered(Guid OrderId) : CreateFlightOrderFailure;
+    /// <summary>
+    /// Another order already books this selection: at most one booking per selection. <paramref name="OrderId"/> is set
+    /// only when that order is the same customer's; another customer's order id is never revealed.
+    /// </summary>
+    internal sealed record SelectionAlreadyOrdered(Guid? OrderId) : CreateFlightOrderFailure;
 
     internal sealed record SelectionUnavailable(FlightSelectionUnavailable Reason) : CreateFlightOrderFailure;
 }
@@ -53,6 +63,11 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
 
     public async Task<Result<CreatedOrder, CreateFlightOrderFailure>> HandleAsync(CreateFlightOrder command, CancellationToken cancellationToken)
     {
+        if (!Order.IsValidCustomerId(command.CustomerId))
+        {
+            return Failure(new CreateFlightOrderFailure.CustomerRequired());
+        }
+
         if (!IsValidKey(command.IdempotencyKey))
         {
             return Failure(new CreateFlightOrderFailure.InvalidIdempotencyKey());
@@ -71,12 +86,13 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
 
         var bookable = selection.Value;
         var order = Order.CreateForFlight(
+            command.CustomerId,
             command.IdempotencyKey,
             bookable.SelectedOfferId,
             bookable.AgreedTotalPrice,
             bookable.OfferExpiresAt,
             bookable is { AcceptedPriceQuoteId: { } quote, PriceAcceptedAt: { } acceptedAt } ? new PriceConsent(quote, acceptedAt) : null,
-            new TransitionContext(timeProvider.GetUtcNow(), command.Actor, command.CorrelationId));
+            new TransitionContext(timeProvider.GetUtcNow(), Actor(command.CustomerId), command.CorrelationId));
 
         if (await store.TryAddAsync(order, cancellationToken))
         {
@@ -90,7 +106,7 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
 
     private async Task<Result<CreatedOrder, CreateFlightOrderFailure>?> Replay(CreateFlightOrder command, CancellationToken cancellationToken)
     {
-        if (await store.FindByIdempotencyKeyAsync(command.IdempotencyKey, cancellationToken) is { } existing)
+        if (await store.FindByIdempotencyKeyAsync(command.CustomerId, command.IdempotencyKey, cancellationToken) is { } existing)
         {
             return existing.Items.Any(i => i.SelectedOfferId == command.SelectedOfferId)
                 ? Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(existing, Created: false))
@@ -104,10 +120,17 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
 
         // The order for this selection may have been committed by a concurrent request with OUR key after the key
         // lookup above: look again before calling it someone else's order.
-        return await store.FindByIdempotencyKeyAsync(command.IdempotencyKey, cancellationToken) is { } ours && ours.Id == orderId
-            ? Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(ours, Created: false))
-            : Failure(new CreateFlightOrderFailure.SelectionAlreadyOrdered(orderId));
+        if (await store.FindByIdempotencyKeyAsync(command.CustomerId, command.IdempotencyKey, cancellationToken) is { } ours && ours.Id == orderId)
+        {
+            return Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(ours, Created: false));
+        }
+
+        var owned = await store.FindOwnedAsync(orderId, command.CustomerId, cancellationToken) is not null;
+        return Failure(new CreateFlightOrderFailure.SelectionAlreadyOrdered(owned ? orderId : null));
     }
+
+    /// <summary>The timeline actor for a customer's own action.</summary>
+    internal static string Actor(string customerId) => $"customer:{customerId}";
 
     private static bool IsValidKey(string key) =>
         key is { Length: > 0 and <= MaxIdempotencyKeyLength } && key.All(c => c is >= '!' and <= '~');

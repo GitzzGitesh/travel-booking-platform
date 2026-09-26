@@ -1,6 +1,6 @@
 # 0008. Identity and permissions
 
-- **Status:** Proposed
+- **Status:** Proposed. **Q8 answered 2026-09-26: sign-in is required before booking (no guest checkout)**, so the guest-checkout clause below will not apply. Acceptance still needs the identity-provider tenants and configuration, and the Phase 4 decision on how the frontends handle tokens.
 - **Date:** 2026-09-24
 - **Related:** `docs/architecture/security.md`, `.claude/rules/security.md`, open question Q8
 

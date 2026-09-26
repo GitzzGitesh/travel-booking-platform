@@ -63,6 +63,40 @@ public sealed class CreateFlightOrderHandlerTests
         store.Orders.ShouldHaveSingleItem();
     }
 
+    [Fact]
+    public async Task Another_customers_order_for_the_selection_is_never_revealed()
+    {
+        var store = new FakeStore();
+        await Handler(store).HandleAsync(Command("key-1"), TestContext.Current.CancellationToken);
+
+        var someoneElse = await Handler(store).HandleAsync(Command("key-1", customer: "cust-2"), TestContext.Current.CancellationToken);
+
+        someoneElse.Error.ShouldBe(new CreateFlightOrderFailure.SelectionAlreadyOrdered(null));
+    }
+
+    [Fact]
+    public async Task The_same_key_from_another_customer_is_independent_of_the_first()
+    {
+        var store = new FakeStore();
+        await Handler(store).HandleAsync(Command("key-1"), TestContext.Current.CancellationToken);
+
+        var other = await Handler(store).HandleAsync(Command("key-1", customer: "cust-2") with { SelectedOfferId = Guid.NewGuid() }, TestContext.Current.CancellationToken);
+
+        other.Value.Created.ShouldBeTrue();
+        other.Value.Order.CustomerId.ShouldBe("cust-2");
+        other.Value.Order.Timeline[0].Actor.ShouldBe("customer:cust-2");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task An_order_needs_a_signed_in_customer(string customer)
+    {
+        var result = await Handler(new FakeStore()).HandleAsync(Command("key-1", customer), TestContext.Current.CancellationToken);
+
+        result.Error.ShouldBeOfType<CreateFlightOrderFailure.CustomerRequired>();
+    }
+
     [Theory]
     [InlineData(FlightSelectionUnavailable.NotFound)]
     [InlineData(FlightSelectionUnavailable.NeedsPriceCheck)]
@@ -102,7 +136,7 @@ public sealed class CreateFlightOrderHandlerTests
         result.Value.Order.ShouldBeSameAs(winner);
     }
 
-    private static CreateFlightOrder Command(string key) => new(key, _selection, "customer", "trace-0");
+    private static CreateFlightOrder Command(string key, string customer = "cust-1") => new(customer, key, _selection, "trace-0");
 
     private static CreateFlightOrderHandler Handler(FakeStore store, IFlightSelections? selections = null) =>
         new(selections ?? new StubSelections(null), store, new FakeTimeProvider(OrderTests.Now));
@@ -127,8 +161,11 @@ public sealed class CreateFlightOrderHandlerTests
         public Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken) =>
             Task.FromResult(Orders.SingleOrDefault(o => o.Id == orderId));
 
-        public Task<Order?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
-            Task.FromResult(Orders.SingleOrDefault(o => o.IdempotencyKey == idempotencyKey));
+        public Task<Order?> FindOwnedAsync(Guid orderId, string customerId, CancellationToken cancellationToken) =>
+            Task.FromResult(Orders.SingleOrDefault(o => o.Id == orderId && o.CustomerId == customerId));
+
+        public Task<Order?> FindByIdempotencyKeyAsync(string customerId, string idempotencyKey, CancellationToken cancellationToken) =>
+            Task.FromResult(Orders.SingleOrDefault(o => o.CustomerId == customerId && o.IdempotencyKey == idempotencyKey));
 
         public Task<Guid?> FindOrderIdBySelectedOfferAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
             Task.FromResult(Orders.Where(o => o.Items.Any(i => i.SelectedOfferId == selectedOfferId)).Select(o => (Guid?)o.Id).SingleOrDefault());
