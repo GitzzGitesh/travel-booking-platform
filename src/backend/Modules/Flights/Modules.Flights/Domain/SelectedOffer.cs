@@ -43,6 +43,16 @@ internal sealed class SelectedOffer
 
     public IReadOnlyList<FlightSlice> Slices { get; private set; } = [];
 
+    /// <summary>
+    /// The supplier's fare facts for this offer as last seen (at selection, then at each revalidation): for booking and
+    /// receipts. Selections made before these were kept read as not stated.
+    /// </summary>
+    public FlightFare Fare
+    {
+        get => StoredFare ?? FlightFare.NotStated;
+        private set => StoredFare = value;
+    }
+
     public SelectedOfferStatus Status { get; private set; }
 
     /// <summary>When the supplier last revalidated the offer (an instant, UTC).</summary>
@@ -92,6 +102,9 @@ internal sealed class SelectedOffer
 
     private CurrencyCode? QuotedCurrency { get; set; }
 
+    // Null for rows stored before fare facts were kept.
+    private FlightFare? StoredFare { get; set; }
+
     /// <summary>
     /// Applies the supplier's current offer. The same price as agreed confirms it; any other price (higher or lower,
     /// or another currency) becomes a quote the customer must accept (F-01): nothing is overwritten silently.
@@ -108,6 +121,9 @@ internal sealed class SelectedOffer
         ProviderOfferToken = current.Reference.Value;
         OfferExpiresAt = current.ExpiresAt;
         RevalidatedAt = now;
+
+        // The latest fare facts; after a price change they describe the quoted price the customer is asked to accept.
+        Fare = current.ConsistentFare;
 
         if (current.TotalPrice == AgreedPrice)
         {
@@ -223,6 +239,7 @@ internal sealed class SelectedOffer
             Infants = criteria.Passengers.Infants,
             Cabin = criteria.Cabin,
             Slices = offer.Slices,
+            Fare = offer.ConsistentFare,
             Status = SelectedOfferStatus.Selected,
         };
     }

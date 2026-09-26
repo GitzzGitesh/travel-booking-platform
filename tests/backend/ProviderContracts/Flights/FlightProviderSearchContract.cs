@@ -65,6 +65,30 @@ public abstract class FlightProviderSearchContract
         offers.Select(o => o.Reference.Value).ShouldBeUnique();
     }
 
+    // Fare facts are optional (suppliers differ), but whatever an adapter states must be consistent with the search.
+    [Fact]
+    public async Task Stated_fare_facts_are_consistent_with_the_search()
+    {
+        var criteria = RoundTrip();
+        var offers = await SearchOffers(criteria);
+
+        foreach (var offer in offers)
+        {
+            if (offer.Fare.PriceBreakdown is { } breakdown)
+            {
+                breakdown.Total.ShouldBe(offer.TotalPrice);
+                breakdown.Passengers.Where(p => p.Type == PassengerType.Adult).Sum(p => p.Count).ShouldBe(criteria.Passengers.Adults);
+                breakdown.Passengers.Where(p => p.Type == PassengerType.Child).Sum(p => p.Count).ShouldBe(criteria.Passengers.Children);
+                breakdown.Passengers.Where(p => p.Type == PassengerType.Infant).Sum(p => p.Count).ShouldBe(criteria.Passengers.Infants);
+            }
+
+            offer.Fare.TicketingDeadline?.ShouldBeGreaterThan(Now);
+            offer.Fare.ValidatingCarrier?.Length.ShouldBeInRange(2, 3);
+            offer.Slices.SelectMany(s => s.Segments).ShouldAllBe(s => s.Duration == null || s.Duration > TimeSpan.Zero);
+            offer.Slices.SelectMany(s => s.Segments).ShouldAllBe(s => s.OperatingCarrier == null || s.OperatingCarrier != s.MarketingCarrier);
+        }
+    }
+
     [Fact]
     public async Task Differently_priced_searches_never_share_offer_references()
     {

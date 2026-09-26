@@ -60,7 +60,7 @@ public sealed class FlightSupplierBookingTests
         var provider = new StubProvider { Book = Failure(kind) };
         var logger = new RecordingLogger();
 
-        var outcome = await new FlightSupplierBooking(provider, new FakeTimeProvider(_now), logger).BookAsync(_details, TestContext.Current.CancellationToken);
+        var outcome = await new FlightSupplierBooking(new FlightProviders([provider]), new FakeTimeProvider(_now), logger).BookAsync(_details, TestContext.Current.CancellationToken);
 
         outcome.ShouldBeOfType<SupplierBookingOutcome.Unknown>().Cause.ShouldBe(kind);
         provider.BookCalls.ShouldBe(1);
@@ -139,7 +139,7 @@ public sealed class FlightSupplierBookingTests
     {
         var provider = new StubProvider { Lookup = Result<FlightBookingLookup, ProviderError>.Success(new FlightBookingLookup(_confirmation)) };
 
-        var outcome = await Booking(provider).ReconcileAsync(_reference, _agreed, TestContext.Current.CancellationToken);
+        var outcome = await Booking(provider).ReconcileAsync("stub", _reference, _agreed, TestContext.Current.CancellationToken);
 
         outcome.ShouldBeOfType<SupplierBookingOutcome.Booked>().Confirmation.Booking.Value.ShouldBe("ABC234");
         provider.LookedUp.ShouldBe(_reference);
@@ -151,7 +151,7 @@ public sealed class FlightSupplierBookingTests
     {
         var provider = new StubProvider { Lookup = Result<FlightBookingLookup, ProviderError>.Success(new FlightBookingLookup(_confirmation)) };
 
-        var outcome = await Booking(provider).ReconcileAsync(_reference, new Money(1m, new CurrencyCode("XTS")), TestContext.Current.CancellationToken);
+        var outcome = await Booking(provider).ReconcileAsync("stub", _reference, new Money(1m, new CurrencyCode("XTS")), TestContext.Current.CancellationToken);
 
         outcome.ShouldBeOfType<SupplierBookingOutcome.Mismatch>();
     }
@@ -161,7 +161,7 @@ public sealed class FlightSupplierBookingTests
     {
         var provider = new StubProvider { Lookup = Result<FlightBookingLookup, ProviderError>.Success(new FlightBookingLookup(null)) };
 
-        var outcome = await Booking(provider).ReconcileAsync(_reference, _agreed, TestContext.Current.CancellationToken);
+        var outcome = await Booking(provider).ReconcileAsync("stub", _reference, _agreed, TestContext.Current.CancellationToken);
 
         outcome.ShouldBeOfType<SupplierBookingOutcome.NotFound>().At.ShouldBe(_now);
     }
@@ -174,7 +174,7 @@ public sealed class FlightSupplierBookingTests
     {
         var provider = new StubProvider { Lookup = Result<FlightBookingLookup, ProviderError>.Failure(new ProviderError(kind, "stub")) };
 
-        var outcome = await Booking(provider).ReconcileAsync(_reference, _agreed, TestContext.Current.CancellationToken);
+        var outcome = await Booking(provider).ReconcileAsync("stub", _reference, _agreed, TestContext.Current.CancellationToken);
 
         outcome.ShouldBeOfType<SupplierBookingOutcome.Unknown>().Cause.ShouldBe(kind);
     }
@@ -193,7 +193,7 @@ public sealed class FlightSupplierBookingTests
         Should.Throw<ArgumentException>(() => new ClientReference(new string('a', 65)));
     }
 
-    private static FlightSupplierBooking Booking(IFlightProvider provider) => new(provider, new FakeTimeProvider(_now), new RecordingLogger());
+    private static FlightSupplierBooking Booking(IFlightProvider provider) => new(new FlightProviders([provider]), new FakeTimeProvider(_now), new RecordingLogger());
 
     private static Result<FlightBookingConfirmation, ProviderError> Success(FlightBookingConfirmation confirmation) =>
         Result<FlightBookingConfirmation, ProviderError>.Success(confirmation);

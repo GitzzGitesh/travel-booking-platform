@@ -24,6 +24,11 @@ public static class FlightsModule
         // AddValidation, so each module calls it for its own request types (ADR 0003).
         services.AddValidation();
         services.TryAddSingleton(TimeProvider.System);
+        // Providers by id: an offer is always revalidated and booked by the provider that made it.
+        services.AddScoped(provider => new FlightProviders(provider.GetServices<Ports.IFlightProvider>(), configuration[FlightProviders.SearchProviderSetting]));
+
+        // Airport reference data (names, IANA time zones): core data, not part of the provider port (ADR 0014).
+        services.TryAddSingleton<IAirportDirectory, Infrastructure.ReferenceData.EmbeddedAirportDirectory>();
         services.AddScoped<SearchFlightsHandler>();
         services.AddScoped<SelectFlightOfferHandler>();
         services.AddScoped<RevalidateSelectedOfferHandler>();

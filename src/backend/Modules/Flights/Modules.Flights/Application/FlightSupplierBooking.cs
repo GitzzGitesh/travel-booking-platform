@@ -55,11 +55,12 @@ internal enum SupplierBookingFailureReason
 /// Makes supplier booking calls for the booking orchestration (Phase 3 Order items call this; nothing is persisted
 /// here, because a supplier booking belongs to an order item, ADR 0005). Exactly one supplier write per call: no retry.
 /// </summary>
-internal sealed partial class FlightSupplierBooking(IFlightProvider provider, TimeProvider timeProvider, ILogger<FlightSupplierBooking> logger)
+internal sealed partial class FlightSupplierBooking(FlightProviders providers, TimeProvider timeProvider, ILogger<FlightSupplierBooking> logger)
 {
     public async Task<SupplierBookingOutcome> BookAsync(FlightBookingDetails details, CancellationToken cancellationToken)
     {
-        if (details.Offer.ProviderId != provider.Id)
+        // The offer's own provider books it; one that is not composed here is refused before anything is sent.
+        if (providers.Find(details.Offer.ProviderId) is not { } provider)
         {
             return new SupplierBookingOutcome.NotBooked(SupplierBookingFailureReason.InvalidRequest);
         }
@@ -82,7 +83,7 @@ internal sealed partial class FlightSupplierBooking(IFlightProvider provider, Ti
 
         if (result.IsSuccess)
         {
-            return Verify(result.Value, details.ClientReference, details.ExpectedTotalPrice);
+            return Verify(provider, result.Value, details.ClientReference, details.ExpectedTotalPrice);
         }
 
         var outcome = Classify(result.Error.Kind);
@@ -98,8 +99,14 @@ internal sealed partial class FlightSupplierBooking(IFlightProvider provider, Ti
     /// Looks the booking up by our reference after an unknown outcome. A read: safe to repeat. A found booking is
     /// checked against what was agreed, exactly as a booking response is.
     /// </summary>
-    public async Task<SupplierBookingOutcome> ReconcileAsync(ClientReference clientReference, Money expectedTotalPrice, CancellationToken cancellationToken)
+    public async Task<SupplierBookingOutcome> ReconcileAsync(string providerId, ClientReference clientReference, Money expectedTotalPrice, CancellationToken cancellationToken)
     {
+        // The provider the booking was sent to. Not composed here: nothing can be looked up yet, so the outcome stays unknown.
+        if (providers.Find(providerId) is not { } provider)
+        {
+            return new SupplierBookingOutcome.Unknown(ProviderErrorKind.Unavailable);
+        }
+
         var lookup = await provider.RetrieveBookingAsync(clientReference, cancellationToken);
         if (!lookup.IsSuccess)
         {
@@ -107,7 +114,7 @@ internal sealed partial class FlightSupplierBooking(IFlightProvider provider, Ti
         }
 
         return lookup.Value.Booking is { } found
-            ? Verify(found, clientReference, expectedTotalPrice)
+            ? Verify(provider, found, clientReference, expectedTotalPrice)
             : new SupplierBookingOutcome.NotFound(timeProvider.GetUtcNow());
     }
 
@@ -125,7 +132,7 @@ internal sealed partial class FlightSupplierBooking(IFlightProvider provider, Ti
         _ => new SupplierBookingOutcome.Unknown(kind),
     };
 
-    private SupplierBookingOutcome Verify(FlightBookingConfirmation confirmation, ClientReference clientReference, Money expectedTotalPrice)
+    private SupplierBookingOutcome Verify(IFlightProvider provider, FlightBookingConfirmation confirmation, ClientReference clientReference, Money expectedTotalPrice)
     {
         if (confirmation.ClientReference == clientReference
             && confirmation.Booking.ProviderId == provider.Id

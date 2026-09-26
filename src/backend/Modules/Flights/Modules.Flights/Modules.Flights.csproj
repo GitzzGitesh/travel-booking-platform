@@ -12,6 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The airport seed dataset (IAirportDirectory), loaded once at startup. -->
+    <EmbeddedResource Include="Infrastructure/ReferenceData/airports.json" LogicalName="TravelBooking.Modules.Flights.Infrastructure.ReferenceData.airports.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Modules.Flights.UnitTests" />
     <InternalsVisibleTo Include="Modules.Flights.IntegrationTests" />
     <InternalsVisibleTo Include="Api.IntegrationTests" />

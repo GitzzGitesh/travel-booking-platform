@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TravelBooking.Modules.Flights.Application;
 using TravelBooking.Modules.Flights.Domain;
+using TravelBooking.Modules.Flights.Ports;
 
 namespace TravelBooking.Modules.Flights.Endpoints;
 
@@ -11,6 +12,7 @@ internal static class SelectFlightOfferEndpoint
     public static async Task<Results<Created<SelectedFlightOfferResponse>, Ok<SelectedFlightOfferResponse>, ProblemHttpResult>> Handle(
         SelectFlightOfferRequest request,
         SelectFlightOfferHandler handler,
+        IAirportDirectory airports,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(request.SearchId!.Value, request.OfferId!.Value, cancellationToken);
@@ -24,7 +26,7 @@ internal static class SelectFlightOfferEndpoint
                 title: "This offer is no longer available. Please search again.");
         }
 
-        var response = SelectedFlightOfferResponse.From(result.Value.Offer);
+        var response = SelectedFlightOfferResponse.From(result.Value.Offer, airports);
         return result.Value.Created ? TypedResults.Created((string?)null, response) : TypedResults.Ok(response);
     }
 }
@@ -39,13 +41,15 @@ internal sealed record SelectedFlightOfferResponse(
     Guid OfferId,
     MoneyResponse TotalPrice,
     DateTimeOffset OfferExpiresAt,
-    IReadOnlyList<FlightSliceResponse> Slices)
+    IReadOnlyList<FlightSliceResponse> Slices,
+    FlightFareResponse Fare)
 {
-    public static SelectedFlightOfferResponse From(SelectedOffer offer) => new(
+    public static SelectedFlightOfferResponse From(SelectedOffer offer, IAirportDirectory airports) => new(
         offer.Id,
         offer.SearchId,
         offer.OfferId,
         MoneyResponse.From(offer.TotalPrice),
         offer.OfferExpiresAt,
-        FlightSliceResponse.From(offer.Slices));
+        FlightSliceResponse.From(offer.Slices, airports),
+        FlightFareResponse.From(offer.Fare));
 }

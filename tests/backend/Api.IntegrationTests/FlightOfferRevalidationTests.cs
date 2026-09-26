@@ -40,8 +40,9 @@ public sealed class FlightOfferRevalidationTests(SqlApiFactory api) : IClassFixt
         var previous = Money(problem, "previousTotalPrice");
         var changed = Money(problem, "newTotalPrice");
         Same(previous, selected.TotalPrice);
-        decimal.Parse(changed.Amount, System.Globalization.CultureInfo.InvariantCulture)
-            .ShouldBe(decimal.Round(decimal.Parse(selected.TotalPrice.Amount, System.Globalization.CultureInfo.InvariantCulture) * 1.15m, 2));
+        // The mock rescales one adult's base fare and taxes by 15%, each to the cent: within a cent of the whole total's.
+        var expected = decimal.Round(decimal.Parse(selected.TotalPrice.Amount, System.Globalization.CultureInfo.InvariantCulture) * 1.15m, 2);
+        decimal.Parse(changed.Amount, System.Globalization.CultureInfo.InvariantCulture).ShouldBeInRange(expected - 0.01m, expected + 0.01m);
         problem.Extensions["requiresConfirmation"].ShouldBeOfType<JsonElement>().GetBoolean().ShouldBeTrue();
         var quote = problem.Extensions["priceQuoteId"].ShouldBeOfType<JsonElement>().GetGuid();
 

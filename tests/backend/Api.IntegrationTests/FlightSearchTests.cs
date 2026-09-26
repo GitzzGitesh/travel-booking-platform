@@ -44,6 +44,51 @@ public sealed class FlightSearchTests(WebApplicationFactory<Program> factory) : 
     }
 
     [Fact]
+    public async Task Offers_carry_fare_facts_airports_and_time_zones()
+    {
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(_url, new { origin = "LHR", destination = "JFK", departureDate = _inThirtyDays }, TestContext.Current.CancellationToken);
+
+        var body = await ReadJson(response);
+        var offer = body["offers"]!.AsArray()[1]!;
+        var fare = offer["fare"]!;
+        var adult = fare["priceBreakdown"]!["passengers"]!.AsArray().ShouldHaveSingleItem()!;
+        (adult["type"]!.GetValue<string>(), adult["count"]!.GetValue<int>()).ShouldBe(("Adult", 1));
+        var total = decimal.Parse(offer["totalPrice"]!["amount"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture);
+        (Amount(fare["priceBreakdown"]!["baseFare"]!) + Amount(fare["priceBreakdown"]!["taxesAndFees"]!)).ShouldBe(total);
+        (fare["validatingCarrier"]!.GetValue<string>(), fare["refund"]!.GetValue<string>(), fare["change"]!.GetValue<string>()).ShouldBe(("ZZ", "AllowedWithFee", "Free"));
+        fare["baggage"]!["checkedBags"]!.GetValue<int>().ShouldBe(1);
+        fare["ticketingDeadline"].ShouldNotBeNull();
+
+        // A codeshare leg, its stated flying time, and the IANA zone of each local time.
+        var segment = offer["slices"]!.AsArray()[0]!["segments"]!.AsArray()[0]!;
+        (segment["marketingCarrier"]!.GetValue<string>(), segment["operatingCarrier"]!.GetValue<string>()).ShouldBe(("ZZ", "ZY"));
+        segment["durationMinutes"]!.GetValue<int>().ShouldBe(135);
+        (segment["originTimeZone"]!.GetValue<string>(), segment["destinationTimeZone"]!.GetValue<string>()).ShouldBe(("Europe/London", "America/New_York"));
+
+        var airports = body["airports"]!.AsArray().Select(a => (a!["code"]!.GetValue<string>(), a["timeZone"]!.GetValue<string>())).ToList();
+        airports.ShouldBe([("JFK", "America/New_York"), ("LHR", "Europe/London")]);
+    }
+
+    [Fact]
+    public async Task An_airport_outside_the_reference_data_is_shown_by_code_only()
+    {
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(_url, new { origin = "LHR", destination = "ZPC", departureDate = _inThirtyDays }, TestContext.Current.CancellationToken);
+
+        var body = await ReadJson(response);
+        body["airports"]!.AsArray().Select(a => a!["code"]!.GetValue<string>()).ShouldBe(["LHR"]);
+        var segment = body["offers"]!.AsArray()[0]!["slices"]!.AsArray()[0]!["segments"]!.AsArray()[0]!;
+        segment["durationMinutes"]!.GetValue<int>().ShouldBe(135); // stated by the supplier
+        segment["destinationTimeZone"].ShouldBeNull();
+    }
+
+    private static decimal Amount(System.Text.Json.Nodes.JsonNode money) =>
+        decimal.Parse(money["amount"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture);
+
+    [Fact]
     public async Task Round_trip_search_in_business_returns_outbound_and_return_slices()
     {
         using var client = factory.CreateClient();

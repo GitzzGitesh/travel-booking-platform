@@ -14,11 +14,23 @@ function offer(
     destination: leg.via ?? 'JFK',
     departureLocal: `2027-02-14T${departs}:00`,
     arrivalLocal: `2027-02-14T${departs}:00`,
+    operatingCarrier: null,
+    durationMinutes: null,
+    originTimeZone: null,
+    destinationTimeZone: null,
   }));
   return {
     offerId: id,
     totalPrice: { amount, currency: 'XTS' },
     expiresAt: '2027-01-15T09:30:00+00:00',
+    fare: {
+      priceBreakdown: null,
+      validatingCarrier: null,
+      baggage: null,
+      refund: 'NotStated',
+      change: 'NotStated',
+      ticketingDeadline: null,
+    },
     slices: [{ segments }],
   };
 }

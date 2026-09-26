@@ -61,6 +61,19 @@ internal sealed class FlightsDbContext(DbContextOptions<FlightsDbContext> option
                     slices => SliceSnapshotJson.Write(slices).GetHashCode(StringComparison.Ordinal),
                     slices => slices));
 
+        // Fare facts (price breakdown, validating carrier, baggage, conditions, ticketing deadline), versioned JSON.
+        // Nullable: rows selected before they were kept have none.
+        offer.Ignore(o => o.Fare);
+        offer.Property<FlightFare?>("StoredFare")
+            .HasColumnName("FareJson")
+            .HasConversion(
+                fare => FareSnapshotJson.Write(fare!),
+                json => FareSnapshotJson.Read(json),
+                new ValueComparer<FlightFare?>(
+                    (left, right) => (left == null && right == null) || (left != null && right != null && FareSnapshotJson.Write(left) == FareSnapshotJson.Write(right)),
+                    fare => fare == null ? 0 : FareSnapshotJson.Write(fare).GetHashCode(StringComparison.Ordinal),
+                    fare => fare));
+
         // Revalidation state (F-01..F-03). The migration gives existing rows the Selected status.
         offer.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
         offer.Ignore(o => o.ConfirmedPrice);

@@ -83,5 +83,27 @@ Every mock must pass the same **provider contract suite** as the real adapters (
 - Request/response payloads are captured **after redaction** (PII, card data) to a supplier-call log with a retention limit (TBD), for dispute evidence and debugging.
 - Metrics: calls, errors by taxonomy category, latency per provider and operation, look-to-book ratio.
 
+## Flight model as built (supplier-neutral)
+- **Offer facts** (`FlightOffer.Fare`, all optional: an unstated fact is unknown, never guessed):
+  - a price breakdown by passenger type (base fare, and taxes and fees as one amount, per passenger; a type may have several entries, e.g. children priced by age). One that does not add up to the offer's total is dropped and logged, and the total stays the price;
+  - the validating carrier;
+  - baggage per passenger (checked bags, optional weight limit per bag, cabin bags);
+  - refund and change conditions (`NotStated`, `NotAllowed`, `AllowedWithFee`, `Free`; penalty amounts come with fare rules);
+  - the ticketing deadline (an instant).
+- **Leg facts** (`FlightSegment`): the operating carrier when it is not the marketing carrier (codeshare), the flying time if the supplier states it, and the fare basis (opaque to the core).
+- **Airports** (`IAirportDirectory`, core reference data inside Flights and not part of the provider port, ADR 0014): name, city, country and IANA time zone, from a small embedded seed dataset (`Infrastructure/ReferenceData/airports.json`, validated at startup). It is to be replaced by an authoritative source before production.
+  - Local flight times stay local (ADR 0010). The API gives each leg's time zones when known.
+  - The flying time is the supplier's, or else computed from both airports' zones.
+  - An airport outside the dataset is shown by its code.
+  - The mock states its flying time but adds it on the departure clock (a mock simplification).
+- **Providers by id** (`FlightProviders`): revalidation, booking and booking lookup go to the provider that made the offer (`ProviderOfferRef.ProviderId`).
+  - An id that is not composed is never sent to another provider: revalidation reports it unavailable, booking refuses it unsent, and a lookup stays unknown.
+  - Search uses `Flights:SearchProviderId` when several providers are composed, otherwise the only one; searching several providers needs a fan-out design first.
+- **Adding a real flight supplier** is then:
+  - one `Integrations.Flights.<Supplier>` adapter that maps the supplier's DTOs to these types and its errors to the taxonomy;
+  - its configuration and secrets;
+  - one provider registration;
+  - passing `FlightProviderSearchContract`, including its rule that stated fare facts are consistent with the search.
+
 ## Adding a real supplier
 Workflow skill `add-provider-adapter` (to be created in Phase 2). An ADR is required per supplier: commercial model, merchant model, idempotency support, retrieve-by-reference support, and sandbox availability.

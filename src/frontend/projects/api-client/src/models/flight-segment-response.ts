@@ -5,7 +5,11 @@ export interface FlightSegmentResponse {
   arrivalLocal: string;
   departureLocal: string;
   destination: string;
+  destinationTimeZone: (string | null);
+  durationMinutes: (number | null);
   flightNumber: string;
   marketingCarrier: string;
+  operatingCarrier: (string | null);
   origin: string;
+  originTimeZone: (string | null);
 }

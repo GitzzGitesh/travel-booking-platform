@@ -104,7 +104,7 @@ public sealed class SearchFlightsHandlerTests
         Enum.GetValues<ProviderErrorKind>().ShouldAllBe(kind => ProviderProblems.For(kind).StatusCode >= 422);
 
     private static SearchFlightsHandler Handler(IFlightProvider provider) =>
-        new(provider, new FlightSearchCache(NewCache(), NullLogger<FlightSearchCache>.Instance), _clock, NullLogger<SearchFlightsHandler>.Instance);
+        new(new FlightProviders([provider]), new FlightSearchCache(NewCache(), NullLogger<FlightSearchCache>.Instance), _clock, NullLogger<SearchFlightsHandler>.Instance);
 
     internal static HybridCache NewCache() =>
         new ServiceCollection().AddHybridCache().Services.BuildServiceProvider().GetRequiredService<HybridCache>();

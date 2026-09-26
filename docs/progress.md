@@ -21,7 +21,8 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 - **Payment attempts** (`Modules.Payments.Contracts`: `IOrderPayments`; schema `payments`, migration `InitialPayments`): saved as Authorizing before the provider call; unique per order and key; **one live attempt per order** (filtered unique index, F-32); unknown, crashed or challenged attempts are looked up by our reference, never re-authorized; "not found" is conclusive only after `Payments:Reconciliation:NotFoundConclusiveAfter` (15 minutes by default); amount mismatches and later-phase states go to ManualReview; history with actor and correlation id; token and customer action never printed.
 - **Checkout payment step** (`AuthorizeCheckoutHandler`, Orders): finish an attempt already made with the key first; otherwise revalidate every item with the supplier now (`IFlightSelections.RevalidateAsync`), adopt a new expiry and, only with a newly accepted quote, a new price (F-01); refuse offers with under two minutes left; authorize the server-side total; `Booking` only on an authorization of exactly that total. An authorization the order will not book on is noted on the timeline for release (F-22). |
 | 4 | **Background money safety** (one batch, ADR 0007) | **Done.** Worker jobs under DB leases, over a BuildingBlocks outbox, inbox and lease store in each module's schema. Payment attempts are reconciled by lookup (Authorizing, AuthorizationUnknown, ActionRequired), and holds Orders will not use are voided once, keyed by the attempt (`Voiding`, `VoidUnknown`, `Voided`; F-21, F-22), after an `OrderPaymentReleaseRequested` event (Orders outbox → Payments inbox). Orders whose offer expired are abandoned only when no live payment attempt remains (F-02). Migrations `AddOutboxAndJobLeases` (orders) and `AddHoldReleaseAndInbox` (payments). Runbook `payment-hold-release.md` |
-| 4b | **Next (proposed):** flight offer model enrichment, provider resolution by id, airport reference data (audit batch 2) | Technically unblocked |
+| 4b | **Flights model readiness** (audit batch 2): fare model enrichment, provider resolution by id, airport reference data | **Done.** See "Phase 3: flights model readiness" below |
+| 4c | **Next (audit):** identity and the customer booking path (token validation, internal customer id, customer endpoints, supplier booking then capture) | **Blocked on decisions:** the identity provider tenant (ADR 0008), Q9 (traveller data), and ADR 0006 for card entry |
 | 5 | Supplier booking after authorization (`FlightSupplierBooking` behind a Flights Contracts entry point), then capture or void | **Blocked on traveller data:** names are PII, documents Sensitive PII, retention is Q9 |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
@@ -46,6 +47,20 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 - In Staging, the mock payment provider's per-process state means Worker lookups cannot see payments made through the Api. Share it, or disable the Payments jobs there, before Staging is used for payment testing.
 
 **Follow-ups from the chunk 3 reviews:** a later Orders migration can drop the `CustomerId` default and add `CHECK (CustomerId <> '')` once no dev rows lack an owner. The ARCHITECTURE REVIEW on synchronous cross-module commands is **resolved by ADR 0015 (Accepted 2026-09-26)**. Checkout's `IFlightSelections.RevalidateAsync` and `IOrderPayments.AuthorizeAsync`/`ResumeAsync` are allowed as idempotent, supplier-neutral commands with explicit unknown states. Durable side effects and background work stay on the outbox and Worker, and any other synchronous command needs its own ADR.
+
+### Phase 3: flights model readiness (audit batch 2)
+**Done (this PR):**
+- The supplier-neutral fare and leg model: price breakdown, validating and operating carrier, baggage, refund/change conditions, ticketing deadline, flying time and fare basis.
+- Provider resolution by `ProviderId` for revalidation, booking and lookup.
+- An airport seed dataset with IANA zones (`IAirportDirectory`).
+- The API search response now carries fare facts, airports and flying time; the selected-offer response carries fare facts. The client is regenerated.
+- Selected offers keep the fare facts (migration `AddSelectedOfferFare`, itinerary snapshot v2; v1 rows stay readable). The results page shows the nonstop flying time, codeshare operators and a fare summary, with no redesign.
+
+**Deferred:**
+- multi-provider search (fan-out);
+- an authoritative airport source (before production);
+- fare-rule penalty amounts;
+- storing the provider id on the Orders item, which supplier-booking reconciliation needs (`FlightSupplierBooking.ReconcileAsync(providerId, ...)`), with the booking orchestration.
 
 ## Phase 2 — Flights slice (complete)
 

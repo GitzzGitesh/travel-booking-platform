@@ -90,9 +90,40 @@ public sealed class MockFlightProviderTests : FlightProviderSearchContract
 
         var revalidated = (await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken)).Value;
 
+        // Every passenger's base fare and taxes rescaled (to the cent), and the new total exactly their sum.
+        var expected = offer.Fare.PriceBreakdown!.Passengers.Sum(p =>
+            p.Count * (decimal.Round(p.BaseFare.Amount * MockRevalidationScenarios.PriceChangeFactor, 2) + decimal.Round(p.TaxesAndFees.Amount * MockRevalidationScenarios.PriceChangeFactor, 2)));
         revalidated.TotalPrice.Currency.ShouldBe(offer.TotalPrice.Currency);
-        revalidated.TotalPrice.Amount.ShouldBe(decimal.Round(offer.TotalPrice.Amount * MockRevalidationScenarios.PriceChangeFactor, 2));
+        revalidated.TotalPrice.Amount.ShouldBe(expected);
+        revalidated.TotalPrice.Amount.ShouldBeGreaterThan(offer.TotalPrice.Amount);
+        revalidated.Fare.PriceBreakdown!.Total.ShouldBe(revalidated.TotalPrice);
         Itinerary(revalidated).ShouldBe(Itinerary(offer));
+    }
+
+    [Fact]
+    public async Task The_mock_states_every_fare_fact_and_one_codeshare_leg()
+    {
+        var offers = await SearchOffers(OneWay());
+
+        offers.ShouldAllBe(o => o.Fare.PriceBreakdown != null && o.Fare.ValidatingCarrier == "ZZ" && o.Fare.Baggage != null
+            && o.Fare.Conditions.Refund != FareAllowance.NotStated && o.Fare.TicketingDeadline == _now.AddDays(1));
+        offers.SelectMany(o => o.Slices.SelectMany(s => s.Segments)).ShouldAllBe(s => s.Duration == new TimeSpan(2, 15, 0) && s.FareBasis != null);
+        offers.Select(o => o.Slices[0].Segments[0].OperatingCarrier).ShouldBe([null, "ZY", null]);
+        offers.Select(o => o.Fare.Conditions.Refund).ShouldBe([FareAllowance.NotAllowed, FareAllowance.AllowedWithFee, FareAllowance.Free]);
+    }
+
+    [Fact]
+    public async Task Infants_pay_a_tenth_of_the_seat_fare_and_the_breakdown_adds_up_to_the_total()
+    {
+        var criteria = new FlightSearchCriteria(new AirportCode("LHR"), new AirportCode("JFK"), new DateOnly(2027, 2, 14), null, new PassengerMix(2, 1, 1), CabinClass.Economy);
+
+        var offer = (await SearchOffers(criteria))[0];
+
+        var fares = offer.Fare.PriceBreakdown!.Passengers.ToDictionary(p => p.Type);
+        var seat = fares[PassengerType.Adult].BaseFare + fares[PassengerType.Adult].TaxesAndFees;
+        (fares[PassengerType.Adult].Count, fares[PassengerType.Child].Count, fares[PassengerType.Infant].Count).ShouldBe((2, 1, 1));
+        (fares[PassengerType.Infant].BaseFare + fares[PassengerType.Infant].TaxesAndFees).Amount.ShouldBe(seat.Amount * 0.1m);
+        offer.Fare.PriceBreakdown.Total.ShouldBe(offer.TotalPrice);
     }
 
     [Theory]

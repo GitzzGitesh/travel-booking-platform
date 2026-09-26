@@ -77,7 +77,7 @@ public sealed class FlightSelectionsTests
 
     // GetBookableAsync reads the store only: the revalidation handler is never called here.
     private FlightSelections Selections(SelectedOffer offer) =>
-        new(new SingleOfferStore(offer), new RevalidateSelectedOfferHandler(new SingleOfferStore(offer), null!, _clock), _clock);
+        new(new SingleOfferStore(offer), new RevalidateSelectedOfferHandler(new SingleOfferStore(offer), new FlightProviders([]), _clock), _clock);
 
     private sealed class SingleOfferStore(SelectedOffer offer) : ISelectedOfferStore
     {
