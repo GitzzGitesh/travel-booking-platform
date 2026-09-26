@@ -1,7 +1,11 @@
 using System.Text.Json.Serialization;
 using TravelBooking.Api;
 using TravelBooking.BuildingBlocks.Http;
+using TravelBooking.Integrations.Flights.Amadeus;
+using TravelBooking.Integrations.Flights.Duffel;
 using TravelBooking.Integrations.Flights.Mock;
+using TravelBooking.Integrations.Flights.Sabre;
+using TravelBooking.Integrations.Flights.Travelport;
 using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Modules.Flights;
 using TravelBooking.Modules.Orders;
@@ -41,6 +45,14 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
     // Likewise the only payment provider until ADR 0006 is decided (Q2, Q5): no card data, no network.
     builder.Services.AddMockPaymentProvider(builder.Configuration);
 }
+
+// Candidate flight suppliers (Q6): each is composed only when enabled in configuration (Integrations:Flights:<Name>),
+// with its credentials from user-secrets / Key Vault. Startup refuses any adapter below ProductionReady outside
+// Development and Staging, and a search provider that does not implement search (Flights:SearchProviderId).
+builder.Services.AddAmadeusFlightProvider(builder.Configuration);
+builder.Services.AddDuffelFlightProvider(builder.Configuration);
+builder.Services.AddSabreFlightProvider(builder.Configuration);
+builder.Services.AddTravelportFlightProvider(builder.Configuration);
 
 // No fallback policy yet: without an authentication scheme it would turn every unmatched route into a 500.
 // It is added with the first authentication scheme (ADR 0008, Phase 4). Until then, deny-by-default is

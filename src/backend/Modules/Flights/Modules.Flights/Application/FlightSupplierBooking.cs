@@ -60,7 +60,7 @@ internal sealed partial class FlightSupplierBooking(FlightProviders providers, T
     public async Task<SupplierBookingOutcome> BookAsync(FlightBookingDetails details, CancellationToken cancellationToken)
     {
         // The offer's own provider books it; one that is not composed here is refused before anything is sent.
-        if (providers.Find(details.Offer.ProviderId) is not { } provider)
+        if (providers.FindFor(details.Offer.ProviderId, ProviderOperation.Book) is not { } provider)
         {
             return new SupplierBookingOutcome.NotBooked(SupplierBookingFailureReason.InvalidRequest);
         }
@@ -102,7 +102,7 @@ internal sealed partial class FlightSupplierBooking(FlightProviders providers, T
     public async Task<SupplierBookingOutcome> ReconcileAsync(string providerId, ClientReference clientReference, Money expectedTotalPrice, CancellationToken cancellationToken)
     {
         // The provider the booking was sent to. Not composed here: nothing can be looked up yet, so the outcome stays unknown.
-        if (providers.Find(providerId) is not { } provider)
+        if (providers.FindFor(providerId, ProviderOperation.RetrieveBooking) is not { } provider)
         {
             return new SupplierBookingOutcome.Unknown(ProviderErrorKind.Unavailable);
         }

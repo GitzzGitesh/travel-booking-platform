@@ -61,9 +61,10 @@ internal sealed class RevalidateSelectedOfferHandler(ISelectedOfferStore store, 
             return await MarkUnavailable(offer, SelectedOfferStatus.Expired, cancellationToken);
         }
 
-        if (providers.Find(offer.ProviderId) is not { } provider)
+        if (providers.FindFor(offer.ProviderId, ProviderOperation.Revalidate) is not { } provider)
         {
-            // Its provider is not configured here (for now): not terminal, as configuration can change back.
+            // Its provider is not configured here, or its adapter cannot revalidate (for now): not terminal, as
+            // configuration can change back. It is never sent to another provider.
             return Failure(new SelectedOfferFailure.ProviderFailed(new ProviderError(ProviderErrorKind.Unavailable, "The offer's provider is not configured.")));
         }
 

@@ -25,7 +25,11 @@ public static class FlightsModule
         services.AddValidation();
         services.TryAddSingleton(TimeProvider.System);
         // Providers by id: an offer is always revalidated and booked by the provider that made it.
-        services.AddScoped(provider => new FlightProviders(provider.GetServices<Ports.IFlightProvider>(), configuration[FlightProviders.SearchProviderSetting]));
+        services.AddOptions<FlightProviderComposition>().Bind(configuration.GetSection("Flights")).ValidateOnStart();
+        services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<FlightProviderComposition>, FlightProviderCompositionValidator>();
+        services.AddScoped(provider => new FlightProviders(
+            provider.GetServices<Ports.IFlightProvider>(),
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<FlightProviderComposition>>().Value.SearchProviderId));
 
         // Airport reference data (names, IANA time zones): core data, not part of the provider port (ADR 0014).
         services.TryAddSingleton<IAirportDirectory, Infrastructure.ReferenceData.EmbeddedAirportDirectory>();

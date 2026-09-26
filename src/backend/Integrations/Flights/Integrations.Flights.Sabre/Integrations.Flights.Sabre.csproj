@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Sabre flight adapter (ADR 0004, ADR 0018), SCAFFOLDED. Supplier DTOs, mapping and error mapping stay in this project.
+    Stage: scaffolded. No Sabre mapping until agency access and API confirmation (Q6).
+  -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ProviderContracts" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />
+  </ItemGroup>
+
+</Project>

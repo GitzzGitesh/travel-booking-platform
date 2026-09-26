@@ -114,6 +114,8 @@ public sealed class SearchFlightsHandlerTests
 
     private sealed class StubProvider(Result<FlightSearchResult, ProviderError> result) : IFlightProvider
     {
+        public FlightProviderCapabilities Capabilities => TestCapabilities.All;
+
         public int Calls { get; private set; }
 
         public string Id => "stub";

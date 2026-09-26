@@ -281,6 +281,8 @@ public sealed class FlightProvidersTests
 
     private sealed class IdProvider(string id) : IFlightProvider
     {
+        public FlightProviderCapabilities Capabilities => TestCapabilities.All;
+
         public FlightOffer? Offer { get; init; }
 
         public int Calls { get; private set; }
