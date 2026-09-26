@@ -15,13 +15,13 @@ sequenceDiagram
   C->>API: POST /orders (offerId, travellers, Idempotency-Key)
   API->>S: Revalidate offer (price/availability)
   S-->>API: Price confirmed (or changed → 422 price-changed)
-  API->>P: Create PaymentIntent (manual capture, key = orderId)
+  API->>P: Create PaymentIntent (manual capture, key = paymentId: one per payment attempt)
   P-->>C: client_secret → Stripe Elements (SCA if required)
   C->>API: POST /orders/{id}/confirm (Idempotency-Key)
   API->>P: Verify authorization succeeded
   API->>S: Book (client reference = orderItemId)
   S-->>API: Confirmed (provider ref, locator)
-  API->>P: Capture (key = orderItemId-capture)
+  API->>P: Capture once all items are final (key = paymentId:capture)
   API-->>C: 200 Confirmed
   API->>W: Outbox: OrderConfirmed → ticketing/voucher, email
 ```

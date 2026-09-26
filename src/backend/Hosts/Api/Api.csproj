@@ -19,6 +19,8 @@
     <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Mock\Integrations.Flights.Mock.csproj" />
     <ProjectReference Include="..\..\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />
     <ProjectReference Include="..\..\Modules\Orders\Modules.Orders\Modules.Orders.csproj" />
+    <ProjectReference Include="..\..\Integrations\Payments\Integrations.Payments.Mock\Integrations.Payments.Mock.csproj" />
+    <ProjectReference Include="..\..\Modules\Payments\Modules.Payments\Modules.Payments.csproj" />
   </ItemGroup>
 
 </Project>

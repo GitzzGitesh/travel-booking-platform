@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Mock\Integrations.Flights.Mock.csproj" />
+    <ProjectReference Include="..\..\..\src\backend\Integrations\Payments\Integrations.Payments.Mock\Integrations.Payments.Mock.csproj" />
   </ItemGroup>
 
 </Project>

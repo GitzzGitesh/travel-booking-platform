@@ -43,11 +43,11 @@ Add a new scenario with the next free ID in its category's band, and update this
 ## Payments
 | ID | Scenario | Expected behaviour | Levels | Status |
 |---|---|---|---|---|
-| F-20 | Card declined / authorization failed | Item stays bookable until offer expiry; no supplier call | U, A, E | Domain done (Phase 3 chunk 1): a decline does not move the item; it stays `AwaitingPayment` for another attempt until the offer expires, and booking is refused once the offer has expired (U). The payment attempt comes with payments (ADR 0006) |
-| F-21 | SCA challenge abandoned | Payment `Failed` after timeout; no booking | U, E | Planned |
-| F-22 | **Payment authorized, booking failed** | Void authorization (idempotent); customer sees failure with no charge | U, I, E | Planned |
-| F-23 | Booking confirmed, capture failed | Idempotent capture retry within validity; then `ManualReview` + alert; booking not auto-cancelled | U, I | Planned |
-| F-24 | Authorization expired before capture | Alert; policy decision (re-authorize or cancel) | U | Planned |
+| F-20 | Card declined / authorization failed | Item stays bookable until offer expiry; no supplier call | U, A, E | Domain done (Phase 3 chunk 1): a decline does not move the item, which stays `AwaitingPayment` for another attempt until the offer expires, and booking is refused once the offer has expired (U). Payment port done (chunk 2): a decline is a definitive `Declined` outcome with a provider-neutral reason, and nothing is held (U, P, I). The payment attempt record comes with the orchestration |
+| F-21 | SCA challenge abandoned | Payment `Failed` after timeout; no booking | U, E | Partly done (Phase 3 chunk 2, U and P): a required challenge is `ActionRequired`, never `Authorized`, nothing can be captured, voiding it cancels it, and the port has a `Canceled` state. Expiring abandoned challenges, and the E2E level, come with the orchestration |
+| F-22 | **Payment authorized, booking failed** | Void authorization (idempotent); customer sees failure with no charge | U, I, E | Payment port done (Phase 3 chunk 2): voiding an authorized hold is idempotent by key, and a captured payment cannot be voided (U, P, I). Driving the void from a `Failed` item comes with the orchestration |
+| F-23 | Booking confirmed, capture failed | Idempotent capture retry within validity; then `ManualReview` + alert; booking not auto-cancelled | U, I | Payment port done (Phase 3 chunk 2): a capture that timed out after capturing is `Unknown`, and a retry with the same key returns it, captured once (U, P). The retry window, `ManualReview` and the alert come with the orchestration |
+| F-24 | Authorization expired before capture | Alert; policy decision (re-authorize or cancel) | U | Port ready (Phase 3 chunk 2): a lapsed hold is the `Expired` state, classified as `AuthorizationExpired` (U). The alert, the guard and the policy decision come with the orchestration |
 | F-25 | Process crash between supplier confirm and capture | On restart, the Worker completes capture from outbox/timeline state | I | Planned |
 
 ## Duplicates, ordering, and concurrency
@@ -59,7 +59,7 @@ Add a new scenario with the next free ID in its category's band, and update this
 | F-33 | **Duplicate webhook** | Inbox unique constraint; second delivery is a no-op | I, C | Planned |
 | F-34 | Out-of-order webhooks | Stale transitions ignored; final state correct | U, I | Planned |
 | F-35 | Invalid webhook signature | 400; not persisted; security event | A | Planned |
-| F-36 | **Duplicate refund request** | Existing refund returned; total refunded ≤ captured | A, C | Planned |
+| F-36 | **Duplicate refund request** | Existing refund returned; total refunded ≤ captured | A, C | Provider level done (Phase 3 chunk 2): the same refund key never refunds twice, the total refunded never exceeds the amount captured, and a key reused for another operation is an idempotency conflict (P). Refund records and the API come with the refund story |
 | F-37 | Concurrent admin edits (e.g. markups) | ETag / `rowversion`: 412/409, no lost update | A, C | Planned |
 | F-38 | Webhook and reconciliation poll race on the same payment | Single transition; the other is a no-op | C | Planned |
 
@@ -69,7 +69,7 @@ Add a new scenario with the next free ID in its category's band, and update this
 | F-40 | Cancellation within free period / void window | Supplier cancel → full refund | U, P, E | Planned |
 | F-41 | Cancellation with penalty | Quote shown and accepted → cancel → partial refund | U, P, E | Planned |
 | F-42 | Cancel call times out | `CancellationPending`; reconcile; no resubmit unless the supplier guarantees idempotency | U, P | Planned |
-| F-43 | Refund fails at Stripe | Refund `Failed`; alert; ops retry with the same key | U, I | Planned |
+| F-43 | Refund fails at Stripe | Refund `Failed`; alert; ops retry with the same key | U, I | Provider level done (Phase 3 chunk 2): a refund refused before processing succeeds when retried with the same key (P). The refund record, `Failed` and the alert come with the refund story |
 | F-44 | Partial refund then dispute | State consistent; evidence available from the timeline | U | Planned |
 
 ## Supplier-initiated changes (later phases)

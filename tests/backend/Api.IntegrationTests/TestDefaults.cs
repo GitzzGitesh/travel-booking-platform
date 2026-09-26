@@ -1,5 +1,9 @@
 using System.Runtime.CompilerServices;
 
+// WebApplicationFactory intercepts Program's host build through a process-wide listener, so factories built in parallel
+// can capture each other's host and configuration (flaky startup-validation tests in CI). Run the Api tests one at a time.
+[assembly: CollectionBehavior(CollectionBehavior.CollectionPerAssembly)]
+
 namespace TravelBooking.Api.IntegrationTests;
 
 internal static class TestDefaults

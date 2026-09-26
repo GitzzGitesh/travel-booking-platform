@@ -43,6 +43,8 @@ Requirements:
 | `Unavailable` | Supplier down / circuit open | Degrade; no booking attempt |
 | `RateLimited` | Throttled | Back off (reads only) |
 | `AuthFailure` | Credentials invalid | Alert immediately; treat as `Unavailable` |
+| `IdempotencyConflict` | Our idempotency key was reused with different details | Definitive: nothing applied |
+| `OperationInProgress` | A request with the same key is still being processed | Unknown: look it up later; never a refusal |
 
 ## Timeouts and resilience
 | Operation class | Timeout (initial, tune later) | Retry | Circuit breaker |
@@ -57,6 +59,17 @@ Deterministic and scenario-driven, used for local dev, automated tests, and demo
 Implemented so far (flights): `SearchAsync`, `RevalidateAsync`, `BookAsync` (with our `ClientReference` as the idempotency token) and `RetrieveBookingAsync` (a lookup by our reference: "not found" is a definite answer, an error means still unknown). Booking scenarios are chosen by a reserved passenger family name (`MockBookingScenarios`): `SCENARIO-REJECTED`, `SCENARIO-TIMEOUT-BOOKED` (the call is `Unknown` but the lookup finds the booking) and `SCENARIO-TIMEOUT-NOT-BOOKED`. Timeouts are simulated instantly. Mock bookings are held in memory for the life of the process, so a restart or a second instance (e.g. in Staging) makes a lookup answer "not found" for bookings it made. Do not draw reconciliation conclusions from the mock across restarts.
 
 **On a booking write** the core treats only `Rejected`, `PriceChanged`, `SoldOut`, `OfferExpired` and `InvalidRequest` as "definitely not booked". `Unknown`, `Unavailable`, `RateLimited`, `AuthFailure` and any exception from a started call are an unknown outcome, settled by a lookup and never resubmitted. A booking that exists but not as agreed (price, reference or provider) is a mismatch for manual review, never booked.
+
+**Payment mock** (`Integrations.Payments.Mock`, provider id `mockpay`): scenarios are chosen by test payment-method tokens (`MockPaymentMethods`):
+- `pm_mock_approved`;
+- `pm_mock_declined` and `pm_mock_insufficient_funds` (a `Declined` payment state);
+- `pm_mock_requires_action` (an SCA challenge that is never completed);
+- `pm_mock_timeout_authorized` and `pm_mock_timeout_not_authorized`;
+- `pm_mock_capture_timeout` (captured, answer lost; a same-key retry returns it);
+- `pm_mock_refund_unavailable_once`;
+- `pm_mock_refund_pending` (refunds accepted as `Pending`).
+
+The configured scenario `Unavailable` refuses every call. Payments live in memory, so a restart or a second instance makes a lookup answer "not found" for a real hold. Every payment adapter must pass `PaymentProviderContract` using its provider's own test methods, never real cards.
 
 **Adding a real flight supplier:** its ADR must state (1) how it guarantees at most one booking per client reference (supplier idempotency, or a lookup before booking); (2) the lookup's consistency window after a write, which reconciliation must wait out before treating "not found" as not booked; (3) whether a late request with the same client reference can still create a booking; and (4) how sandbox bookings made by the contract suite are cancelled. `RevalidateAsync` returns the offer as the supplier prices it now, and the core compares prices; it does not return a `PriceChanged` error. Search scenarios are chosen by configuration (`Integrations:Flights:Mock:Scenario`). Revalidation scenarios are chosen per offer by reserved test destinations (`MockRevalidationScenarios`), so one running Api can demonstrate all of them: `ZPC` price changed (F-01, +15%), `ZEX` offer expired (F-02), `ZSO` sold out (F-03). The reference returned by revalidation replaces the stored one, because a supplier may issue a new priced offer that must then be booked. **Known gap:** the core does not yet check that the revalidated itinerary is unchanged (only the contract suite asserts it). Handle schedule changes at pricing time with the first real supplier and with `BookAsync`.
 
