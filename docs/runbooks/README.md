@@ -5,6 +5,7 @@ Step-by-step procedures for operational situations. A runbook is written **in th
 ## Planned runbooks
 | Runbook | Introduced with | Alert |
 |---|---|---|
+| `flight-supplier-onboarding.md` (written) | Q6 preparation | Credentials or commercial approval arrive for a supplier |
 | `payment-hold-release.md` (written) | Phase 3 (background money safety) | Hold not released / release request given up |
 | `booking-pending-confirmation.md` | Phase 3 (first vertical slice) | Booking stuck in `PendingConfirmation` |
 | `payment-captured-booking-failed.md` | Phase 3 | Capture failure / payment–booking mismatch |

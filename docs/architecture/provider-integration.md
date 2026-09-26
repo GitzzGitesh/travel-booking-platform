@@ -105,5 +105,8 @@ Every mock must pass the same **provider contract suite** as the real adapters (
   - one provider registration;
   - passing `FlightProviderSearchContract`, including its rule that stated fare facts are consistent with the search.
 
+## Candidate suppliers (Q6)
+Amadeus, Sabre, Travelport and Duffel have adapter projects behind the port, with a declared capability model, an adapter stage and credential-gated sandbox contract tests (ADR 0018). Readiness, the capability matrix and the open items per supplier are in [flight-suppliers.md](flight-suppliers.md); onboarding steps are in [the runbook](../runbooks/flight-supplier-onboarding.md).
+
 ## Adding a real supplier
 Workflow skill `add-provider-adapter` (to be created in Phase 2). An ADR is required per supplier: commercial model, merchant model, idempotency support, retrieve-by-reference support, and sandbox availability.

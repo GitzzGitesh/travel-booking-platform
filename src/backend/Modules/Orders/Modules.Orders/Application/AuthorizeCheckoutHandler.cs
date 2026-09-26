@@ -77,6 +77,9 @@ internal abstract record CheckoutFailure
     /// <summary>The supplier could not answer, or the order changed at the same time: nothing was charged; retry.</summary>
     internal sealed record TryAgain : CheckoutFailure;
 
+    /// <summary>The offer's supplier cannot book through us (Q6: a search-only adapter): nothing is charged; search again.</summary>
+    internal sealed record SupplierCannotBook(Guid ItemId) : CheckoutFailure;
+
     /// <summary>The key was already used for this order with another amount (409: never a second effect).</summary>
     internal sealed record IdempotencyKeyReused : CheckoutFailure;
 
@@ -178,6 +181,7 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
                     FlightSelectionUnavailable.NeedsPriceCheck => new CheckoutFailure.PriceChanged(item.Id),
                     FlightSelectionUnavailable.Expired or FlightSelectionUnavailable.NotFound => new CheckoutFailure.OfferExpired(item.Id),
                     FlightSelectionUnavailable.SoldOut => new CheckoutFailure.SoldOut(item.Id),
+                    FlightSelectionUnavailable.SupplierCannotBook => new CheckoutFailure.SupplierCannotBook(item.Id),
                     _ => new CheckoutFailure.TryAgain(),
                 };
             }

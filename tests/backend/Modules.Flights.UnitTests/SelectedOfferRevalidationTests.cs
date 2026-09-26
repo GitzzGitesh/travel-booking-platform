@@ -415,7 +415,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         var provider = new StubProvider(Success((decimal)amount));
 
-        var result = await new FlightSelections(store, Handler(store, provider), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await new FlightSelections(store, Handler(store, provider), new FlightProviders([provider]), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
 
         provider.Revalidated.ShouldHaveSingleItem();
         if (expected is { } reason)
@@ -437,7 +437,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
     {
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
 
-        var result = await new FlightSelections(store, Handler(store, new StubProvider(Failure(kind))), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await new FlightSelections(store, Handler(store, new StubProvider(Failure(kind))), new FlightProviders([new StubProvider(Failure(kind))]), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBe(expected);
     }
@@ -448,7 +448,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         store.SaveSucceeds = false;
 
-        var result = await new FlightSelections(store, Handler(store, new StubProvider(Success(270m))), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await new FlightSelections(store, Handler(store, new StubProvider(Success(270m))), new FlightProviders([new StubProvider(Success(270m))]), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBe(FlightSelectionUnavailable.TryAgain);
     }
@@ -495,6 +495,8 @@ public sealed class RevalidateSelectedOfferHandlerTests
 
     private sealed class StubProvider(Result<FlightOffer, ProviderError> result) : IFlightProvider
     {
+        public FlightProviderCapabilities Capabilities => TestCapabilities.All;
+
         public List<ProviderOfferRef> Revalidated { get; } = [];
 
         public string Id => "stub";

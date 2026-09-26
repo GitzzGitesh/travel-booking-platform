@@ -66,6 +66,7 @@ public sealed class AuthorizeCheckoutHandlerTests
     [InlineData(FlightSelectionUnavailable.NotFound, typeof(CheckoutFailure.OfferExpired))]
     [InlineData(FlightSelectionUnavailable.SoldOut, typeof(CheckoutFailure.SoldOut))] // F-03
     [InlineData(FlightSelectionUnavailable.TryAgain, typeof(CheckoutFailure.TryAgain))]
+    [InlineData(FlightSelectionUnavailable.SupplierCannotBook, typeof(CheckoutFailure.SupplierCannotBook))] // Q6: a search-only adapter
     internal async Task An_offer_that_cannot_be_booked_is_never_paid_for(FlightSelectionUnavailable reason, Type expected)
     {
         _selections.Next = Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(reason);

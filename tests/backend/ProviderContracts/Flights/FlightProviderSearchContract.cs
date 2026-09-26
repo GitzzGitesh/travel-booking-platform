@@ -15,6 +15,20 @@ public abstract class FlightProviderSearchContract
 
     protected abstract DateTimeOffset Now { get; }
 
+    /// <summary>
+    /// Whether the adapter implements booking and lookup. Adapters mapped only for search and revalidation (Q6) run the
+    /// search half of the contract; the booking half is skipped, never passed.
+    /// </summary>
+    protected virtual bool SupportsBooking => Provider.Capabilities.Implements(ProviderOperation.Book) && Provider.Capabilities.Implements(ProviderOperation.RetrieveBooking);
+
+    protected void SkipUnlessBooking()
+    {
+        if (!SupportsBooking)
+        {
+            Assert.Skip($"{Provider.Id} does not implement booking yet (stage {Provider.Capabilities.Stage}).");
+        }
+    }
+
     protected FlightSearchCriteria OneWay(PassengerMix? passengers = null, CabinClass cabin = CabinClass.Economy) =>
         new(new AirportCode("LHR"), new AirportCode("JFK"), Today.AddDays(30), null, passengers ?? new PassengerMix(1), cabin);
 
@@ -103,10 +117,11 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task Cancellation_is_honoured()
     {
+        var provider = Provider; // outside the assertion, so an unavailable provider skips rather than fails
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
-        await Should.ThrowAsync<OperationCanceledException>(() => Provider.SearchAsync(OneWay(), cancelled.Token));
+        await Should.ThrowAsync<OperationCanceledException>(() => provider.SearchAsync(OneWay(), cancelled.Token));
     }
 
     [Fact]
@@ -157,6 +172,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task Booking_a_revalidated_offer_is_found_again_by_our_reference()
     {
+        SkipUnlessBooking();
         var (request, _) = await BookableOffer();
 
         var booked = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
@@ -173,6 +189,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task Booking_again_with_the_same_reference_never_creates_a_second_booking()
     {
+        SkipUnlessBooking();
         var (request, _) = await BookableOffer();
 
         var first = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
@@ -191,6 +208,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task Parallel_bookings_with_one_reference_make_exactly_one_booking()
     {
+        SkipUnlessBooking();
         var (request, _) = await BookableOffer();
 
         var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Provider.BookAsync(request, TestContext.Current.CancellationToken)));
@@ -203,6 +221,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task The_same_reference_with_other_details_never_books_the_new_details()
     {
+        SkipUnlessBooking();
         var (request, _) = await BookableOffer();
         var first = await Provider.BookAsync(request, TestContext.Current.CancellationToken);
         var (other, _) = await BookableOffer();
@@ -219,6 +238,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task A_booking_at_a_price_other_than_the_agreed_one_is_not_made()
     {
+        SkipUnlessBooking();
         var (request, _) = await BookableOffer();
         var wrongPrice = request with { ExpectedTotalPrice = request.ExpectedTotalPrice with { Amount = request.ExpectedTotalPrice.Amount + 1m } };
 
@@ -232,6 +252,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task Passengers_that_do_not_match_the_offer_are_an_invalid_request()
     {
+        SkipUnlessBooking();
         var (request, _) = await BookableOffer();
         var extraAdult = request with { Passengers = [.. request.Passengers, Passenger(PassengerType.Adult, "Second")] };
 
@@ -243,6 +264,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task Looking_up_an_unknown_reference_is_a_definite_not_found()
     {
+        SkipUnlessBooking();
         var lookup = await Provider.RetrieveBookingAsync(NewReference(), TestContext.Current.CancellationToken);
 
         lookup.IsSuccess.ShouldBeTrue(lookup.IsSuccess ? string.Empty : $"Lookup failed: {lookup.Error}");
@@ -252,6 +274,7 @@ public abstract class FlightProviderSearchContract
     [Fact]
     public async Task Booking_and_lookup_honour_cancellation()
     {
+        SkipUnlessBooking();
         var (request, _) = await BookableOffer();
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();

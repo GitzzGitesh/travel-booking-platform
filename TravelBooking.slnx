@@ -9,7 +9,11 @@
   </Folder>
   <Folder Name="/src/backend/Integrations/" />
   <Folder Name="/src/backend/Integrations/Flights/">
+    <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Amadeus/Integrations.Flights.Amadeus.csproj" />
+    <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Duffel/Integrations.Flights.Duffel.csproj" />
     <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Mock/Integrations.Flights.Mock.csproj" />
+    <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Sabre/Integrations.Flights.Sabre.csproj" />
+    <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Travelport/Integrations.Flights.Travelport.csproj" />
   </Folder>
   <Folder Name="/src/backend/Integrations/Payments/">
     <Project Path="src/backend/Integrations/Payments/Integrations.Payments.Mock/Integrations.Payments.Mock.csproj" />

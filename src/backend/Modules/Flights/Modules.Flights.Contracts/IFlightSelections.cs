@@ -48,4 +48,10 @@ public enum FlightSelectionUnavailable
 
     /// <summary>The supplier could not answer, or another request changed the selection at the same time: nothing changed, try again.</summary>
     TryAgain,
+
+    /// <summary>
+    /// The supplier that made this offer cannot book it through us (its adapter does not implement booking, or it is
+    /// not composed): checkout must not take payment for it. Search again with a bookable provider.
+    /// </summary>
+    SupplierCannotBook,
 }

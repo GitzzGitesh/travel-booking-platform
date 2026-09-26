@@ -203,6 +203,8 @@ public sealed class FlightSupplierBookingTests
 
     private sealed class StubProvider : IFlightProvider
     {
+        public FlightProviderCapabilities Capabilities => TestCapabilities.All;
+
         public Result<FlightBookingConfirmation, ProviderError>? Book { get; init; }
 
         public Exception? Throw { get; init; }

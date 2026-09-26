@@ -158,6 +158,31 @@ public sealed class ModuleBoundaryTests
             .Because("ports are the stable inner contract that adapters implement (ADR 0014)")
             .Check(_architecture);
 
+    // Supplier wire models stay inside their adapter (ADR 0004): never public, so nothing outside the adapter can use them.
+    [Fact]
+    public void Supplier_dtos_are_internal_to_their_adapter() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Integrations\.[^.]+\.[^.]+\.Dtos$")
+            .Should().NotBePublic()
+            .Because("supplier DTOs never leave their Integrations.* project (non-negotiable 2)")
+            .WithoutRequiringPositiveResults()
+            .Check(_architecture);
+
+    // Supplier HTTP plumbing is for adapters: modules talk to suppliers only through their ports.
+    [Fact]
+    public void Modules_do_not_use_the_supplier_http_plumbing() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^TravelBooking\.BuildingBlocks\.Providers\.Http$"))
+            .Because("HTTP to suppliers belongs in Integrations.* adapters (ADR 0004)")
+            .Check(_architecture);
+
+    // The core depends on the ports, never on a concrete supplier (architecture rules).
+    [Fact]
+    public void Modules_never_depend_on_an_adapter() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^TravelBooking\.Integrations\."))
+            .Because("adapters implement the ports; the core never knows which supplier it talks to (ADR 0004)")
+            .Check(_architecture);
+
     [Fact]
     public void At_least_one_integration_is_checked() =>
         _integrationAssemblies.ShouldNotBeEmpty();

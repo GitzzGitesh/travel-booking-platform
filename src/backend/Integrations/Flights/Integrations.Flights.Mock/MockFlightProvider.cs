@@ -30,6 +30,37 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
 
     public string Id => ProviderId;
 
+    // What the mock actually does: deterministic search, revalidation and booking by our reference; nothing after booking.
+    public FlightProviderCapabilities Capabilities { get; } = new(
+        AdapterStage.Mock,
+        [ProviderOperation.Search, ProviderOperation.Revalidate, ProviderOperation.Book, ProviderOperation.RetrieveBooking],
+        new Dictionary<FlightCapability, CapabilityDeclaration>
+        {
+            [FlightCapability.Search] = new(CapabilitySupport.Supported),
+            [FlightCapability.OneWay] = new(CapabilitySupport.Supported),
+            [FlightCapability.RoundTrip] = new(CapabilitySupport.Supported),
+            [FlightCapability.MultiCity] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.PassengerTypes] = new(CapabilitySupport.Supported, "Adults, children, infants on lap"),
+            [FlightCapability.CabinSelection] = new(CapabilitySupport.Supported),
+            [FlightCapability.Baggage] = new(CapabilitySupport.Supported),
+            [FlightCapability.FareConditions] = new(CapabilitySupport.Supported),
+            [FlightCapability.BrandedFares] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.Revalidation] = new(CapabilitySupport.Supported),
+            [FlightCapability.Booking] = new(CapabilitySupport.Supported),
+            [FlightCapability.BookingLookupByOwnReference] = new(CapabilitySupport.Supported),
+            [FlightCapability.BookingLookupBySupplierReference] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.IdempotentBookingByOwnReference] = new(CapabilitySupport.Supported),
+            [FlightCapability.Cancellation] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.Refunds] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.Exchanges] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.ScheduleChangeNotifications] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.Ticketing] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.Ancillaries] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.SeatSelection] = new(CapabilitySupport.Unsupported),
+            [FlightCapability.RequestedCurrency] = new(CapabilitySupport.Unsupported, "Always prices in XTS (the ISO test currency)"),
+            [FlightCapability.MarketCoverage] = new(CapabilitySupport.Supported, "Any airport pair (synthetic)"),
+        });
+
     public Task<Result<FlightSearchResult, ProviderError>> SearchAsync(FlightSearchCriteria criteria, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

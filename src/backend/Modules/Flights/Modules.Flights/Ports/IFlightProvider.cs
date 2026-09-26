@@ -14,6 +14,12 @@ public interface IFlightProvider
     string Id { get; }
 
     /// <summary>
+    /// What this provider supports, how far its adapter has got, and which operations it implements (Q6). The core
+    /// never calls an operation that is not implemented, and never runs an adapter below ProductionReady in Production.
+    /// </summary>
+    FlightProviderCapabilities Capabilities => FlightProviderCapabilities.NotDeclared;
+
+    /// <summary>
     /// Searches for offers. An idempotent read, so it may be retried on transient failures. No offers is a valid
     /// result (no availability). Supplier failures are returned as a <see cref="ProviderError"/>, never thrown.
     /// </summary>

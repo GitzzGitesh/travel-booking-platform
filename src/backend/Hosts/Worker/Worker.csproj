@@ -7,6 +7,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Mock\Integrations.Flights.Mock.csproj" />
+    <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Travelport\Integrations.Flights.Travelport.csproj" />
+    <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Sabre\Integrations.Flights.Sabre.csproj" />
+    <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Duffel\Integrations.Flights.Duffel.csproj" />
+    <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Amadeus\Integrations.Flights.Amadeus.csproj" />
     <ProjectReference Include="..\..\Integrations\Payments\Integrations.Payments.Mock\Integrations.Payments.Mock.csproj" />
     <ProjectReference Include="..\..\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />
     <ProjectReference Include="..\..\Modules\Orders\Modules.Orders\Modules.Orders.csproj" />

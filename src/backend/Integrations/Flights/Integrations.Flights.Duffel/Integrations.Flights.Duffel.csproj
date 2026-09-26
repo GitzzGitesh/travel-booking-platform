@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Duffel flight adapter (ADR 0004, ADR 0018). Supplier DTOs, mapping and error mapping stay in this project.
+    Stage: mapped from Duffel's public API documentation; not verified against the sandbox yet (credential-gated).
+  -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ProviderContracts" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />
+  </ItemGroup>
+
+</Project>
