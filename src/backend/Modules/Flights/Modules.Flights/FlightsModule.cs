@@ -32,6 +32,9 @@ public static class FlightsModule
         // Supplier booking calls for the Phase 3 order orchestration; no endpoint maps them yet (ADR 0005).
         services.AddScoped<FlightSupplierBooking>();
 
+        // The module's public surface for other modules (Contracts): Orders read confirmed selections through it.
+        services.AddScoped<Contracts.IFlightSelections, FlightSelections>();
+
         // Search results are held in HybridCache (ADR 0011: in-memory L1; Redis L2 later is configuration only).
         services.AddHybridCache(options => options.MaximumPayloadBytes = FlightSearchCache.MaximumPayloadBytes);
         services.AddSingleton<FlightSearchCache>();

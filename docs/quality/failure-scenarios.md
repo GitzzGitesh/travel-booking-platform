@@ -43,7 +43,7 @@ Add a new scenario with the next free ID in its category's band, and update this
 ## Payments
 | ID | Scenario | Expected behaviour | Levels | Status |
 |---|---|---|---|---|
-| F-20 | Card declined / authorization failed | Item stays bookable until offer expiry; no supplier call | U, A, E | Planned |
+| F-20 | Card declined / authorization failed | Item stays bookable until offer expiry; no supplier call | U, A, E | Domain done (Phase 3 chunk 1): a decline does not move the item; it stays `AwaitingPayment` for another attempt until the offer expires, and booking is refused once the offer has expired (U). The payment attempt comes with payments (ADR 0006) |
 | F-21 | SCA challenge abandoned | Payment `Failed` after timeout; no booking | U, E | Planned |
 | F-22 | **Payment authorized, booking failed** | Void authorization (idempotent); customer sees failure with no charge | U, I, E | Planned |
 | F-23 | Booking confirmed, capture failed | Idempotent capture retry within validity; then `ManualReview` + alert; booking not auto-cancelled | U, I | Planned |
@@ -53,9 +53,9 @@ Add a new scenario with the next free ID in its category's band, and update this
 ## Duplicates, ordering, and concurrency
 | ID | Scenario | Expected behaviour | Levels | Status |
 |---|---|---|---|---|
-| F-30 | **Duplicate booking request** (same Idempotency-Key) | Original result returned; exactly one supplier booking | A, C | Supplier level done (chunk 6): at most one booking per client reference, sequential and parallel, and a repeat with other details never books them (provider contract, P). Idempotency-Key and the unique constraint come with Phase 3 orders |
-| F-31 | Same key, different payload | 409 `idempotency-conflict` | A | Planned |
-| F-32 | Double-click / two tabs (different keys, same draft order) | Exactly one booking via state machine + `rowversion`; second gets 409 | C, E | Planned |
+| F-30 | **Duplicate booking request** (same Idempotency-Key) | Original result returned; exactly one supplier booking | A, C | Order creation done (Phase 3 chunk 1): the same key and selection return the original order, sequential and parallel, enforced by a unique key index (U, I, C). Supplier level: at most one booking per client reference (chunk 6, P). The HTTP Idempotency-Key header comes with the endpoint (Q8) |
+| F-31 | Same key, different payload | 409 `idempotency-conflict` | A | Order creation done (Phase 3 chunk 1): the same key for another selection gives `IdempotencyKeyReused` (U, I). The 409 mapping comes with the endpoint |
+| F-32 | Double-click / two tabs (different keys, same draft order) | Exactly one booking via state machine + `rowversion`; second gets 409 | C, E | Partly done (Phase 3 chunk 1): different keys for one selection create exactly one order (a unique selection index; U, I, C), and concurrent order changes are refused by rowversion (I). The 409 mapping and E2E come with the endpoint |
 | F-33 | **Duplicate webhook** | Inbox unique constraint; second delivery is a no-op | I, C | Planned |
 | F-34 | Out-of-order webhooks | Stale transitions ignored; final state correct | U, I | Planned |
 | F-35 | Invalid webhook signature | 400; not persisted; security event | A | Planned |

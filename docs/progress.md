@@ -1,8 +1,25 @@
 # Progress
 
-_Last updated: 2026-09-25 (Phase 2: Flights slice)_
+_Last updated: 2026-09-25 (Phase 3: first vertical slice, started)_
 
-## Current phase: 2 — Flights slice (in progress)
+## Current phase: 3 — First vertical slice (flights), in progress
+
+**Q1 answered 2026-09-25: we are merchant of record for flights (Option A).** Hotels (Q1), markets (Q2), currencies and FX (Q5), suppliers (Q6), fraud (Q10), refund thresholds (Q11) and group or child-only bookings (Q13) stay open. **ADR 0005 was accepted for flights**, since its Q1 gate is now met. **ADR 0006 stays Proposed**: accepting it also fixes the payment provider (Stripe), which depends on Q2 and Q5.
+
+### Phase 3: plan
+| # | Chunk | Status / depends on |
+|---|---|---|
+| 1 | **Orders foundation**: the `Modules.Orders` module (schema `orders`) and `Modules.Flights.Contracts` | **Done.** An `Order` aggregate with `FlightOrderItem`s and an explicit item state machine up to the booking outcome (`AwaitingPayment` → `Booking` only with a payment authorization reference; `PendingConfirmation`, `ManualReview` for a supplier mismatch, `Confirmed` with the supplier locator, `Failed`, `Abandoned`). Illegal transitions return errors; re-applying the same transition is a no-op, and a conflicting reference is an error. It has an append-only `OrderTimeline` (actor, time, from → to, reason, correlation id), and the order status is derived from its items. `CreateFlightOrderHandler` creates an order only from a Flights selection that is revalidated, `Confirmed` and unexpired, read through `IFlightSelections` (Contracts: the agreed price and expiry, never the supplier token). It is idempotent by key (unique), with at most one order item per selection (unique). A `Revision` counter forces the rowversion check on every item change. Migration `InitialOrders`. **No endpoint and no payment calls**: order creation over HTTP needs the guest-checkout decision (Q8), and payments need ADR 0006 |
+| 1b | Reviews of chunk 1 addressed before shipping the schema | **Done.** The timeline records a provider reference (the payment authorization, or `provider:locator`). The payment authorization is on the **Order** (ADR 0005), and `StartBooking` moves all items at once. Booking is refused once an item's offer has expired (F-02). A card decline keeps the item `AwaitingPayment` for another attempt (F-20); `Abandon` means no authorization is outstanding, and an authorization timeout is an unknown payment outcome, not `Abandoned`. Consent evidence is kept: the accepted quote id and acceptance time (Flights migration `AddPriceAcceptedAt`) are snapshotted on the order item |
+| 2 | **Next, needs a decision:** the payment port (`IPaymentProvider`) and its deterministic mock (authorize with manual capture, capture, void), then the booking orchestration: `AwaitingPayment` → authorize → `Booking` → `FlightSupplierBooking` behind a Flights Contracts entry point (chunk 6 criteria) → capture or void, plus Worker reconciliation of `PendingConfirmation` | Needs **ADR 0006 accepted** (it names Stripe; Q2 and Q5 bear on that) or a decision to build only the provider-neutral port and mock first. Traveller data for bookings needs the traveller story (names are PII; documents are Sensitive PII; Q9 retention). **Chunk 2 acceptance criteria (from the reviews):**
+- Right before authorizing, re-revalidate the selection with the supplier and require an exact match to `item.AgreedPrice`; otherwise show a price change. Flights still allows revalidating an ordered selection, and "Confirmed at creation" is not enough.
+- Authorization declined → the item stays `AwaitingPayment`. Authorization unknown (timeout) → a payment-side pending state reconciled with the provider, never `Abandoned` while a hold may exist.
+- An expiry job moves items whose offer expired to `Abandoned`.
+- Decide (business) whether a confirmation from ManualReview must record the actual supplier price. |
+
+**Preconditions for any Orders endpoint:** the guest-checkout decision (Q8); a customer or owner on `Order`; a unique idempotency key per customer, `(CustomerId, IdempotencyKey)`; and never returning another customer's `OrderId` (e.g. in `SelectionAlreadyOrdered`, F-60). Create `Modules.Orders.Contracts` with its first consumer.
+
+## Phase 2 — Flights slice (complete)
 
 Phase 1 is **complete**. Q3 was answered on 2026-09-25: **flights first**. The direction is: flight search UI → API → Flights module → `IFlightProvider` → deterministic mock → results. No real supplier (Q6), payment design (Q1), or market or hosting decision (Q2) is assumed.
 
@@ -122,7 +139,7 @@ Business questions that must be answered before specific later work. A gate is *
 
 | Question | Must be answered before | Architecture it unblocks |
 |---|---|---|
-| Q1 Merchant of record | Payment architecture is finalised; Phase 2 payment work (`IPaymentProvider`) | ADR 0005, ADR 0006 |
+| Q1 Merchant of record | **Answered for flights 2026-09-25 (merchant of record).** Still a gate for hotels | ADR 0005 (accepted for flights), ADR 0006 (Proposed: its provider choice also needs Q2 and Q5) |
 | Q3 First product | Implementation priority is finalised; the Phase 2 product slice (which provider port and mock come first) | ADR 0004 (first port), Phase 3 slice |
 | Q6 Target suppliers | The supplier provider ports are frozen; Phase 5 | ADR 0004, per-supplier ADRs |
 | Q2 Launch markets | Production-market, compliance, and hosting-region decisions; production-oriented design in Phase 3 | Compliance scope, data residency, i18n ADR (per ADR 0009) |

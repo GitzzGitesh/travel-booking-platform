@@ -3,6 +3,7 @@ using TravelBooking.Api;
 using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Integrations.Flights.Mock;
 using TravelBooking.Modules.Flights;
+using TravelBooking.Modules.Orders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +27,7 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((doc
     return Task.CompletedTask;
 }));
 builder.Services.AddFlightsModule(builder.Configuration);
+builder.Services.AddOrdersModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {

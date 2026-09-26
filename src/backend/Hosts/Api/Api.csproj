@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Mock\Integrations.Flights.Mock.csproj" />
     <ProjectReference Include="..\..\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />
+    <ProjectReference Include="..\..\Modules\Orders\Modules.Orders\Modules.Orders.csproj" />
   </ItemGroup>
 
 </Project>
