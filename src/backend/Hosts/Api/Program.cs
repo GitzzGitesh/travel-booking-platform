@@ -2,8 +2,10 @@ using System.Text.Json.Serialization;
 using TravelBooking.Api;
 using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Integrations.Flights.Mock;
+using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Modules.Flights;
 using TravelBooking.Modules.Orders;
+using TravelBooking.Modules.Payments;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,12 +30,16 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((doc
 }));
 builder.Services.AddFlightsModule(builder.Configuration);
 builder.Services.AddOrdersModule(builder.Configuration);
+builder.Services.AddPaymentsModule();
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {
     // The deterministic mock is the only flight provider until a real supplier is chosen (Q6). Allow-listed
     // environments only, matching the mock's own guard, so a production-like environment never gets fake offers.
     builder.Services.AddMockFlightProvider(builder.Configuration);
+
+    // Likewise the only payment provider until ADR 0006 is decided (Q2, Q5): no card data, no network.
+    builder.Services.AddMockPaymentProvider(builder.Configuration);
 }
 
 // No fallback policy yet: without an authentication scheme it would turn every unmatched route into a 500.

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Deterministic, scenario-driven payment provider for development and tests only (ADR 0004). Runs only in Development or Staging. -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Modules\Payments\Modules.Payments\Modules.Payments.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,6 +1,6 @@
 # 0006. Payments: Stripe, PCI SAQ-A scope, manual capture, webhooks
 
-- **Status:** Proposed. Q1 is **answered for flights** (merchant of record, 2026-09-25), so the SAQ-A / manual-capture design applies to flights. **Not yet accepted:** accepting it also fixes the payment provider (Stripe), whose market availability, fees and settlement currencies depend on Q2 (markets) and Q5 (charge currencies); hotel merchant of record (Q1) is also open. It needs an explicit decision before any payment work.
+- **Status:** Proposed. Q1 is **answered for flights** (merchant of record, 2026-09-25), so the SAQ-A / manual-capture design applies to flights. **Not yet accepted:** accepting it also fixes the payment provider (Stripe), whose market availability, fees and settlement currencies depend on Q2 (markets) and Q5 (charge currencies); hotel merchant of record (Q1) is also open. It needs an explicit decision before any payment work. **Decision 2026-09-26:** build only a provider-neutral `IPaymentProvider` port and a deterministic mock for now (Phase 3 chunk 2). Everything Stripe-specific in this ADR (the provider, Elements/Checkout, webhooks, Radar and keys) stays pending.
 - **Date:** 2026-09-24
 - **Related:** [0005](0005-order-aggregate-and-booking-orchestration.md), [0007](0007-async-processing-worker-and-outbox.md), `docs/architecture/payment-lifecycle.md`, `docs/requirements/open-questions.md`
 

@@ -15,6 +15,12 @@ public enum ProviderErrorKind
     Unavailable,
     RateLimited,
     AuthFailure,
+
+    /// <summary>Our idempotency key was reused with different details: definitive, nothing was applied.</summary>
+    IdempotencyConflict,
+
+    /// <summary>A request with the same idempotency key is still in progress: its outcome is not known yet.</summary>
+    OperationInProgress,
 }
 
 /// <param name="Message">Safe for logs: never a supplier payload or personal data.</param>
