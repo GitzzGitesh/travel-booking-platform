@@ -26,14 +26,68 @@ public sealed class PersistenceAndCacheTests
         segment.DepartureLocal.Kind.ShouldBe(DateTimeKind.Unspecified);
     }
 
-    [Fact]
-    public void Written_snapshots_use_the_version_1_contract() =>
-        SliceSnapshotJson.Write(SliceSnapshotJson.Read(_storedVersion1)).ShouldBe(_storedVersion1);
+    // Version 1 with the optional leg facts (operating carrier, stated duration, fare basis): older readers ignore them.
+    private const string _storedVersion1WithLegFacts =
+        """{"v":1,"slices":[{"segments":[{"carrier":"ZZ","flightNumber":"ZZ123","origin":"LHR","destination":"JFK","departureLocal":"2027-02-14T07:05:00","arrivalLocal":"2027-02-14T09:20:00","operatingCarrier":"ZY","durationMinutes":495,"fareBasis":"M1MOCK"}]}]}""";
 
     [Fact]
-    public void Unknown_snapshot_versions_fail_loudly() =>
-        Should.Throw<InvalidOperationException>(() => SliceSnapshotJson.Read("""{"v":2,"slices":[]}"""))
-            .Message.ShouldContain("version 2");
+    public void A_version_1_snapshot_has_no_operating_carrier_duration_or_fare_basis()
+    {
+        var segment = SliceSnapshotJson.Read(_storedVersion1).Single().Segments.Single();
+
+        (segment.OperatingCarrier, segment.Duration, segment.FareBasis).ShouldBe((null, null, null));
+    }
+
+    [Fact]
+    public void Written_snapshots_use_the_version_1_contract_and_omit_unstated_facts()
+    {
+        SliceSnapshotJson.Write(SliceSnapshotJson.Read(_storedVersion1)).ShouldBe(_storedVersion1);
+        SliceSnapshotJson.Write(SliceSnapshotJson.Read(_storedVersion1WithLegFacts)).ShouldBe(_storedVersion1WithLegFacts);
+    }
+
+    [Fact]
+    public void The_optional_leg_facts_round_trip()
+    {
+        var segment = SliceSnapshotJson.Read(_storedVersion1WithLegFacts).Single().Segments.Single();
+
+        (segment.OperatingCarrier, segment.Duration, segment.FareBasis).ShouldBe(("ZY", TimeSpan.FromMinutes(495), "M1MOCK"));
+    }
+
+    [Fact]
+    public void Unknown_snapshot_versions_fail_loudly()
+    {
+        Should.Throw<InvalidOperationException>(() => SliceSnapshotJson.Read("""{"v":99,"slices":[]}""")).Message.ShouldContain("version 99");
+        Should.Throw<InvalidOperationException>(() => FareSnapshotJson.Read("""{"v":99,"refund":"Free","change":"Free"}""")).Message.ShouldContain("version 99");
+    }
+
+    [Fact]
+    public void A_fare_snapshot_keeps_every_fact_exactly()
+    {
+        var fare = new FlightFare
+        {
+            PriceBreakdown = new FlightPriceBreakdown(
+            [
+                new PassengerFare(PassengerType.Adult, 2, Xts(100.10m), Xts(17.66m)),
+                new PassengerFare(PassengerType.Infant, 1, Xts(10.01m), Xts(1.77m)),
+            ]),
+            ValidatingCarrier = "ZZ",
+            Baggage = new BaggageAllowance(1, 1, 23),
+            Conditions = new FareConditions(FareAllowance.AllowedWithFee, FareAllowance.Free),
+            TicketingDeadline = new DateTimeOffset(2027, 1, 16, 9, 0, 0, TimeSpan.Zero),
+        };
+
+        var read = FareSnapshotJson.Read(FareSnapshotJson.Write(fare));
+
+        FareSnapshotJson.Write(read).ShouldBe(FareSnapshotJson.Write(fare));
+        read.PriceBreakdown!.Total.ShouldBe(Xts(247.30m));
+        (read.ValidatingCarrier, read.Baggage, read.Conditions, read.TicketingDeadline).ShouldBe((fare.ValidatingCarrier, fare.Baggage, fare.Conditions, fare.TicketingDeadline));
+    }
+
+    [Fact]
+    public void A_fare_the_supplier_said_nothing_about_stays_not_stated() =>
+        FareSnapshotJson.Read(FareSnapshotJson.Write(FlightFare.NotStated)).ShouldBe(FlightFare.NotStated);
+
+    private static Money Xts(decimal amount) => new(amount, new CurrencyCode("XTS"));
 
     [Fact]
     public async Task A_search_too_large_to_cache_is_detected_and_logged()

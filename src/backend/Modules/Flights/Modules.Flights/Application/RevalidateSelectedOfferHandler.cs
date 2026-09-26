@@ -40,7 +40,7 @@ internal abstract record SelectedOfferFailure
 /// (F-02, also decided locally once the offer's expiry has passed, without calling the supplier) or sold out (F-03).
 /// Revalidation is a read at the supplier, so repeating it is safe.
 /// </summary>
-internal sealed class RevalidateSelectedOfferHandler(ISelectedOfferStore store, IFlightProvider provider, TimeProvider timeProvider)
+internal sealed class RevalidateSelectedOfferHandler(ISelectedOfferStore store, FlightProviders providers, TimeProvider timeProvider)
 {
     public async Task<Result<SelectedOffer, SelectedOfferFailure>> HandleAsync(Guid selectedOfferId, CancellationToken cancellationToken)
     {
@@ -61,7 +61,7 @@ internal sealed class RevalidateSelectedOfferHandler(ISelectedOfferStore store, 
             return await MarkUnavailable(offer, SelectedOfferStatus.Expired, cancellationToken);
         }
 
-        if (offer.ProviderId != provider.Id)
+        if (providers.Find(offer.ProviderId) is not { } provider)
         {
             // Its provider is not configured here (for now): not terminal, as configuration can change back.
             return Failure(new SelectedOfferFailure.ProviderFailed(new ProviderError(ProviderErrorKind.Unavailable, "The offer's provider is not configured.")));

@@ -225,7 +225,7 @@ public sealed class SelectedOfferStateTests
         expires ?? Now.AddMinutes(30),
         [new FlightSlice([new FlightSegment("ZZ", "ZZ123", new AirportCode("LHR"), new AirportCode("JFK"), new DateTime(2027, 2, 14, 7, 5, 0), new DateTime(2027, 2, 14, 9, 20, 0))])]);
 
-    private static FlightSearchCriteria Criteria() =>
+    internal static FlightSearchCriteria Criteria() =>
         new(new AirportCode("LHR"), new AirportCode("JFK"), new DateOnly(2027, 2, 14), null, new PassengerMix(1), CabinClass.Economy);
 
     private static SelectedOffer Confirmed()
@@ -456,7 +456,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
     private static FlightSearchCriteria Criteria() =>
         new(new AirportCode("LHR"), new AirportCode("JFK"), new DateOnly(2027, 2, 14), null, new PassengerMix(1), CabinClass.Economy);
 
-    private RevalidateSelectedOfferHandler Handler(ISelectedOfferStore store, IFlightProvider provider) => new(store, provider, _clock);
+    private RevalidateSelectedOfferHandler Handler(ISelectedOfferStore store, IFlightProvider provider) => new(store, new FlightProviders([provider]), _clock);
 
     private static (FakeStore Store, SelectedOffer Offer) StoreWith(SelectedOffer offer) => (new FakeStore(offer), offer);
 

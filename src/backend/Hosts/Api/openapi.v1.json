@@ -355,6 +355,58 @@
           }
         }
       },
+      "AirportResponse": {
+        "required": [
+          "code",
+          "name",
+          "cityName",
+          "countryCode",
+          "timeZone"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "timeZone": {
+            "type": "string"
+          }
+        }
+      },
+      "BaggageAllowanceResponse": {
+        "required": [
+          "checkedBags",
+          "cabinBags",
+          "checkedBagMaxWeightKg"
+        ],
+        "type": "object",
+        "properties": {
+          "checkedBags": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cabinBags": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "checkedBagMaxWeightKg": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "CabinClass": {
         "enum": [
           "Economy",
@@ -393,12 +445,73 @@
           }
         }
       },
+      "FareAllowance": {
+        "enum": [
+          "NotStated",
+          "NotAllowed",
+          "AllowedWithFee",
+          "Free"
+        ]
+      },
+      "FlightFareResponse": {
+        "required": [
+          "priceBreakdown",
+          "validatingCarrier",
+          "baggage",
+          "refund",
+          "change",
+          "ticketingDeadline"
+        ],
+        "type": "object",
+        "properties": {
+          "priceBreakdown": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FlightPriceBreakdownResponse"
+              }
+            ]
+          },
+          "validatingCarrier": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "baggage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BaggageAllowanceResponse"
+              }
+            ]
+          },
+          "refund": {
+            "$ref": "#/components/schemas/FareAllowance"
+          },
+          "change": {
+            "$ref": "#/components/schemas/FareAllowance"
+          },
+          "ticketingDeadline": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
       "FlightOfferResponse": {
         "required": [
           "offerId",
           "totalPrice",
           "expiresAt",
-          "slices"
+          "slices",
+          "fare"
         ],
         "type": "object",
         "properties": {
@@ -417,6 +530,31 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/FlightSliceResponse"
+            }
+          },
+          "fare": {
+            "$ref": "#/components/schemas/FlightFareResponse"
+          }
+        }
+      },
+      "FlightPriceBreakdownResponse": {
+        "required": [
+          "baseFare",
+          "taxesAndFees",
+          "passengers"
+        ],
+        "type": "object",
+        "properties": {
+          "baseFare": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "taxesAndFees": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "passengers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PassengerFareResponse"
             }
           }
         }
@@ -483,7 +621,8 @@
       "FlightSearchResponse": {
         "required": [
           "searchId",
-          "offers"
+          "offers",
+          "airports"
         ],
         "type": "object",
         "properties": {
@@ -496,6 +635,12 @@
             "items": {
               "$ref": "#/components/schemas/FlightOfferResponse"
             }
+          },
+          "airports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirportResponse"
+            }
           }
         }
       },
@@ -506,7 +651,11 @@
           "origin",
           "destination",
           "departureLocal",
-          "arrivalLocal"
+          "arrivalLocal",
+          "operatingCarrier",
+          "durationMinutes",
+          "originTimeZone",
+          "destinationTimeZone"
         ],
         "type": "object",
         "properties": {
@@ -529,6 +678,31 @@
           "arrivalLocal": {
             "type": "string",
             "format": "date-time"
+          },
+          "operatingCarrier": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "durationMinutes": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "originTimeZone": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "destinationTimeZone": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -606,6 +780,37 @@
           }
         }
       },
+      "PassengerFareResponse": {
+        "required": [
+          "type",
+          "count",
+          "baseFare",
+          "taxesAndFees"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/PassengerType"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "baseFare": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "taxesAndFees": {
+            "$ref": "#/components/schemas/MoneyResponse"
+          }
+        }
+      },
+      "PassengerType": {
+        "enum": [
+          "Adult",
+          "Child",
+          "Infant"
+        ]
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -649,7 +854,8 @@
           "offerId",
           "totalPrice",
           "offerExpiresAt",
-          "slices"
+          "slices",
+          "fare"
         ],
         "type": "object",
         "properties": {
@@ -677,6 +883,9 @@
             "items": {
               "$ref": "#/components/schemas/FlightSliceResponse"
             }
+          },
+          "fare": {
+            "$ref": "#/components/schemas/FlightFareResponse"
           }
         }
       },

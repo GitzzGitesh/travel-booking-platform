@@ -102,6 +102,9 @@
                     }}</span>
                     <span class="visually-hidden">Flight</span>
                     {{ flightNumbers(slice) }}
+                    @if (operatedBy(slice)) {
+                      · {{ operatedBy(slice) }}
+                    }
                   </span>
                 </div>
                 <div class="timeline">
@@ -167,6 +170,9 @@
                 formatMoney(offer.totalPrice)
               }}</span>
               <span class="price-note">Total for all travellers</span>
+              @if (fareSummary(offer)) {
+                <span class="price-note">{{ fareSummary(offer) }}</span>
+              }
             </p>
             <button
               type="button"

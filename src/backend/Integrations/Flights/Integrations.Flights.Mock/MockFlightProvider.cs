@@ -19,6 +19,10 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
 {
     public const string ProviderId = "mock";
     private const string _carrier = "ZZ";
+
+    // The codeshare partner that operates the middle departure of each day (a marketing/operating carrier difference).
+    private const string _operatingPartner = "ZY";
+    private static readonly TimeSpan _ticketingWindow = TimeSpan.FromHours(24);
     private static readonly CurrencyCode _testCurrency = new("XTS");
     private static readonly TimeSpan _offerLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan _flightDuration = new(2, 15, 0);
@@ -148,10 +152,7 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
         {
             MockRevalidationScenarios.OfferExpiredDestination => RevalidationFailure(ProviderErrorKind.OfferExpired, "Mock offer expired (scenario)."),
             MockRevalidationScenarios.SoldOutDestination => RevalidationFailure(ProviderErrorKind.SoldOut, "Mock offer sold out (scenario)."),
-            MockRevalidationScenarios.PriceChangedDestination => Result<FlightOffer, ProviderError>.Success(current with
-            {
-                TotalPrice = new Money(decimal.Round(current.TotalPrice.Amount * MockRevalidationScenarios.PriceChangeFactor, 2), current.TotalPrice.Currency),
-            }),
+            MockRevalidationScenarios.PriceChangedDestination => Result<FlightOffer, ProviderError>.Success(Repriced(current, MockRevalidationScenarios.PriceChangeFactor)),
             _ => Result<FlightOffer, ProviderError>.Success(current),
         };
     }
@@ -186,22 +187,83 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
                 : [outbound];
 
             var fare = FarePerSeat(criteria.Cabin, routeSeed, index) * slices.Count;
-            var total = (fare * passengers.SeatedPassengers) + (fare * 0.1m * passengers.Infants);
+            var breakdown = Breakdown(passengers, fare);
 
             // Everything that determines the price is in the reference, so a later revalidate can reprice it statelessly.
             var reference = new ProviderOfferRef(
                 ProviderId,
                 $"mock-{index}-{criteria.Origin}{criteria.Destination}-{criteria.DepartureDate:yyyyMMdd}-{criteria.ReturnDate:yyyyMMdd}-{criteria.Cabin}-{passengers.Adults}A{passengers.Children}C{passengers.Infants}I");
 
-            return new FlightOffer(reference, new Money(total, _testCurrency), expiresAt, slices);
+            return new FlightOffer(reference, breakdown.Total, expiresAt, slices)
+            {
+                Fare = new FlightFare
+                {
+                    PriceBreakdown = breakdown,
+                    ValidatingCarrier = _carrier,
+                    Baggage = _baggage[index],
+                    Conditions = _conditions[index],
+                    TicketingDeadline = timeProvider.GetUtcNow() + _ticketingWindow,
+                },
+            };
         }).ToList();
     }
 
-    private static FlightSlice Slice(AirportCode from, AirportCode to, DateOnly date, TimeOnly time, int routeSeed, int index)
+    // Per departure of the day: a basic fare, a standard fare and a flexible fare.
+    private static readonly BaggageAllowance[] _baggage = [new(0, 1), new(1, 1, 23), new(2, 1, 23)];
+
+    private static readonly FareConditions[] _conditions =
+    [
+        new(FareAllowance.NotAllowed, FareAllowance.AllowedWithFee),
+        new(FareAllowance.AllowedWithFee, FareAllowance.Free),
+        new(FareAllowance.Free, FareAllowance.Free),
+    ];
+
+    // Adults and children pay the seat fare, infants a tenth of it; taxes and fees are 15% of each (rounded to the cent).
+    private static FlightPriceBreakdown Breakdown(PassengerMix passengers, decimal seatFare)
+    {
+        var fares = new List<PassengerFare> { Fare(PassengerType.Adult, passengers.Adults, seatFare) };
+        if (passengers.Children > 0)
+        {
+            fares.Add(Fare(PassengerType.Child, passengers.Children, seatFare));
+        }
+
+        if (passengers.Infants > 0)
+        {
+            fares.Add(Fare(PassengerType.Infant, passengers.Infants, seatFare * 0.1m));
+        }
+
+        return new FlightPriceBreakdown(fares);
+    }
+
+    private static PassengerFare Fare(PassengerType type, int count, decimal perPassenger)
+    {
+        var taxes = decimal.Round(perPassenger * 0.15m, 2);
+        return new PassengerFare(type, count, new Money(perPassenger - taxes, _testCurrency), new Money(taxes, _testCurrency));
+    }
+
+    // A changed price, as a supplier would quote it: every passenger's fare rescaled, and the total their sum.
+    private static FlightOffer Repriced(FlightOffer offer, decimal factor)
+    {
+        var breakdown = new FlightPriceBreakdown([.. offer.Fare.PriceBreakdown!.Passengers.Select(p => new PassengerFare(
+            p.Type,
+            p.Count,
+            new Money(decimal.Round(p.BaseFare.Amount * factor, 2), p.BaseFare.Currency),
+            new Money(decimal.Round(p.TaxesAndFees.Amount * factor, 2), p.TaxesAndFees.Currency)))]);
+        return new FlightOffer(offer.Reference, breakdown.Total, offer.ExpiresAt, offer.Slices) { Fare = offer.Fare with { PriceBreakdown = breakdown } };
+    }
+
+    private FlightSlice Slice(AirportCode from, AirportCode to, DateOnly date, TimeOnly time, int routeSeed, int index)
     {
         var departure = date.ToDateTime(time, DateTimeKind.Unspecified);
         var flightNumber = $"{_carrier}{100 + ((routeSeed + (index * 7)) % 900)}";
-        return new FlightSlice([new FlightSegment(_carrier, flightNumber, from, to, departure, departure + _flightDuration)]);
+        // Arrival is departure plus the flying time on the same clock: a mock simplification. It states its flying time,
+        // so displayed durations are right; a real supplier gives both local times correctly.
+        return new FlightSlice([new FlightSegment(_carrier, flightNumber, from, to, departure, departure + _flightDuration)
+        {
+            OperatingCarrier = index == 1 ? _operatingPartner : null,
+            Duration = _flightDuration,
+            FareBasis = $"{"BMF"[index]}{index}MOCK",
+        }]);
     }
 
     private static decimal FarePerSeat(CabinClass cabin, int routeSeed, int index)

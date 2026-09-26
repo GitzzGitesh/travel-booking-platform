@@ -44,6 +44,68 @@ public sealed class SelectedOfferPersistenceTests(SqlServerFixture sql)
     }
 
     [Fact]
+    public async Task An_enriched_selection_keeps_its_fare_facts_and_leg_details()
+    {
+        var criteria = new FlightSearchCriteria(new AirportCode("LHR"), new AirportCode("JFK"), new DateOnly(2027, 2, 14), null, new PassengerMix(2, 0, 1), CabinClass.Economy);
+        var fare = new FlightFare
+        {
+            PriceBreakdown = new FlightPriceBreakdown(
+            [
+                new PassengerFare(PassengerType.Adult, 2, Xts(100.1234m), Xts(17.66m)),
+                new PassengerFare(PassengerType.Infant, 1, Xts(10.01m), Xts(1.77m)),
+            ]),
+            ValidatingCarrier = "ZZ",
+            Baggage = new BaggageAllowance(1, 1, 23),
+            Conditions = new FareConditions(FareAllowance.NotAllowed, FareAllowance.AllowedWithFee),
+            TicketingDeadline = _now.AddDays(1),
+        };
+        var offer = new FlightOffer(
+            new ProviderOfferRef("mock", "token"),
+            fare.PriceBreakdown.Total,
+            _now.AddMinutes(30),
+            [new FlightSlice([new FlightSegment("ZZ", "ZZ123", new AirportCode("LHR"), new AirportCode("JFK"), new DateTime(2027, 2, 14, 7, 5, 0), new DateTime(2027, 2, 14, 9, 20, 0))
+            {
+                OperatingCarrier = "ZY",
+                Duration = TimeSpan.FromMinutes(495),
+                FareBasis = "M1MOCK",
+            }])])
+        {
+            Fare = fare,
+        };
+        var selection = SelectedOffer.Select(Guid.NewGuid(), Guid.NewGuid(), criteria, offer, _now);
+        await using (var write = sql.CreateContext())
+        {
+            (await new SqlSelectedOfferStore(write).TryAddAsync(selection, TestContext.Current.CancellationToken)).ShouldBeTrue();
+        }
+
+        await using var read = sql.CreateContext();
+        var stored = (await new SqlSelectedOfferStore(read).FindByIdAsync(selection.Id, TestContext.Current.CancellationToken))!;
+
+        stored.Fare.PriceBreakdown!.Total.ShouldBe(Xts(247.3468m)); // decimals kept exactly
+        stored.Fare.PriceBreakdown.Passengers.Select(p => (p.Type, p.Count)).ShouldBe([(PassengerType.Adult, 2), (PassengerType.Infant, 1)]);
+        (stored.Fare.ValidatingCarrier, stored.Fare.Baggage, stored.Fare.Conditions, stored.Fare.TicketingDeadline)
+            .ShouldBe(("ZZ", fare.Baggage, fare.Conditions, _now.AddDays(1)));
+        var segment = stored.Slices.Single().Segments.Single();
+        (segment.OperatingCarrier, segment.Duration, segment.FareBasis).ShouldBe(("ZY", TimeSpan.FromMinutes(495), "M1MOCK"));
+    }
+
+    [Fact]
+    public async Task A_selection_stored_before_fare_facts_were_kept_reads_as_not_stated()
+    {
+        var selection = NewSelection();
+        await using (var write = sql.CreateContext())
+        {
+            (await new SqlSelectedOfferStore(write).TryAddAsync(selection, TestContext.Current.CancellationToken)).ShouldBeTrue();
+            await write.Database.ExecuteSqlAsync($"UPDATE flights.SelectedOffers SET FareJson = NULL WHERE Id = {selection.Id}", TestContext.Current.CancellationToken);
+        }
+
+        await using var read = sql.CreateContext();
+        (await new SqlSelectedOfferStore(read).FindByIdAsync(selection.Id, TestContext.Current.CancellationToken))!.Fare.ShouldBe(FlightFare.NotStated);
+    }
+
+    private static Money Xts(decimal amount) => new(amount, new CurrencyCode("XTS"));
+
+    [Fact]
     public async Task The_database_allows_one_selection_per_offer_of_a_search()
     {
         var first = NewSelection();

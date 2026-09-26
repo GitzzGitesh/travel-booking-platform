@@ -165,7 +165,7 @@ public sealed class FlightSupplierBookingTests(SqlApiFactory api) : IClassFixtur
     private async Task<SupplierBookingOutcome> Reconcile(ClientReference reference, TravelBooking.BuildingBlocks.Money expectedTotalPrice)
     {
         using var scope = api.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<FlightSupplierBooking>().ReconcileAsync(reference, expectedTotalPrice, TestContext.Current.CancellationToken);
+        return await scope.ServiceProvider.GetRequiredService<FlightSupplierBooking>().ReconcileAsync("mock", reference, expectedTotalPrice, TestContext.Current.CancellationToken);
     }
 
     private static ClientReference NewReference() => new($"item-{Guid.NewGuid():N}");

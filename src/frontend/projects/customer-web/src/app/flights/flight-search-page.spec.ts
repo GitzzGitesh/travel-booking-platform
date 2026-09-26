@@ -17,6 +17,10 @@ function segment(flightNumber: string, overrides: Partial<FlightSegmentResponse>
     destination: 'JFK',
     departureLocal: '2027-02-14T07:05:00',
     arrivalLocal: '2027-02-14T09:20:00',
+    operatingCarrier: null,
+    durationMinutes: null,
+    originTimeZone: null,
+    destinationTimeZone: null,
     ...overrides,
   };
 }
@@ -26,6 +30,14 @@ function offer(flightNumber: string, amount: string): FlightOfferResponse {
     offerId: `offer-${flightNumber}`,
     totalPrice: { amount, currency: 'XTS' },
     expiresAt: '2027-01-15T09:30:00+00:00',
+    fare: {
+      priceBreakdown: null,
+      validatingCarrier: null,
+      baggage: null,
+      refund: 'NotStated',
+      change: 'NotStated',
+      ticketingDeadline: null,
+    },
     slices: [{ segments: [segment(flightNumber)] }],
   };
 }
@@ -36,6 +48,14 @@ function connectingOffer(): FlightOfferResponse {
     offerId: 'offer-connecting',
     totalPrice: { amount: '199', currency: 'XTS' },
     expiresAt: '2027-01-15T09:30:00+00:00',
+    fare: {
+      priceBreakdown: null,
+      validatingCarrier: null,
+      baggage: null,
+      refund: 'NotStated',
+      change: 'NotStated',
+      ticketingDeadline: null,
+    },
     slices: [
       {
         segments: [

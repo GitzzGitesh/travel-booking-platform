@@ -100,6 +100,15 @@ public sealed class ModuleBoundaryTests
             .Because("adapters map supplier models and Contracts describe a module's surface; persistence stays in the modules (ADR 0004, 0007)")
             .Check(_architecture);
 
+    // What other modules see of a module never carries the supplier-facing model (offers, fares, provider references).
+    [Fact]
+    public void Module_contracts_do_not_expose_provider_port_types() =>
+        Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Contracts$")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(_portsNamespace))
+            .Because("provider models stay behind the module's own boundary (ADR 0002, 0004)")
+            .WithoutRequiringPositiveResults()
+            .Check(_architecture);
+
     [Fact]
     public void Module_domain_code_does_not_depend_on_web_data_or_http_frameworks() =>
         Types().That().ResideInNamespaceMatching(@"^TravelBooking\.Modules\.[^.]+\.Domain(\..+)?$")

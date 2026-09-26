@@ -25,7 +25,7 @@ import {
   sortOrders,
   stopsIn,
 } from './flight-filtering';
-import { formatMoney, localDate, localTime } from './flight-format';
+import { fareSummary, formatDuration, formatMoney, localDate, localTime } from './flight-format';
 import { daysBetween } from './search/calendar';
 
 /**
@@ -92,7 +92,11 @@ export class FlightResults {
 
   protected stopsLabel(slice: FlightSliceResponse): string {
     const stops = stopsIn(slice);
-    if (stops === 0) return 'Nonstop';
+    if (stops === 0) {
+      // The flying time comes from the API (supplier-stated, or from the airports' time zones), never from the clocks.
+      const minutes = slice.segments[0].durationMinutes;
+      return minutes == null ? 'Nonstop' : `Nonstop · ${formatDuration(minutes)}`;
+    }
     const via = slice.segments.slice(0, -1).map((s) => s.destination);
     return `${stops} ${stops === 1 ? 'stop' : 'stops'} via ${via.join(', ')}`;
   }
@@ -103,6 +107,22 @@ export class FlightResults {
       this.first(slice).departureLocal.slice(0, 10),
       this.last(slice).arrivalLocal.slice(0, 10),
     );
+  }
+
+  /** "operated by ZY" for codeshare legs flown by another airline; empty when every leg is flown by its seller. */
+  protected operatedBy(slice: FlightSliceResponse): string {
+    const operators = [
+      ...new Set(
+        slice.segments
+          .filter((s) => s.operatingCarrier && s.operatingCarrier !== s.marketingCarrier)
+          .map((s) => s.operatingCarrier!),
+      ),
+    ];
+    return operators.length ? `operated by ${operators.join(', ')}` : '';
+  }
+
+  protected fareSummary(offer: FlightOfferResponse): string {
+    return fareSummary(offer.fare);
   }
 
   protected flightNumbers(slice: FlightSliceResponse): string {

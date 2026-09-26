@@ -14,11 +14,11 @@ internal abstract record SearchFlightsFailure
 }
 
 /// <summary>
-/// Runs a flight search against the composed <see cref="IFlightProvider"/>, then holds the offers in the search cache
+/// Runs a flight search against the search provider (<see cref="FlightProviders.ForSearch"/>), then holds the offers in the search cache
 /// under a new random search id so the customer can select one (Option 2).
 /// </summary>
 internal sealed partial class SearchFlightsHandler(
-    IFlightProvider provider,
+    FlightProviders providers,
     FlightSearchCache searchCache,
     TimeProvider timeProvider,
     ILogger<SearchFlightsHandler> logger)
@@ -36,6 +36,7 @@ internal sealed partial class SearchFlightsHandler(
             return Result<CachedFlightSearch, SearchFlightsFailure>.Failure(invalidDates);
         }
 
+        var provider = providers.ForSearch;
         var result = await provider.SearchAsync(criteria, cancellationToken);
         if (result.IsSuccess)
         {
@@ -43,7 +44,7 @@ internal sealed partial class SearchFlightsHandler(
             var search = new CachedFlightSearch(
                 Guid.NewGuid(),
                 criteria,
-                result.Value.Offers.Select(offer => new CachedFlightOffer(Guid.NewGuid(), offer)).ToList());
+                result.Value.Offers.Select(offer => new CachedFlightOffer(Guid.NewGuid(), Checked(offer, provider.Id))).ToList());
             await searchCache.StoreAsync(search, CacheLifetime(search), cancellationToken);
             return Result<CachedFlightSearch, SearchFlightsFailure>.Success(search);
         }
@@ -91,6 +92,22 @@ internal sealed partial class SearchFlightsHandler(
 
         return null;
     }
+
+    // A breakdown that does not add up is dropped, never shown (the total stays the price), and logged for the adapter's owner.
+    private FlightOffer Checked(FlightOffer offer, string providerId)
+    {
+        var fare = offer.ConsistentFare;
+        if (ReferenceEquals(fare, offer.Fare))
+        {
+            return offer;
+        }
+
+        LogInconsistentBreakdown(logger, providerId);
+        return offer with { Fare = fare };
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Flight provider {ProviderId} returned a price breakdown that does not add up to the offer total; it was dropped")]
+    private static partial void LogInconsistentBreakdown(ILogger logger, string providerId);
 
     // Provider id and taxonomy category only: never search criteria, which describe a person's travel.
     [LoggerMessage(Level = LogLevel.Warning, Message = "Flight search failed at provider {ProviderId}: {ErrorKind}")]
