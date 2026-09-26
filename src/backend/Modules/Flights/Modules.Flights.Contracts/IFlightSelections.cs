@@ -13,6 +13,13 @@ public interface IFlightSelections
     /// The selection, if it may be ordered now: revalidated and Confirmed at an agreed price, and not expired.
     /// </summary>
     Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> GetBookableAsync(Guid selectedOfferId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Revalidates the selection with the supplier now (a read, safe to repeat) and returns it if it may be booked: the
+    /// check right before payment (booking rules). A changed price is saved as a quote for the customer to accept
+    /// (NeedsPriceCheck); once accepted, the agreed price is the new one, with its consent evidence.
+    /// </summary>
+    Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -38,4 +45,7 @@ public enum FlightSelectionUnavailable
 
     /// <summary>F-03: search again.</summary>
     SoldOut,
+
+    /// <summary>The supplier could not answer, or another request changed the selection at the same time: nothing changed, try again.</summary>
+    TryAgain,
 }

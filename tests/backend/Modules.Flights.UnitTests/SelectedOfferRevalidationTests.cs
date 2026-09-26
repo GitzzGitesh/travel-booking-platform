@@ -2,6 +2,7 @@ using Microsoft.Extensions.Time.Testing;
 using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Providers;
 using TravelBooking.Modules.Flights.Application;
+using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Flights.Domain;
 using TravelBooking.Modules.Flights.Ports;
 
@@ -404,6 +405,52 @@ public sealed class RevalidateSelectedOfferHandlerTests
         accepted.Value.AgreedPrice.ShouldBe(SelectedOfferStateTests.Xts(310.5m));
         (await accept.HandleAsync(Guid.NewGuid(), Guid.NewGuid(), TestContext.Current.CancellationToken))
             .Error.ShouldBeOfType<SelectedOfferFailure.NotFound>();
+    }
+
+    [Theory]
+    [InlineData(270.0, null)] // the same price: bookable
+    [InlineData(310.5, FlightSelectionUnavailable.NeedsPriceCheck)] // F-01
+    internal async Task Revalidating_for_checkout_asks_the_supplier_and_reports_through_the_contract(double amount, FlightSelectionUnavailable? expected)
+    {
+        var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
+        var provider = new StubProvider(Success((decimal)amount));
+
+        var result = await new FlightSelections(store, Handler(store, provider), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+
+        provider.Revalidated.ShouldHaveSingleItem();
+        if (expected is { } reason)
+        {
+            result.Error.ShouldBe(reason);
+        }
+        else
+        {
+            result.Value.ShouldBe(new BookableFlightSelection(offer.Id, SelectedOfferStateTests.Selected, SelectedOfferStateTests.Now.AddMinutes(40), null, null));
+        }
+    }
+
+    [Theory]
+    [InlineData(ProviderErrorKind.OfferExpired, FlightSelectionUnavailable.Expired)] // F-02
+    [InlineData(ProviderErrorKind.SoldOut, FlightSelectionUnavailable.SoldOut)] // F-03
+    [InlineData(ProviderErrorKind.Unavailable, FlightSelectionUnavailable.TryAgain)]
+    [InlineData(ProviderErrorKind.RateLimited, FlightSelectionUnavailable.TryAgain)]
+    internal async Task Revalidation_failures_map_to_the_contract(ProviderErrorKind kind, FlightSelectionUnavailable expected)
+    {
+        var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
+
+        var result = await new FlightSelections(store, Handler(store, new StubProvider(Failure(kind))), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+
+        result.Error.ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task A_concurrent_change_during_revalidation_is_TryAgain()
+    {
+        var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
+        store.SaveSucceeds = false;
+
+        var result = await new FlightSelections(store, Handler(store, new StubProvider(Success(270m))), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+
+        result.Error.ShouldBe(FlightSelectionUnavailable.TryAgain);
     }
 
     private static FlightSearchCriteria Criteria() =>

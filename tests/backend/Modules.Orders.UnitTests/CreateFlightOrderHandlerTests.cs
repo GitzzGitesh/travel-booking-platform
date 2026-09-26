@@ -148,6 +148,9 @@ public sealed class CreateFlightOrderHandlerTests
                 ? Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(reason)
                 : Result<BookableFlightSelection, FlightSelectionUnavailable>.Success(
                     new BookableFlightSelection(selectedOfferId, OrderTests.Price, OrderTests.Now.AddMinutes(30), null, null)));
+
+        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Order creation never calls the supplier.");
     }
 
     private sealed class FakeStore : IOrderStore

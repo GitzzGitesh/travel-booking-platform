@@ -54,6 +54,9 @@ internal abstract record OrderTransitionError
 
     /// <summary>F-02: the supplier's offer for this item has expired; it cannot be booked.</summary>
     internal sealed record OfferExpired(Guid ItemId) : OrderTransitionError;
+
+    /// <summary>F-01: a different price without new consent evidence (or in another currency) is never adopted.</summary>
+    internal sealed record PriceNotAccepted(Guid ItemId) : OrderTransitionError;
 }
 
 /// <summary>
@@ -138,6 +141,49 @@ internal sealed class Order
     /// </summary>
     public Result<FlightOrderItemStatus, OrderTransitionError> Abandon(Guid itemId, string reason, TransitionContext context) =>
         Transition(itemId, FlightOrderItemStatus.Abandoned, reason, context, providerReference: null, FlightOrderItemStatus.AwaitingPayment);
+
+    /// <summary>
+    /// Adopts an item's terms from a fresh supplier revalidation, right before payment: the offer's new expiry and, when
+    /// the customer accepted a changed price in Flights (F-01), that price with its consent evidence. A different price
+    /// without a newly accepted quote is refused. Only while the item awaits payment; a price change is on the timeline.
+    /// </summary>
+    public Result<FlightOrderItemStatus, OrderTransitionError> RefreshOffer(
+        Guid itemId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context)
+    {
+        if (Find(itemId) is not { } item)
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId));
+        }
+
+        if (item.Status is not FlightOrderItemStatus.AwaitingPayment)
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, FlightOrderItemStatus.AwaitingPayment));
+        }
+
+        var repriced = agreedPrice != item.AgreedPrice;
+        if (repriced && (agreedPrice.Currency != item.AgreedPrice.Currency || consent is null || consent.AcceptedPriceQuoteId == item.AcceptedPriceQuoteId))
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
+        }
+
+        if (!repriced && offerExpiresAt == item.OfferExpiresAt)
+        {
+            return Result<FlightOrderItemStatus, OrderTransitionError>.Success(item.Status); // nothing new
+        }
+
+        item.RefreshTerms(offerExpiresAt, repriced ? agreedPrice : null, repriced ? consent : null);
+        if (repriced)
+        {
+            Record(item, item.Status, $"Agreed price changed to {agreedPrice.Amount} {agreedPrice.Currency.Value} (quote {consent!.AcceptedPriceQuoteId}, accepted {consent.AcceptedAt:O})", context, providerReference: null);
+        }
+        else
+        {
+            UpdatedAt = context.At;
+            Revision++;
+        }
+
+        return Result<FlightOrderItemStatus, OrderTransitionError>.Success(item.Status);
+    }
 
     /// <summary>
     /// The order's payment is authorized, so the supplier bookings may start (authorize → book → capture): every item
@@ -337,6 +383,17 @@ internal sealed class FlightOrderItem
     public string? SupplierLocator { get; private set; }
 
     internal void MoveTo(FlightOrderItemStatus status) => Status = status;
+
+    internal void RefreshTerms(DateTimeOffset offerExpiresAt, Money? agreedPrice, PriceConsent? consent)
+    {
+        OfferExpiresAt = offerExpiresAt;
+        if (agreedPrice is { } price && consent is not null)
+        {
+            AgreedPrice = price;
+            AcceptedPriceQuoteId = consent.AcceptedPriceQuoteId;
+            PriceAcceptedAt = consent.AcceptedAt;
+        }
+    }
 
     internal void RecordSupplierBooking(string providerId, string supplierLocator)
     {
