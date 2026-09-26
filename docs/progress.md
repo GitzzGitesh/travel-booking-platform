@@ -38,7 +38,7 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
 - The HTTP permission matrix, including cross-customer attempts.
 - Create `Modules.Orders.Contracts` with its first consumer.
 
-**Follow-ups from the chunk 3 reviews:** a later Orders migration can drop the `CustomerId` default and add `CHECK (CustomerId <> '')` once no dev rows lack an owner. An **ARCHITECTURE REVIEW** is open for the user: ADR 0002 says cross-module Contracts calls are for queries and the outbox for side effects, but checkout needs synchronous, idempotent cross-module commands (`IOrderPayments.AuthorizeAsync`, `IFlightSelections.RevalidateAsync`); the recommendation is a new ADR allowing that when the caller needs the outcome.
+**Follow-ups from the chunk 3 reviews:** a later Orders migration can drop the `CustomerId` default and add `CHECK (CustomerId <> '')` once no dev rows lack an owner. The ARCHITECTURE REVIEW on synchronous cross-module commands is **resolved by ADR 0015 (Accepted 2026-09-26)**. Checkout's `IFlightSelections.RevalidateAsync` and `IOrderPayments.AuthorizeAsync`/`ResumeAsync` are allowed as idempotent, supplier-neutral commands with explicit unknown states. Durable side effects and background work stay on the outbox and Worker, and any other synchronous command needs its own ADR.
 
 ## Phase 2 — Flights slice (complete)
 

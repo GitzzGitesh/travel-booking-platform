@@ -1,6 +1,6 @@
 # 0002. Modular monolith and module boundaries
 
-- **Status:** Accepted
+- **Status:** Accepted. The inter-module communication rule is refined by [0015](0015-synchronous-cross-module-commands-for-checkout.md): narrowly scoped synchronous, idempotent commands for checkout orchestration.
 - **Date:** 2026-09-24
 - **Related:** [0004](0004-supplier-provider-abstraction.md), [0007](0007-async-processing-worker-and-outbox.md), `docs/architecture/overview.md`, `.claude/rules/architecture.md`
 

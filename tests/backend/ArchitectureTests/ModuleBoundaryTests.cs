@@ -83,7 +83,7 @@ public sealed class ModuleBoundaryTests
             .Check(_architecture);
 
     // Payments trusts the customer id it is given: only Orders, which checks that the customer owns the order, may ask
-    // it to authorize a payment (security review, Phase 3 chunk 3).
+    // it to authorize a payment (security review, Phase 3 chunk 3; ADR 0015, condition 5).
     [Fact]
     public void Only_orders_authorizes_order_payments() =>
         Types().That().DoNotResideInNamespaceMatching(@"^TravelBooking\.Modules\.(Orders|Payments)(\..+)?$")
