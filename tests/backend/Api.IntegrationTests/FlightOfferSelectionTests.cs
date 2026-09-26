@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MsSql;
 using TravelBooking.Modules.Flights.Infrastructure;
+using TravelBooking.Modules.Orders.Infrastructure;
 
 namespace TravelBooking.Api.IntegrationTests;
 
@@ -24,6 +25,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await _sql.StartAsync();
         using var scope = Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<FlightsDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Database.MigrateAsync();
     }
 
     public new async ValueTask DisposeAsync()
@@ -41,6 +43,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:Flights", _sql.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:Orders", _sql.GetConnectionString());
         builder.ConfigureTestServices(services => services.AddSingleton<TimeProvider>(Clock));
     }
 }

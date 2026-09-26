@@ -429,6 +429,9 @@ public sealed class RevalidateSelectedOfferHandlerTests
 
         public Task<bool> TryAddAsync(SelectedOffer offer, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task<SelectedOffer?> FindByIdAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+            Task.FromResult(selectedOfferId == offer.Id ? offer : null);
+
         public Task<SelectedOffer?> FindForUpdateAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
             Task.FromResult(selectedOfferId == offer.Id ? offer : null);
 

@@ -1,6 +1,6 @@
 # 0005. Order aggregate and booking orchestration
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-25), **for flights**. Its gate (Q1, merchant of record) was answered for flights: we are merchant of record. If hotels are sold on an agency model (Q1 is open for hotels), a superseding ADR must say how payment attaches to hotel items.
 - **Date:** 2026-09-24
 - **Related:** [0004](0004-supplier-provider-abstraction.md), [0006](0006-payments-stripe-manual-capture.md), [0007](0007-async-processing-worker-and-outbox.md), `docs/architecture/booking-lifecycle.md`, `docs/quality/failure-scenarios.md`
 

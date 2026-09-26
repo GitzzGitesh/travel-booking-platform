@@ -13,7 +13,11 @@
   </Folder>
   <Folder Name="/src/backend/Modules/" />
   <Folder Name="/src/backend/Modules/Flights/">
+    <Project Path="src/backend/Modules/Flights/Modules.Flights.Contracts/Modules.Flights.Contracts.csproj" />
     <Project Path="src/backend/Modules/Flights/Modules.Flights/Modules.Flights.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/Modules/Orders/">
+    <Project Path="src/backend/Modules/Orders/Modules.Orders/Modules.Orders.csproj" />
   </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/backend/">
@@ -22,6 +26,7 @@
     <Project Path="tests/backend/BuildingBlocks.UnitTests/BuildingBlocks.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.IntegrationTests/Modules.Flights.IntegrationTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.UnitTests/Modules.Flights.UnitTests.csproj" />
+    <Project Path="tests/backend/Modules.Orders.UnitTests/Modules.Orders.UnitTests.csproj" />
     <Project Path="tests/backend/ProviderContracts/ProviderContracts.csproj" />
   </Folder>
 </Solution>

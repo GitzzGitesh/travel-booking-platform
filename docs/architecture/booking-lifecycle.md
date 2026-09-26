@@ -1,6 +1,6 @@
 # Booking lifecycle
 
-**Status: Draft.** Proposed in ADR 0005. States will be refined during Phase 3 and must stay in sync with code and tests.
+**Status:** ADR 0005 is accepted for flights. States are refined during Phase 3 and must stay in sync with code and tests (`Modules.Orders`, from Phase 3 chunk 1).
 
 ## Checkout orchestration (happy path)
 
@@ -38,7 +38,7 @@ stateDiagram-v2
   Draft --> Expired: offer expired
   Draft --> AwaitingPayment: revalidated
   AwaitingPayment --> Booking: payment authorized
-  AwaitingPayment --> Abandoned: auth failed / timed out
+  AwaitingPayment --> Abandoned: offer expired / checkout given up (no authorization outstanding)
   Booking --> Confirmed: supplier confirmed
   Booking --> Failed: supplier definitively rejected
   Booking --> PendingConfirmation: timeout / unknown result
@@ -61,6 +61,7 @@ stateDiagram-v2
 ```
 
 Notes:
+- **As built (Phase 3 chunk 1):** an order item is created only from a Flights selection that is already revalidated and `Confirmed` (chunk 5), so `Draft` is transient (`Draft → AwaitingPayment` at creation). `Draft → PriceChanged` and `Draft → Expired` are handled before ordering by the selection's own state machine. An offer expiring while awaiting payment is `AwaitingPayment → Abandoned` (and booking is refused once it has expired). A card decline leaves the item `AwaitingPayment` for another attempt (F-20). An authorization with an unknown outcome is resolved on the payment side and never becomes `Abandoned` while a hold may exist. The payment authorization belongs to the order: `StartBooking` moves all items to `Booking` together, and every timeline entry carries its provider reference. A booking that exists but not as agreed (a supplier `Mismatch`, chunk 6) is `Booking → ManualReview`.
 - `SupplierChanged` (schedule change or hotel walk) will be added as a flag/sub-state on `Confirmed`/`Fulfilled` when involuntary changes are implemented.
 - The **Order status is derived** from its items: all confirmed → `Confirmed`; mixed → `PartiallyConfirmed`; any pending → `Pending`; all failed → `Failed`.
 

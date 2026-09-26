@@ -11,6 +11,9 @@ internal interface ISelectedOfferStore
     /// <summary>Adds the snapshot; returns false if this search's offer was already selected (unique constraint).</summary>
     Task<bool> TryAddAsync(SelectedOffer offer, CancellationToken cancellationToken);
 
+    /// <summary>Reads a selection by its id, without tracking; null if there is none.</summary>
+    Task<SelectedOffer?> FindByIdAsync(Guid selectedOfferId, CancellationToken cancellationToken);
+
     /// <summary>Loads a selection to change it; null if there is none with this id.</summary>
     Task<SelectedOffer?> FindForUpdateAsync(Guid selectedOfferId, CancellationToken cancellationToken);
 

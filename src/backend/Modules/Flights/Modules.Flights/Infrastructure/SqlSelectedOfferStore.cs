@@ -13,6 +13,9 @@ internal sealed class SqlSelectedOfferStore(FlightsDbContext db) : ISelectedOffe
     public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, CancellationToken cancellationToken) =>
         db.SelectedOffers.AsNoTracking().SingleOrDefaultAsync(o => o.SearchId == searchId && o.OfferId == offerId, cancellationToken);
 
+    public Task<SelectedOffer?> FindByIdAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+        db.SelectedOffers.AsNoTracking().SingleOrDefaultAsync(o => o.Id == selectedOfferId, cancellationToken);
+
     public Task<SelectedOffer?> FindForUpdateAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
         db.SelectedOffers.SingleOrDefaultAsync(o => o.Id == selectedOfferId, cancellationToken);
 

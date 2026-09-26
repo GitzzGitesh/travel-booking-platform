@@ -1,6 +1,6 @@
 # Payment lifecycle
 
-**Status: Draft.** Proposed in ADR 0006. **The merchant-of-record decision (open question Q1) may change this design.**
+**Status: Draft.** Proposed in ADR 0006. Q1 is answered for flights (we are merchant of record), so this design applies to flights. Hotels (Q1), provider acceptance, Q2 and Q5 are still open.
 
 ## Principles
 - Card data never touches our servers: Stripe Elements collects it; we hold PaymentIntent IDs only.

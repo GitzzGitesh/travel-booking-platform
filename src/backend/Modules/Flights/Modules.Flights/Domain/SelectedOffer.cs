@@ -71,6 +71,9 @@ internal sealed class SelectedOffer
     /// <summary>The last quote the customer accepted; accepting it again is an idempotent replay.</summary>
     public Guid? AcceptedPriceQuoteId { get; private set; }
 
+    /// <summary>When the customer accepted that quote: consent evidence for the order (F-01).</summary>
+    public DateTimeOffset? PriceAcceptedAt { get; private set; }
+
     /// <summary>The price the customer has agreed to so far.</summary>
     public Money AgreedPrice => ConfirmedPrice ?? TotalPrice;
 
@@ -160,6 +163,7 @@ internal sealed class SelectedOffer
         Status = SelectedOfferStatus.Confirmed;
         ConfirmedPrice = QuotedPrice;
         AcceptedPriceQuoteId = priceQuoteId;
+        PriceAcceptedAt = now;
         QuotedPrice = null;
         PriceQuoteId = null;
         return Result<SelectedOffer, AcceptPriceFailure>.Success(this);

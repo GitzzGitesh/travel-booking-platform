@@ -6,7 +6,7 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 
 | # | Question | Why it matters | Blocks | Status |
 |---|---|---|---|---|
-| Q1 | **Merchant-of-record model** per product: do we charge customers for flights and hotels ourselves (merchant), or does the airline/supplier charge (agency), or mixed? | Determines payment flows, PCI scope (card pass-through to airlines breaks SAQ-A), refund handling, invoicing, and legal liability | **Gate:** before payment architecture is finalised (ADR 0005/0006) and before Phase 2 payment work (`IPaymentProvider`) | Open |
+| Q1 | **Merchant-of-record model** per product: do we charge customers for flights and hotels ourselves (merchant), or does the airline/supplier charge (agency), or mixed? | Determines payment flows, PCI scope (card pass-through to airlines breaks SAQ-A), refund handling, invoicing, and legal liability | **Gate:** before payment architecture is finalised (ADR 0005/0006) and before Phase 2 payment work (`IPaymentProvider`) | **Answered for flights 2026-09-25:** we are merchant of record (see below). **Hotels: open** |
 | Q2 | **Launch markets** (countries of sale and customer residency)? | Drives EU Package Travel Directive / UK ATOL / US seller-of-travel obligations, GDPR/CCPA, SCA, data residency, price-display laws, languages, currencies | **Gate:** before production-market, compliance, and hosting-region decisions, and before production-oriented design in Phase 3 | Open |
 | Q3 | **First product**: flights or hotels for the first vertical slice? | Scopes the MVP. Hotels are simpler (no ticketing/APIS); flights are the harder, higher-value flow | Phase 2 product slice | **Answered 2026-09-25:** flights first (see below) |
 | Q4 | **Team size and roles** now and at launch? | Affects PR review policy, CODEOWNERS, on-call, branch protection strictness | ADR 0012 review model | **Answered 2026-09-25** (see below) |
@@ -21,6 +21,9 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 | Q12 | **Customer support channels** (email, chat, phone) and tooling? | Notifications, admin features, integrations | Admin phase | Open |
 
 ## Answered
+
+### Q1. Merchant of record: flights (answered 2026-09-25)
+**Answer:** **Option A. Our company is the merchant of record for flights**: we charge the customer, and the supplier is settled separately. This keeps card entry on our payment provider's hosted fields (PCI SAQ-A, ADR 0006) and supports the authorize → book → capture flow (ADR 0005). **Not decided:** the hotel model, charge currencies and FX (Q5), the payment provider's commercial terms, fraud rules (Q10), refund thresholds (Q11), and supplier settlement (Q6).
 
 ### Q3. First product (answered 2026-09-25)
 **Answer:** **flights** are the first real product slice. Phase 2 starts with the flight search port, a deterministic mock provider, and the provider contract suite (ADR 0004, ADR 0014). This answer does not settle Q1 (merchant of record), Q2 (markets), or Q6 (suppliers).
