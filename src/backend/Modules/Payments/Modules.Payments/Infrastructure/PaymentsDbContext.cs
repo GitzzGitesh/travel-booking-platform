@@ -32,7 +32,6 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         // attempt starts only once the previous one is known to hold nothing.
         attempt.HasIndex(a => a.OrderId).IsUnique().HasDatabaseName("IX_PaymentAttempts_OrderId_Live")
             .HasFilter($"[Status] IN ({string.Join(", ", PaymentAttempt.LiveStatuses.Select(status => $"'{status}'"))})");
-        attempt.HasIndex(a => new { a.Status, a.CreatedAt }); // the reconciliation job's work list
         attempt.Property(a => a.IdempotencyKey).HasMaxLength(AuthorizeOrderPaymentHandler.MaxIdempotencyKeyLength).IsUnicode(false);
         attempt.Property(a => a.CustomerId).HasMaxLength(PaymentAttempt.MaxCustomerIdLength);
         attempt.ComplexProperty(a => a.Amount, money =>
@@ -56,6 +55,9 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         events.ToTable("PaymentAttemptEvents");
         events.HasKey(e => e.Id);
         events.Property(e => e.Id).UseIdentityColumn();
+        events.HasIndex(e => new { e.PaymentAttemptId, e.Id });
+        events.Property(e => e.Actor).HasMaxLength(100);
+        events.Property(e => e.CorrelationId).HasMaxLength(100);
         events.Property(e => e.FromStatus).HasMaxLength(30);
         events.Property(e => e.ToStatus).HasMaxLength(30);
         events.Property(e => e.Reason).HasMaxLength(500);

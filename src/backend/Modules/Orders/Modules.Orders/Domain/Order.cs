@@ -223,6 +223,24 @@ internal sealed class Order
         return Result<OrderStatus, OrderTransitionError>.Success(Status);
     }
 
+    /// <summary>
+    /// Records on the timeline that a payment authorization exists that this order will not book on (its offer expired,
+    /// or the held amount is not the order's total): the hold must be released (payment-lifecycle.md). No status changes.
+    /// Idempotent per authorization.
+    /// </summary>
+    public void NoteUnusedPaymentHold(string paymentAuthorizationId, string reason, TransitionContext context)
+    {
+        if (_timeline.Any(e => e.ProviderReference == paymentAuthorizationId))
+        {
+            return;
+        }
+
+        foreach (var item in _items)
+        {
+            Record(item, item.Status, $"Payment authorized but not used: {reason}. The hold must be released", context, paymentAuthorizationId);
+        }
+    }
+
     /// <summary>The supplier confirmed the booking at the agreed price, directly or found by reconciliation.</summary>
     public Result<FlightOrderItemStatus, OrderTransitionError> Confirm(Guid itemId, string providerId, string supplierLocator, TransitionContext context)
     {

@@ -53,7 +53,7 @@ public sealed class AuthorizeOrderPaymentHandlerTests
         var first = (await handler.AuthorizeAsync(Request("key-1"), Ct)).Value;
         var replay = (await handler.AuthorizeAsync(Request("key-1"), Ct)).Value;
 
-        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, "InsufficientFunds"));
+        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, _total, "InsufficientFunds"));
         replay.ShouldBe(first);
         (_provider.Authorizations, _provider.Lookups).ShouldBe((1, 0));
     }
@@ -105,13 +105,13 @@ public sealed class AuthorizeOrderPaymentHandlerTests
     [Fact]
     public async Task An_attempt_left_Authorizing_by_a_crash_is_looked_up_not_authorized_again()
     {
-        var crashed = PaymentAttempt.Start(_orderId, "cust-1", "key-1", _total, _now);
+        var crashed = PaymentAttempt.Start(_orderId, "cust-1", "key-1", _total, new PaymentChange(_now, "customer", null));
         _store.Attempts.Add(crashed);
         _provider.OnLookup = reference => new PaymentLookup(Snapshot(reference, PaymentState.Authorized).Value);
 
         var result = (await Handler().AuthorizeAsync(Request("key-1"), Ct)).Value;
 
-        result.ShouldBe(new OrderPaymentResult(crashed.Id, OrderPaymentStatus.Authorized));
+        result.ShouldBe(new OrderPaymentResult(crashed.Id, OrderPaymentStatus.Authorized, _total));
         (_provider.Authorizations, _provider.Lookups).ShouldBe((0, 1));
     }
 
@@ -224,17 +224,33 @@ public sealed class AuthorizeOrderPaymentHandlerTests
     }
 
     [Fact]
-    public async Task Reconciliation_resolves_an_unknown_attempt_and_leaves_final_ones_alone()
+    public async Task Resuming_looks_an_open_attempt_up_leaves_final_ones_alone_and_knows_only_the_owners_keys()
     {
         _provider.OnAuthorize = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "stub"));
         _provider.OnLookup = reference => new PaymentLookup(Snapshot(reference, PaymentState.Authorized).Value);
         var handler = Handler();
         var id = (await handler.AuthorizeAsync(Request("key-1"), Ct)).Value.PaymentId;
 
-        (await handler.ReconcileAsync(id, Ct))!.Status.ShouldBe(PaymentAttemptStatus.Authorized);
-        (await handler.ReconcileAsync(id, Ct))!.Status.ShouldBe(PaymentAttemptStatus.Authorized);
-        (await handler.ReconcileAsync(Guid.NewGuid(), Ct)).ShouldBeNull();
+        var resumed = await handler.ResumeAsync(_orderId, "cust-1", "key-1", "trace-2", Ct);
+        var again = await handler.ResumeAsync(_orderId, "cust-1", "key-1", "trace-3", Ct);
+
+        resumed.ShouldBe(new OrderPaymentResult(id, OrderPaymentStatus.Authorized, _total));
+        again.ShouldBe(resumed);
+        (await handler.ResumeAsync(_orderId, "cust-1", "key-2", null, Ct)).ShouldBeNull();
+        (await handler.ResumeAsync(_orderId, "cust-2", "key-1", null, Ct)).ShouldBeNull();
         _provider.Lookups.ShouldBe(1);
+        _store.Attempts.Single().Events[^1].CorrelationId.ShouldBe("trace-2");
+    }
+
+    [Fact]
+    public void Tokens_and_customer_actions_are_never_printed()
+    {
+        var request = Request("key-1") with { PaymentMethodToken = "4242424242424242" };
+        var result = new OrderPaymentResult(Guid.NewGuid(), OrderPaymentStatus.ActionRequired, _total, CustomerAction: "secret_live_1");
+
+        request.ToString().ShouldNotContain("4242");
+        request.ToString().ShouldContain("[redacted]");
+        result.ToString().ShouldNotContain("secret_live_1");
     }
 
     private AuthorizeOrderPaymentHandler Handler() => new(
@@ -275,9 +291,6 @@ public sealed class AuthorizeOrderPaymentHandlerTests
         }
 
         public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
-
-        public Task<IReadOnlyList<Guid>> FindUnresolvedAsync(DateTimeOffset createdBefore, int limit, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<Guid>>([.. Attempts.Where(a => !a.IsFinal && a.CreatedAt < createdBefore).Take(limit).Select(a => a.Id)]);
     }
 
     private sealed class ScriptedProvider : IPaymentProvider

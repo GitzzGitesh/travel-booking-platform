@@ -44,12 +44,4 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
             return false;
         }
     }
-
-    public async Task<IReadOnlyList<Guid>> FindUnresolvedAsync(DateTimeOffset createdBefore, int limit, CancellationToken cancellationToken) =>
-        await db.PaymentAttempts.AsNoTracking()
-            .Where(a => (a.Status == PaymentAttemptStatus.Authorizing || a.Status == PaymentAttemptStatus.AuthorizationUnknown) && a.CreatedAt < createdBefore)
-            .OrderBy(a => a.CreatedAt)
-            .Select(a => a.Id)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
 }

@@ -58,7 +58,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         timeline.HasKey(e => e.Id);
         timeline.Property(e => e.Id).UseIdentityColumn();
         timeline.HasIndex(e => new { e.OrderId, e.Id });
-        timeline.Property(e => e.Actor).HasMaxLength(100);
+        timeline.Property(e => e.Actor).HasMaxLength(150); // "customer:" + a customer id of up to 128
         timeline.Property(e => e.FromStatus).HasMaxLength(30);
         timeline.Property(e => e.ToStatus).HasMaxLength(30);
         timeline.Property(e => e.Reason).HasMaxLength(500);

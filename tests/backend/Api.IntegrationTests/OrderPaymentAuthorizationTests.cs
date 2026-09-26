@@ -31,6 +31,7 @@ public sealed class OrderPaymentAuthorizationTests(SqlApiFactory api) : IClassFi
         stored.ProviderId.ShouldBe("mockpay");
         stored.ProviderPaymentId.ShouldNotBeNullOrEmpty();
         stored.Events.OrderBy(e => e.Id).Select(e => e.ToStatus).ShouldBe(["Authorizing", "Authorized"]);
+        stored.Events.ShouldAllBe(e => e.Actor == "customer" && e.CorrelationId == "test-trace");
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public sealed class OrderPaymentAuthorizationTests(SqlApiFactory api) : IClassFi
         var first = (await Authorize(request)).Value;
         var replay = (await Authorize(request)).Value;
 
-        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, "InsufficientFunds"));
+        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, _total, "InsufficientFunds"));
         replay.ShouldBe(first);
         (await Load(first.PaymentId)).Events.Count.ShouldBe(2);
     }
@@ -107,6 +108,19 @@ public sealed class OrderPaymentAuthorizationTests(SqlApiFactory api) : IClassFi
     }
 
     [Fact]
+    public async Task F32_parallel_requests_with_different_keys_hold_funds_at_most_once()
+    {
+        var orderId = Guid.NewGuid();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => Authorize(Request(MockPaymentMethods.Approved) with { OrderId = orderId })));
+
+        results.Count(r => r.IsSuccess).ShouldBe(1);
+        results.Where(r => !r.IsSuccess).ShouldAllBe(r => r.Error == OrderPaymentFailure.PaymentInProgress);
+        using var scope = api.Services.CreateScope();
+        (await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().PaymentAttempts.CountAsync(a => a.OrderId == orderId, Ct)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Parallel_requests_with_one_key_create_exactly_one_attempt()
     {
         var request = Request(MockPaymentMethods.Approved);
@@ -120,7 +134,7 @@ public sealed class OrderPaymentAuthorizationTests(SqlApiFactory api) : IClassFi
         attempts.ShouldHaveSingleItem().Status.ShouldBe(PaymentAttemptStatus.Authorized);
     }
 
-    private static OrderPaymentRequest Request(string token) => new(Guid.NewGuid(), _customer, $"pay-{Guid.NewGuid():N}", _total, token);
+    private static OrderPaymentRequest Request(string token) => new(Guid.NewGuid(), _customer, $"pay-{Guid.NewGuid():N}", _total, token, "test-trace");
 
     private async Task<Result<OrderPaymentResult, OrderPaymentFailure>> Authorize(OrderPaymentRequest request)
     {

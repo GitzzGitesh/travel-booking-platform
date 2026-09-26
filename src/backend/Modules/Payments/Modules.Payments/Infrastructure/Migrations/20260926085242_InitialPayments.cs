@@ -49,9 +49,11 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     PaymentAttemptId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     At = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    Actor = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     FromStatus = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: true),
                     ToStatus = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
                     Reason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    CorrelationId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     ProviderReference = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true)
                 },
                 constraints: table =>
@@ -67,10 +69,10 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_PaymentAttemptEvents_PaymentAttemptId",
+                name: "IX_PaymentAttemptEvents_PaymentAttemptId_Id",
                 schema: "payments",
                 table: "PaymentAttemptEvents",
-                column: "PaymentAttemptId");
+                columns: new[] { "PaymentAttemptId", "Id" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_PaymentAttempts_OrderId_IdempotencyKey",
@@ -86,12 +88,6 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                 column: "OrderId",
                 unique: true,
                 filter: "[Status] IN ('Authorizing', 'ActionRequired', 'AuthorizationUnknown', 'Authorized', 'ManualReview')");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PaymentAttempts_Status_CreatedAt",
-                schema: "payments",
-                table: "PaymentAttempts",
-                columns: new[] { "Status", "CreatedAt" });
         }
 
         /// <inheritdoc />

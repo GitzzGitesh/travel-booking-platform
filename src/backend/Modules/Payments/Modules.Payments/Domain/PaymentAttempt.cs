@@ -21,10 +21,19 @@ internal enum PaymentAttemptStatus
     ManualReview,
 }
 
+internal enum PaymentAttemptTransitionError
+{
+    /// <summary>The attempt's outcome is settled: a late or duplicate outcome changes nothing.</summary>
+    AlreadyFinal,
+
+    /// <summary>Nothing goes back to Authorizing: an attempt is authorized at the provider once.</summary>
+    Illegal,
+}
+
 /// <summary>
 /// One attempt to authorize an order's total. It is saved as Authorizing BEFORE the provider is called, so a crash
 /// never loses a possible hold: the attempt can always be looked up by its reference. Status changes only through
-/// <see cref="Resolve"/>, each appended to the attempt's history.
+/// <see cref="Resolve"/>, each appended to the attempt's history with its actor and correlation id.
 /// </summary>
 internal sealed class PaymentAttempt
 {
@@ -68,7 +77,10 @@ internal sealed class PaymentAttempt
     /// <summary>Our reference at the provider: this attempt's id, without dashes.</summary>
     public string Reference => Id.ToString("N");
 
-    /// <summary>Statuses in which the attempt holds, or may hold, funds: at most one such attempt per order.</summary>
+    /// <summary>
+    /// Statuses in which the attempt holds, or may hold, funds: at most one such attempt per order. Every one of them
+    /// needs a way out before checkout is exposed: a lookup (the open ones), a void (Authorized), or a person (ManualReview).
+    /// </summary>
     public static IReadOnlyList<PaymentAttemptStatus> LiveStatuses { get; } =
     [
         PaymentAttemptStatus.Authorizing, PaymentAttemptStatus.ActionRequired, PaymentAttemptStatus.AuthorizationUnknown,
@@ -77,7 +89,7 @@ internal sealed class PaymentAttempt
 
     public bool IsFinal => Status is not (PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.ActionRequired or PaymentAttemptStatus.AuthorizationUnknown);
 
-    public static PaymentAttempt Start(Guid orderId, string customerId, string idempotencyKey, Money amount, DateTimeOffset now)
+    public static PaymentAttempt Start(Guid orderId, string customerId, string idempotencyKey, Money amount, PaymentChange change)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
@@ -94,22 +106,28 @@ internal sealed class PaymentAttempt
             IdempotencyKey = idempotencyKey,
             Amount = amount,
             Status = PaymentAttemptStatus.Authorizing,
-            CreatedAt = now,
-            UpdatedAt = now,
+            CreatedAt = change.At,
+            UpdatedAt = change.At,
         };
-        attempt.Record(null, "Authorization requested", now, null);
+        attempt.Record(null, "Authorization requested", change, null);
         return attempt;
     }
 
     /// <summary>
-    /// Records what the provider established. Returns false, changing nothing, when the attempt is already final or the
-    /// target is Authorizing (a late or duplicate outcome). The same status again only fills in provider details.
+    /// Records what the provider established. The same status again only fills in provider details, without a history
+    /// entry. A final attempt never changes, and nothing goes back to Authorizing.
     /// </summary>
-    public bool Resolve(PaymentAttemptStatus to, string reason, DateTimeOffset now, string? providerId = null, string? providerPaymentId = null, string? declineReason = null)
+    public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> Resolve(
+        PaymentAttemptStatus to, string reason, PaymentChange change, string? providerId = null, string? providerPaymentId = null, string? declineReason = null)
     {
-        if (IsFinal || to == PaymentAttemptStatus.Authorizing)
+        if (IsFinal)
         {
-            return false;
+            return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Failure(PaymentAttemptTransitionError.AlreadyFinal);
+        }
+
+        if (to == PaymentAttemptStatus.Authorizing)
+        {
+            return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Failure(PaymentAttemptTransitionError.Illegal);
         }
 
         if (providerId is not null && providerPaymentId is not null)
@@ -121,27 +139,33 @@ internal sealed class PaymentAttempt
         DeclineReason = declineReason ?? DeclineReason;
         if (to == Status)
         {
-            UpdatedAt = now;
+            UpdatedAt = change.At;
             Revision++;
-            return true;
+        }
+        else
+        {
+            var from = Status;
+            Status = to;
+            Record(from, reason, change, providerPaymentId);
         }
 
-        var from = Status;
-        Status = to;
-        Record(from, reason, now, providerPaymentId);
-        return true;
+        return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status);
     }
 
-    private void Record(PaymentAttemptStatus? from, string reason, DateTimeOffset at, string? providerReference)
+    private void Record(PaymentAttemptStatus? from, string reason, PaymentChange change, string? providerReference)
     {
-        _events.Add(new PaymentAttemptEvent(Id, at, from?.ToString(), Status.ToString(), reason, providerReference));
-        UpdatedAt = at;
+        _events.Add(new PaymentAttemptEvent(Id, change.At, change.Actor, from?.ToString(), Status.ToString(), reason, change.CorrelationId, providerReference));
+        UpdatedAt = change.At;
         Revision++;
     }
 }
 
-/// <summary>An append-only record of one attempt transition (payments are audited). Never updated or deleted.</summary>
-internal sealed record PaymentAttemptEvent(Guid PaymentAttemptId, DateTimeOffset At, string? FromStatus, string ToStatus, string Reason, string? ProviderReference)
+/// <summary>Who changed an attempt, and when, with the request's correlation id (security rules: payments are audited).</summary>
+internal sealed record PaymentChange(DateTimeOffset At, string Actor, string? CorrelationId);
+
+/// <summary>An append-only record of one attempt transition. Never updated or deleted.</summary>
+internal sealed record PaymentAttemptEvent(
+    Guid PaymentAttemptId, DateTimeOffset At, string Actor, string? FromStatus, string ToStatus, string Reason, string? CorrelationId, string? ProviderReference)
 {
     public long Id { get; private set; }
 }

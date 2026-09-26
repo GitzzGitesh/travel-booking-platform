@@ -33,7 +33,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         _order.Timeline[^1].ProviderReference.ShouldBe(_payments.PaymentId.ToString());
         _selections.Revalidated.ShouldBe([_order.Items[0].SelectedOfferId]);
         var request = _payments.Requests.ShouldHaveSingleItem();
-        request.ShouldBe(new OrderPaymentRequest(_order.Id, "cust-1", "pay-1", OrderTests.Price, "pm_test"));
+        request.ShouldBe(new OrderPaymentRequest(_order.Id, "cust-1", "pay-1", OrderTests.Price, "pm_test", "trace-1"));
     }
 
     [Fact]
@@ -136,6 +136,59 @@ public sealed class AuthorizeCheckoutHandlerTests
         (_payments.Requests.Count, _selections.Revalidated.Count).ShouldBe((1, 1));
     }
 
+    [Theory]
+    [InlineData(FlightSelectionUnavailable.Expired)]
+    [InlineData(FlightSelectionUnavailable.TryAgain)]
+    internal async Task An_attempt_made_with_this_key_is_finished_before_the_supplier_is_asked_again(FlightSelectionUnavailable supplierNow)
+    {
+        _payments.Status = OrderPaymentStatus.Pending;
+        await Handle(); // the authorization timed out
+        _payments.Status = OrderPaymentStatus.Authorized;
+        _payments.Resumable = true;
+        _selections.Next = Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(supplierNow);
+
+        var replay = (await Handle()).Value;
+
+        replay.Status.ShouldBe(CheckoutStatus.BookingStarted);
+        (_selections.Revalidated.Count, _payments.Requests.Count, _payments.Resumed).ShouldBe((1, 1, 1));
+    }
+
+    [Fact]
+    public async Task A_hold_for_another_amount_is_never_booked_on_and_is_noted_for_release()
+    {
+        _payments.Amount = OrderTests.Price with { Amount = 199m };
+        _payments.Resumable = true;
+
+        var result = await Handle();
+
+        result.Error.ShouldBe(new CheckoutFailure.AuthorizedButNotBookable(_payments.PaymentId));
+        _order.Status.ShouldBe(OrderStatus.AwaitingPayment);
+        var note = _order.Timeline[^1];
+        (note.FromStatus, note.ToStatus, note.ProviderReference).ShouldBe(("AwaitingPayment", "AwaitingPayment", _payments.PaymentId.ToString()));
+        note.Reason.ShouldContain("released");
+    }
+
+    [Fact]
+    public async Task A_hold_whose_offer_expired_meanwhile_is_noted_once_for_release()
+    {
+        _payments.Resumable = true;
+        _clock.Advance(TimeSpan.FromHours(1)); // past the offer's expiry
+
+        (await Handle()).Error.ShouldBeOfType<CheckoutFailure.AuthorizedButNotBookable>();
+        var entries = _order.Timeline.Count;
+        (await Handle()).Error.ShouldBeOfType<CheckoutFailure.AuthorizedButNotBookable>();
+
+        _order.Timeline.Count.ShouldBe(entries);
+        _order.PaymentAuthorizationId.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Tokens_and_customer_actions_are_never_printed()
+    {
+        new AuthorizeCheckout(_order.Id, "cust-1", "pay-1", "4242424242424242", null).ToString().ShouldNotContain("4242");
+        new CheckoutResult(_order.Id, CheckoutStatus.ActionRequired, Guid.NewGuid(), CustomerAction: "secret_live_1").ToString().ShouldNotContain("secret_live_1");
+    }
+
     [Fact]
     public async Task Another_customers_order_is_not_found()
     {
@@ -203,6 +256,13 @@ public sealed class AuthorizeCheckoutHandlerTests
     {
         public Guid PaymentId { get; } = Guid.NewGuid();
 
+        public Money Amount { get; set; } = OrderTests.Price;
+
+        /// <summary>Whether an attempt already exists for the key (a repeated request).</summary>
+        public bool Resumable { get; set; }
+
+        public int Resumed { get; private set; }
+
         public OrderPaymentStatus Status { get; set; } = OrderPaymentStatus.Authorized;
 
         public OrderPaymentFailure? Failure { get; set; }
@@ -214,7 +274,18 @@ public sealed class AuthorizeCheckoutHandlerTests
             Requests.Add(request);
             return Task.FromResult(Failure is { } failure
                 ? Result<OrderPaymentResult, OrderPaymentFailure>.Failure(failure)
-                : Result<OrderPaymentResult, OrderPaymentFailure>.Success(new OrderPaymentResult(PaymentId, Status)));
+                : Result<OrderPaymentResult, OrderPaymentFailure>.Success(new OrderPaymentResult(PaymentId, Status, Amount)));
+        }
+
+        public Task<OrderPaymentResult?> ResumeAsync(Guid orderId, string customerId, string idempotencyKey, string? correlationId, CancellationToken cancellationToken)
+        {
+            if (!Resumable)
+            {
+                return Task.FromResult<OrderPaymentResult?>(null);
+            }
+
+            Resumed++;
+            return Task.FromResult<OrderPaymentResult?>(new OrderPaymentResult(PaymentId, Status, Amount));
         }
     }
 

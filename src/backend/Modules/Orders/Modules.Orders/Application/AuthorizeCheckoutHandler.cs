@@ -1,3 +1,4 @@
+using System.Text;
 using TravelBooking.BuildingBlocks;
 using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Domain;
@@ -9,7 +10,15 @@ namespace TravelBooking.Modules.Orders.Application;
 /// <paramref name="CustomerId"/> is the authenticated customer (Q8). <paramref name="IdempotencyKey"/> identifies this
 /// payment attempt: the same key repeats it, a new key (after a decline) starts another.
 /// </summary>
-internal sealed record AuthorizeCheckout(Guid OrderId, string CustomerId, string IdempotencyKey, string PaymentMethodToken, string? CorrelationId);
+internal sealed record AuthorizeCheckout(Guid OrderId, string CustomerId, string IdempotencyKey, string PaymentMethodToken, string? CorrelationId)
+{
+    // Never printed: a card number pasted into the token field must not reach a log; the customer id is personal data.
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append($"OrderId = {OrderId}, IdempotencyKey = {IdempotencyKey}, PaymentMethodToken = [redacted], CorrelationId = {CorrelationId}");
+        return true;
+    }
+}
 
 internal enum CheckoutStatus
 {
@@ -32,7 +41,15 @@ internal enum CheckoutStatus
     PaymentManualReview,
 }
 
-internal sealed record CheckoutResult(Guid OrderId, CheckoutStatus Status, Guid? PaymentId, string? DeclineReason = null, string? CustomerAction = null);
+internal sealed record CheckoutResult(Guid OrderId, CheckoutStatus Status, Guid? PaymentId, string? DeclineReason = null, string? CustomerAction = null)
+{
+    // Never printed: the customer action is a live client secret.
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append($"OrderId = {OrderId}, Status = {Status}, PaymentId = {PaymentId}, DeclineReason = {DeclineReason}, CustomerAction = {(CustomerAction is null ? "null" : "[redacted]")}");
+        return true;
+    }
+}
 
 internal abstract record CheckoutFailure
 {
@@ -69,18 +86,20 @@ internal abstract record CheckoutFailure
     internal sealed record PaymentInProgress : CheckoutFailure;
 
     /// <summary>
-    /// The payment was authorized but the order could not start booking (its offer expired meanwhile). The hold is
-    /// recorded with Payments; releasing it is the reconciliation's job (payment-lifecycle.md).
+    /// The payment was authorized but the order will not book on it (its offer expired meanwhile, or the held amount is
+    /// not the order's total). The unused hold is noted on the order's timeline; releasing it comes with the void step
+    /// (payment-lifecycle.md), a gate for exposing checkout.
     /// </summary>
     internal sealed record AuthorizedButNotBookable(Guid PaymentId) : CheckoutFailure;
 }
 
 /// <summary>
 /// The checkout's payment step (ADR 0005: revalidate → authorize → book → capture). For the customer's own order
-/// awaiting payment: revalidate every item with the supplier now, adopt the fresh terms (a new expiry; a price only with
-/// the customer's accepted quote), authorize the server-side total through Payments.Contracts, and, once authorized,
-/// move the order to Booking. Idempotent by the payment key; an unknown payment outcome is never booked on. The supplier
-/// booking itself needs the travellers (Q9) and comes later.
+/// awaiting payment: first finish any attempt already made with this key (its hold must never become unreachable);
+/// otherwise revalidate every item with the supplier now, adopt the fresh terms (a new expiry; a price only with the
+/// customer's accepted quote), and authorize the server-side total through Payments.Contracts. Once authorized, move the
+/// order to Booking. Idempotent by the payment key; an unknown payment outcome is never booked on. The supplier booking
+/// itself needs the travellers (Q9) and comes later.
 /// </summary>
 internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelections selections, IOrderPayments payments, TimeProvider timeProvider)
 {
@@ -113,8 +132,14 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
             return Failure(new CheckoutFailure.NotAwaitingPayment(order.Status));
         }
 
-        var context = new TransitionContext(timeProvider.GetUtcNow(), CreateFlightOrderHandler.Actor(command.CustomerId), command.CorrelationId);
-        if (await Revalidate(order, context, cancellationToken) is { } unavailable)
+        // An attempt already made with this key is finished first, whatever the supplier says now: after a timeout the
+        // funds may be held, and only this lookup can find them.
+        if (await payments.ResumeAsync(order.Id, command.CustomerId, command.IdempotencyKey, command.CorrelationId, cancellationToken) is { } resumed)
+        {
+            return await Complete(order, resumed, command, cancellationToken);
+        }
+
+        if (await Revalidate(order, Context(command), cancellationToken) is { } unavailable)
         {
             return Failure(unavailable);
         }
@@ -125,7 +150,7 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
         }
 
         var payment = await payments.AuthorizeAsync(
-            new OrderPaymentRequest(order.Id, order.CustomerId, command.IdempotencyKey, order.Total, command.PaymentMethodToken), cancellationToken);
+            new OrderPaymentRequest(order.Id, order.CustomerId, command.IdempotencyKey, order.Total, command.PaymentMethodToken, command.CorrelationId), cancellationToken);
         if (!payment.IsSuccess)
         {
             return Failure(payment.Error switch
@@ -137,20 +162,7 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
             });
         }
 
-        var result = payment.Value;
-        if (result.Status is not OrderPaymentStatus.Authorized)
-        {
-            return Success(new CheckoutResult(order.Id, result.Status switch
-            {
-                OrderPaymentStatus.ActionRequired => CheckoutStatus.ActionRequired,
-                OrderPaymentStatus.Declined => CheckoutStatus.Declined,
-                OrderPaymentStatus.Pending => CheckoutStatus.PaymentPending,
-                OrderPaymentStatus.ManualReview => CheckoutStatus.PaymentManualReview,
-                _ => CheckoutStatus.PaymentFailed,
-            }, result.PaymentId, result.DeclineReason, result.CustomerAction));
-        }
-
-        return await StartBooking(order, result.PaymentId, command, cancellationToken);
+        return await Complete(order, payment.Value, command, cancellationToken);
     }
 
     /// <summary>Revalidates each item and adopts its fresh terms; the first reason it cannot be paid for, if any.</summary>
@@ -189,27 +201,55 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
         return null;
     }
 
-    private async Task<Result<CheckoutResult, CheckoutFailure>> StartBooking(Order order, Guid paymentId, AuthorizeCheckout command, CancellationToken cancellationToken)
+    /// <summary>Books on an authorized payment of exactly the order's total; any other outcome leaves the order awaiting payment.</summary>
+    private async Task<Result<CheckoutResult, CheckoutFailure>> Complete(Order order, OrderPaymentResult payment, AuthorizeCheckout command, CancellationToken cancellationToken)
     {
-        var context = new TransitionContext(timeProvider.GetUtcNow(), CreateFlightOrderHandler.Actor(command.CustomerId), command.CorrelationId);
-        var started = order.StartBooking(paymentId.ToString(), context);
-        if (!started.IsSuccess)
+        if (payment.Status is not OrderPaymentStatus.Authorized)
         {
-            return Failure(new CheckoutFailure.AuthorizedButNotBookable(paymentId));
+            return Success(new CheckoutResult(order.Id, payment.Status switch
+            {
+                OrderPaymentStatus.ActionRequired => CheckoutStatus.ActionRequired,
+                OrderPaymentStatus.Declined => CheckoutStatus.Declined,
+                OrderPaymentStatus.Pending => CheckoutStatus.PaymentPending,
+                OrderPaymentStatus.ManualReview => CheckoutStatus.PaymentManualReview,
+                _ => CheckoutStatus.PaymentFailed,
+            }, payment.PaymentId, payment.DeclineReason, payment.CustomerAction));
+        }
+
+        var context = Context(command);
+        var reference = payment.PaymentId.ToString();
+        if (payment.Amount != order.Total)
+        {
+            // Held for an earlier total (the price changed while this attempt was unresolved): never booked on.
+            return await Unused(order, payment.PaymentId, "the held amount is not the order's total", context, cancellationToken);
+        }
+
+        if (!order.StartBooking(reference, context).IsSuccess)
+        {
+            return await Unused(order, payment.PaymentId, "the order could not start booking (its offer expired)", context, cancellationToken);
         }
 
         if (await store.TrySaveAsync(cancellationToken))
         {
-            return Success(new CheckoutResult(order.Id, CheckoutStatus.BookingStarted, paymentId));
+            return Success(new CheckoutResult(order.Id, CheckoutStatus.BookingStarted, payment.PaymentId));
         }
 
-        // Another request changed the order first. The payment is idempotent by key, so the same request converges;
-        // report what is stored now.
+        // Another request changed the order first. The payment is idempotent by key, so repeating this request converges.
         var current = await store.FindOwnedAsync(order.Id, command.CustomerId, cancellationToken);
-        return current?.PaymentAuthorizationId == paymentId.ToString()
-            ? Success(new CheckoutResult(order.Id, CheckoutStatus.BookingStarted, paymentId))
+        return current?.PaymentAuthorizationId == reference
+            ? Success(new CheckoutResult(order.Id, CheckoutStatus.BookingStarted, payment.PaymentId))
             : Failure(new CheckoutFailure.TryAgain());
     }
+
+    private async Task<Result<CheckoutResult, CheckoutFailure>> Unused(Order order, Guid paymentId, string reason, TransitionContext context, CancellationToken cancellationToken)
+    {
+        order.NoteUnusedPaymentHold(paymentId.ToString(), reason, context);
+        await store.TrySaveAsync(cancellationToken); // a lost race leaves the note to the next repeat of this request
+        return Failure(new CheckoutFailure.AuthorizedButNotBookable(paymentId));
+    }
+
+    private TransitionContext Context(AuthorizeCheckout command) =>
+        new(timeProvider.GetUtcNow(), CreateFlightOrderHandler.Actor(command.CustomerId), command.CorrelationId);
 
     private static Result<CheckoutResult, CheckoutFailure> Success(CheckoutResult result) => Result<CheckoutResult, CheckoutFailure>.Success(result);
 

@@ -22,7 +22,7 @@ Tokens: the Api validates JWTs from both issuers with separate authentication sc
 |---|---|---|
 | Public | Airports, marketing content | None |
 | Internal | Markups, supplier config, metrics | Staff auth |
-| PII | Name, email, phone, DOB, address | Access by permission, never logged, retention rules |
+| PII | Name, email, phone, DOB, address; the customer's identity-provider subject id (pseudonymous: stored as `CustomerId` on orders and payment attempts, and in the order timeline's actor) | Access by permission, never logged, retention rules. Erasure of the subject id in append-only rows is open: mapping it to an internal customer id is a precondition for the Orders endpoints (ADR 0008) |
 | Sensitive PII | Passport/ID numbers, nationality + document expiry | **Encrypted at rest (application-level or Always Encrypted, per ADR)**, access audited, shortest retention |
 | Payment | PaymentIntent IDs, last4, brand | No PAN/CVV ever. Tokens only |
 | Secrets | Supplier keys, Stripe secret keys, webhook secrets | Key Vault only, managed identity, rotation |

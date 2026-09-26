@@ -28,6 +28,15 @@ sequenceDiagram
 
 When the supplier write outcome is unknown (timeout or ambiguous 5xx), the API responds `202 Accepted` with the order in `PendingConfirmation`. The Worker reconciles.
 
+**As built (Phase 3 chunk 3), up to `Booking`, with no endpoint:** `AuthorizeCheckoutHandler` (Orders) takes the signed-in customer's own order (Q8), and only while it awaits payment.
+0. If an attempt was already made with this payment key, it is finished first (`IOrderPayments.ResumeAsync`: a lookup, never a second authorization), whatever the supplier says now. After a timeout the funds may be held, and only this lookup finds them.
+1. Otherwise it revalidates every item with the supplier through `IFlightSelections.RevalidateAsync`. A changed price, an expired or sold-out offer, or an offer with under two minutes left stops the checkout with nothing authorized.
+2. `Order.RefreshOffer` adopts the fresh expiry. It adopts a new price only with a newly accepted quote (F-01), and records that on the timeline.
+3. It authorizes the server-side order total through `IOrderPayments`.
+4. Only an authorized payment of exactly the order's total moves the order to `Booking` (`StartBooking` with the payment attempt id). A decline, a challenge, an unknown outcome or a manual review leaves the order `AwaitingPayment`. An authorization the order will not book on (a different amount, or the offer expired meanwhile) is noted once on the timeline, with its reference, as a hold to release (`AuthorizedButNotBookable`); the release itself comes with the void step.
+
+The supplier booking itself needs the travellers (Q9) and comes next.
+
 ## Order item (booking) state machine
 
 ```mermaid

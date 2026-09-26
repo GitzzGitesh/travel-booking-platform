@@ -34,8 +34,7 @@ public sealed class PaymentAttemptTests
         attempt.IsFinal.ShouldBeFalse();
         attempt.Reference.ShouldBe(attempt.Id.ToString("N"));
         var created = attempt.Events.ShouldHaveSingleItem();
-        created.FromStatus.ShouldBeNull();
-        created.ToStatus.ShouldBe("Authorizing");
+        (created.FromStatus, created.ToStatus, created.Actor, created.CorrelationId).ShouldBe((null, "Authorizing", "customer", "trace-1"));
     }
 
     [Theory]
@@ -43,7 +42,7 @@ public sealed class PaymentAttemptTests
     [InlineData("cust-1", " ", 10)]
     [InlineData("cust-1", "key-1", 0)]
     public void An_attempt_needs_a_customer_a_key_and_a_positive_amount(string customer, string key, decimal amount) =>
-        Should.Throw<ArgumentException>(() => PaymentAttempt.Start(Guid.NewGuid(), customer, key, new Money(amount, new CurrencyCode("XTS")), _now));
+        Should.Throw<ArgumentException>(() => PaymentAttempt.Start(Guid.NewGuid(), customer, key, new Money(amount, new CurrencyCode("XTS")), At(_now)));
 
     [Theory]
     [MemberData(nameof(Targets))]
@@ -52,12 +51,12 @@ public sealed class PaymentAttemptTests
         var to = Enum.Parse<PaymentAttemptStatus>(target);
         var attempt = New();
 
-        attempt.Resolve(to, "outcome", _now.AddSeconds(1), "mockpay", "pay_1").ShouldBeTrue();
+        attempt.Resolve(to, "outcome", At(_now.AddSeconds(1), "trace-2"), "mockpay", "pay_1").Value.ShouldBe(to);
 
         attempt.Status.ShouldBe(to);
         attempt.ProviderPaymentId.ShouldBe("pay_1");
         var entry = attempt.Events[^1];
-        (entry.FromStatus, entry.ToStatus, entry.Reason, entry.ProviderReference).ShouldBe(("Authorizing", to.ToString(), "outcome", "pay_1"));
+        (entry.FromStatus, entry.ToStatus, entry.Reason, entry.ProviderReference, entry.CorrelationId).ShouldBe(("Authorizing", to.ToString(), "outcome", "pay_1", "trace-2"));
         attempt.UpdatedAt.ShouldBe(_now.AddSeconds(1));
     }
 
@@ -67,10 +66,10 @@ public sealed class PaymentAttemptTests
     {
         var (from, to) = (Enum.Parse<PaymentAttemptStatus>(source), Enum.Parse<PaymentAttemptStatus>(target));
         var attempt = New();
-        attempt.Resolve(from, "first", _now);
+        attempt.Resolve(from, "first", At(_now));
         var revision = attempt.Revision;
 
-        attempt.Resolve(to, "later", _now.AddMinutes(1)).ShouldBeTrue();
+        attempt.Resolve(to, "later", At(_now.AddMinutes(1))).IsSuccess.ShouldBeTrue();
 
         attempt.Status.ShouldBe(to);
         attempt.Revision.ShouldBeGreaterThan(revision);
@@ -83,10 +82,10 @@ public sealed class PaymentAttemptTests
     {
         var (from, to) = (Enum.Parse<PaymentAttemptStatus>(source), Enum.Parse<PaymentAttemptStatus>(target));
         var attempt = New();
-        attempt.Resolve(from, "final", _now, "mockpay", "pay_1");
+        attempt.Resolve(from, "final", At(_now), "mockpay", "pay_1");
         var (revision, events) = (attempt.Revision, attempt.Events.Count);
 
-        attempt.Resolve(to, "late", _now.AddMinutes(1), "mockpay", "pay_2").ShouldBeFalse();
+        attempt.Resolve(to, "late", At(_now.AddMinutes(1)), "mockpay", "pay_2").Error.ShouldBe(PaymentAttemptTransitionError.AlreadyFinal);
 
         attempt.Status.ShouldBe(from);
         attempt.ProviderPaymentId.ShouldBe("pay_1");
@@ -101,9 +100,9 @@ public sealed class PaymentAttemptTests
     {
         var from = Enum.Parse<PaymentAttemptStatus>(source);
         var attempt = New();
-        attempt.Resolve(from, "first", _now);
+        attempt.Resolve(from, "first", At(_now));
 
-        attempt.Resolve(PaymentAttemptStatus.Authorizing, "back", _now).ShouldBeFalse();
+        attempt.Resolve(PaymentAttemptStatus.Authorizing, "back", At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
 
         attempt.Status.ShouldBe(from);
     }
@@ -112,14 +111,16 @@ public sealed class PaymentAttemptTests
     public void The_same_unknown_status_again_fills_in_provider_details_without_new_history()
     {
         var attempt = New();
-        attempt.Resolve(PaymentAttemptStatus.ActionRequired, "challenge", _now);
+        attempt.Resolve(PaymentAttemptStatus.ActionRequired, "challenge", At(_now));
 
-        attempt.Resolve(PaymentAttemptStatus.ActionRequired, "challenge", _now.AddSeconds(5), "mockpay", "pay_1").ShouldBeTrue();
+        attempt.Resolve(PaymentAttemptStatus.ActionRequired, "challenge", At(_now.AddSeconds(5)), "mockpay", "pay_1").IsSuccess.ShouldBeTrue();
 
         attempt.ProviderPaymentId.ShouldBe("pay_1");
         attempt.Events.Count.ShouldBe(2);
     }
 
+    private static PaymentChange At(DateTimeOffset at, string correlationId = "trace-1") => new(at, "customer", correlationId);
+
     private static PaymentAttempt New() =>
-        PaymentAttempt.Start(Guid.NewGuid(), "cust-1", "key-1", new Money(270m, new CurrencyCode("XTS")), _now);
+        PaymentAttempt.Start(Guid.NewGuid(), "cust-1", "key-1", new Money(270m, new CurrencyCode("XTS")), At(_now));
 }

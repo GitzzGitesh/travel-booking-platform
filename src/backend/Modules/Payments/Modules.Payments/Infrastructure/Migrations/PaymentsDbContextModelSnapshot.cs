@@ -99,8 +99,6 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                     b.HasIndex("OrderId", "IdempotencyKey")
                         .IsUnique();
 
-                    b.HasIndex("Status", "CreatedAt");
-
                     b.ToTable("PaymentAttempts", "payments", t =>
                         {
                             t.HasCheckConstraint("CK_PaymentAttempts_Status", "[Status] IN ('Authorizing', 'ActionRequired', 'AuthorizationUnknown', 'Authorized', 'Declined', 'Canceled', 'Expired', 'Failed', 'ManualReview')");
@@ -115,8 +113,17 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTimeOffset>("At")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("FromStatus")
                         .HasMaxLength(30)
@@ -141,7 +148,7 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PaymentAttemptId");
+                    b.HasIndex("PaymentAttemptId", "Id");
 
                     b.ToTable("PaymentAttemptEvents", "payments");
                 });
