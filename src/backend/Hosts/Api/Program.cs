@@ -7,6 +7,7 @@ using TravelBooking.Integrations.Flights.Mock;
 using TravelBooking.Integrations.Flights.Sabre;
 using TravelBooking.Integrations.Flights.Travelport;
 using TravelBooking.Integrations.Payments.Mock;
+using TravelBooking.Integrations.Payments.Stripe;
 using TravelBooking.Modules.Flights;
 using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Payments;
@@ -42,9 +43,16 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
     // environments only, matching the mock's own guard, so a production-like environment never gets fake offers.
     builder.Services.AddMockFlightProvider(builder.Configuration);
 
-    // Likewise the only payment provider until ADR 0006 is decided (Q2, Q5): no card data, no network.
-    builder.Services.AddMockPaymentProvider(builder.Configuration);
+    // Likewise the payment provider unless Stripe is enabled (ADR 0006): no card data, no network.
+    if (!builder.Configuration.IsStripeEnabled())
+    {
+        builder.Services.AddMockPaymentProvider(builder.Configuration);
+    }
 }
+
+// Stripe (ADR 0006), composed only when enabled (Integrations:Payments:Stripe), with test-mode keys from user-secrets /
+// Key Vault. Not production-ready: startup refuses it outside Development and Staging.
+builder.Services.AddStripePaymentProvider(builder.Configuration);
 
 // Candidate flight suppliers (Q6): each is composed only when enabled in configuration (Integrations:Flights:<Name>),
 // with its credentials from user-secrets / Key Vault. Startup refuses any adapter below ProductionReady outside
@@ -104,6 +112,9 @@ if (app.Environment.IsDevelopment())
 
 // Every anonymous API endpoint is rate limited per client (security rules); modules tighten it where they call suppliers.
 var v1 = app.MapGroup("/api/v1").RequireRateLimiting(RateLimitPolicies.Anonymous);
+
+// The payment provider's notifications (webhooks): mapped only when the composed provider sends them.
+v1.MapPaymentsEndpoints();
 
 if (app.Environment.IsDevelopment())
 {

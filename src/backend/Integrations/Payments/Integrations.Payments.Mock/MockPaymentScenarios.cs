@@ -20,8 +20,14 @@ public static class MockPaymentMethods
     /// <summary>Declined for insufficient funds (F-20).</summary>
     public const string InsufficientFunds = "pm_mock_insufficient_funds";
 
-    /// <summary>Needs a customer challenge (SCA) that is never completed in the mock (F-21).</summary>
+    /// <summary>Needs a customer challenge (SCA) that is never completed: the customer abandoned it (F-21).</summary>
     public const string RequiresAction = "pm_mock_requires_action";
+
+    /// <summary>Needs a customer challenge, which the customer then completes: the next lookup finds it Authorized.</summary>
+    public const string ChallengeCompleted = "pm_mock_challenge_completed";
+
+    /// <summary>Needs a customer challenge, which then fails (e.g. 3DS authentication refused): the next lookup finds it Declined.</summary>
+    public const string ChallengeFailed = "pm_mock_challenge_failed";
 
     /// <summary>The authorization times out (Unknown) but WAS made: a lookup by our reference finds it.</summary>
     public const string TimeoutAuthorized = "pm_mock_timeout_authorized";
@@ -39,7 +45,7 @@ public static class MockPaymentMethods
     public const string RefundPending = "pm_mock_refund_pending";
 
     internal static readonly HashSet<string> All =
-        [Approved, Declined, InsufficientFunds, RequiresAction, TimeoutAuthorized, TimeoutNotAuthorized, CaptureTimeout, RefundUnavailableOnce, RefundPending];
+        [Approved, Declined, InsufficientFunds, RequiresAction, ChallengeCompleted, ChallengeFailed, TimeoutAuthorized, TimeoutNotAuthorized, CaptureTimeout, RefundUnavailableOnce, RefundPending];
 }
 
 /// <summary>Provider-wide scenarios, selected by configuration, never by production data.</summary>

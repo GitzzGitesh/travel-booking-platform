@@ -17,6 +17,7 @@
   </Folder>
   <Folder Name="/src/backend/Integrations/Payments/">
     <Project Path="src/backend/Integrations/Payments/Integrations.Payments.Mock/Integrations.Payments.Mock.csproj" />
+    <Project Path="src/backend/Integrations/Payments/Integrations.Payments.Stripe/Integrations.Payments.Stripe.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/" />
   <Folder Name="/src/backend/Modules/Flights/">

@@ -36,7 +36,7 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
 
     public Task<Result<PaymentLookup, ProviderError>> RetrieveAsync(PaymentReference reference, CancellationToken cancellationToken) =>
         Run(cancellationToken, () => Result<PaymentLookup, ProviderError>.Success(
-            new PaymentLookup(_payments.TryGetValue(reference.Value, out var payment) ? payment.Snapshot() : null)));
+            new PaymentLookup(_payments.TryGetValue(reference.Value, out var payment) ? AfterChallenge(payment).Snapshot() : null)));
 
     public Task<Result<RefundLookup, ProviderError>> RetrieveRefundAsync(PaymentReference reference, OperationKey key, CancellationToken cancellationToken) =>
         Run(cancellationToken, () => Result<RefundLookup, ProviderError>.Success(
@@ -71,7 +71,7 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
                 payment.State = PaymentState.Declined;
                 payment.DeclineReason = method is MockPaymentMethods.InsufficientFunds ? PaymentDeclineReason.InsufficientFunds : PaymentDeclineReason.Generic;
                 return Success(payment);
-            case MockPaymentMethods.RequiresAction:
+            case MockPaymentMethods.RequiresAction or MockPaymentMethods.ChallengeCompleted or MockPaymentMethods.ChallengeFailed:
                 payment.State = PaymentState.RequiresAction;
                 payment.ActionToken = new CustomerActionToken($"mock_action_{Hash(details.Reference.Value)}");
                 return Success(payment);
@@ -182,6 +182,19 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
         _operations[details.Key.Value] = operation;
         _refunds[details.Key.Value] = refund;
         return Result<PaymentRefund, ProviderError>.Success(refund);
+    }
+
+    // The customer's challenge happens in their browser, between the authorization and the next lookup.
+    private static MockPayment AfterChallenge(MockPayment payment)
+    {
+        if (payment.State is PaymentState.RequiresAction && payment.Method is MockPaymentMethods.ChallengeCompleted or MockPaymentMethods.ChallengeFailed)
+        {
+            payment.State = payment.Method is MockPaymentMethods.ChallengeCompleted ? PaymentState.Authorized : PaymentState.Declined;
+            payment.DeclineReason = payment.State is PaymentState.Declined ? PaymentDeclineReason.Generic : null;
+            payment.ActionToken = null;
+        }
+
+        return payment;
     }
 
     // true: the key already did this operation (return its result); false: it did another one (a conflict).

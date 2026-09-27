@@ -103,6 +103,34 @@ public static class SupplierHttp
     }
 
     /// <summary>
+    /// Sends one request with its operation's timeout and returns the provider's answer whatever its HTTP status, for
+    /// adapters whose error bodies decide the outcome (e.g. a card decline or an idempotency error). Only transport
+    /// failures are errors here, classified as in <see cref="SendAsync"/>: Unknown on a write, Unavailable on a read.
+    /// </summary>
+    public static async Task<Result<SupplierResponse, ProviderError>> SendRawAsync(
+        HttpClient client, HttpRequestMessage request, TimeSpan timeout, SupplierCallKind kind, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(timeout);
+        try
+        {
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutSource.Token);
+            var body = await response.Content.ReadAsStringAsync(timeoutSource.Token);
+            return Result<SupplierResponse, ProviderError>.Success(new SupplierResponse(response.StatusCode, body));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Failure(kind, "timed out");
+        }
+        catch (HttpRequestException exception)
+        {
+            return Failure(kind, $"connection failed ({exception.HttpRequestError})");
+        }
+    }
+
+    /// <summary>
     /// The shared status mapping. A write's 5xx is <see cref="ProviderErrorKind.Unknown"/> (processing may have
     /// happened). Adapters refine what the status alone cannot tell (e.g. a supplier's own "offer expired" code).
     /// </summary>

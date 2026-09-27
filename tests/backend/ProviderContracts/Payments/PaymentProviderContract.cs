@@ -21,7 +21,16 @@ public abstract class PaymentProviderContract
     /// <summary>A test payment method that needs a customer challenge (SCA).</summary>
     protected abstract PaymentMethodToken ChallengeMethod { get; }
 
-    protected static Money Amount(decimal amount, string currency = "XTS") => new(amount, new CurrencyCode(currency));
+    /// <summary>The currency the contract pays in: the test currency, or one the provider's test mode accepts.</summary>
+    protected virtual string Currency => "XTS";
+
+    /// <summary>
+    /// How long the provider's lookup by our reference may lag its writes (its consistency window): the by-reference
+    /// test waits up to this long. Lookups that know the provider's payment id must be consistent at once.
+    /// </summary>
+    protected virtual TimeSpan ReferenceLookupLag => TimeSpan.Zero;
+
+    protected Money Amount(decimal amount, string? currency = null) => new(amount, new CurrencyCode(currency ?? Currency));
 
     // Losing a race on one key is either the same result or an unknown outcome to look up; never a definitive refusal.
     private static readonly ProviderErrorKind[] _unknownKinds = [ProviderErrorKind.Unknown, ProviderErrorKind.OperationInProgress];
@@ -32,7 +41,8 @@ public abstract class PaymentProviderContract
         var details = Authorization(270m);
 
         var payment = (await Provider.AuthorizeAsync(details, Ct)).Value;
-        var lookup = (await Provider.RetrieveAsync(details.Reference, Ct)).Value;
+        var lookup = await FoundByReference(details.Reference);
+        var direct = (await Provider.RetrieveAsync(details.Reference, payment.Payment, Ct)).Value;
 
         payment.State.ShouldBe(PaymentState.Authorized);
         payment.Reference.ShouldBe(details.Reference);
@@ -40,6 +50,7 @@ public abstract class PaymentProviderContract
         payment.Amount.ShouldBe(details.Amount);
         payment.Captured.Amount.ShouldBe(0);
         lookup.Payment.ShouldNotBeNull().Payment.ShouldBe(payment.Payment);
+        direct.Payment.ShouldNotBeNull().Reference.ShouldBe(details.Reference);
     }
 
     [Fact]
@@ -105,7 +116,7 @@ public abstract class PaymentProviderContract
 
         var captured = (await Provider.CaptureAsync(capture, Ct)).Value;
         var replay = (await Provider.CaptureAsync(capture, Ct)).Value;
-        var lookup = (await Provider.RetrieveAsync(payment.Reference, Ct)).Value.Payment!;
+        var lookup = (await Provider.RetrieveAsync(payment.Reference, payment.Payment, Ct)).Value.Payment!;
 
         captured.State.ShouldBe(PaymentState.Captured);
         captured.Captured.ShouldBe(Amount(250m)); // partial capture: a partially confirmed order
@@ -122,13 +133,13 @@ public abstract class PaymentProviderContract
         var second = await Provider.CaptureAsync(Capture(payment, Amount(100m)), Ct);
 
         second.Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest);
-        (await Provider.RetrieveAsync(payment.Reference, Ct)).Value.Payment!.Captured.ShouldBe(Amount(100m));
+        (await Provider.RetrieveAsync(payment.Reference, payment.Payment, Ct)).Value.Payment!.Captured.ShouldBe(Amount(100m));
     }
 
     [Theory]
-    [InlineData(270.01, "XTS")] // above the authorized amount
+    [InlineData(270.01, null)] // above the authorized amount
     [InlineData(100, "XXX")] // another currency
-    public async Task A_capture_outside_the_authorization_is_refused(decimal amount, string currency)
+    public async Task A_capture_outside_the_authorization_is_refused(decimal amount, string? currency)
     {
         var payment = await Authorized(270m);
 
@@ -147,7 +158,7 @@ public abstract class PaymentProviderContract
 
         results.Where(r => r.IsSuccess).ShouldAllBe(r => r.Value.Captured == payment.Amount);
         results.Where(r => !r.IsSuccess).ShouldAllBe(r => _unknownKinds.Contains(r.Error.Kind));
-        (await Provider.RetrieveAsync(payment.Reference, Ct)).Value.Payment!.Captured.ShouldBe(payment.Amount);
+        (await Provider.RetrieveAsync(payment.Reference, payment.Payment, Ct)).Value.Payment!.Captured.ShouldBe(payment.Amount);
     }
 
     [Fact]
@@ -159,7 +170,7 @@ public abstract class PaymentProviderContract
         (await Provider.VoidAsync(voiding, Ct)).Value.State.ShouldBe(PaymentState.Voided);
         (await Provider.VoidAsync(voiding, Ct)).Value.State.ShouldBe(PaymentState.Voided);
 
-        (await Provider.RetrieveAsync(payment.Reference, Ct)).Value.Payment!.State.ShouldBe(PaymentState.Voided);
+        (await Provider.RetrieveAsync(payment.Reference, payment.Payment, Ct)).Value.Payment!.State.ShouldBe(PaymentState.Voided);
         (await Provider.CaptureAsync(Capture(payment, Amount(1m)), Ct)).Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest);
     }
 
@@ -190,7 +201,7 @@ public abstract class PaymentProviderContract
         found.ShouldNotBeNull().Refund.ShouldBe(refund.Refund);
         (await Provider.RefundAsync(first with { Key = NewKey("refund"), Amount = Amount(170.01m) }, Ct)).Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest);
         (await Provider.RefundAsync(first with { Key = NewKey("refund"), Amount = Amount(170m) }, Ct)).Value.Amount.ShouldBe(Amount(170m));
-        (await Provider.RetrieveAsync(payment.Reference, Ct)).Value.Payment!.Refunded.ShouldBe(Amount(270m));
+        (await Provider.RetrieveAsync(payment.Reference, payment.Payment, Ct)).Value.Payment!.Refunded.ShouldBe(Amount(270m));
     }
 
     [Fact]
@@ -203,7 +214,7 @@ public abstract class PaymentProviderContract
 
         results.Where(r => r.IsSuccess).Select(r => r.Value.Refund).Distinct().Count().ShouldBe(1);
         results.Where(r => !r.IsSuccess).ShouldAllBe(r => _unknownKinds.Contains(r.Error.Kind));
-        (await Provider.RetrieveAsync(payment.Reference, Ct)).Value.Payment!.Refunded.ShouldBe(Amount(50m));
+        (await Provider.RetrieveAsync(payment.Reference, payment.Payment, Ct)).Value.Payment!.Refunded.ShouldBe(Amount(50m));
     }
 
     [Fact]
@@ -246,11 +257,12 @@ public abstract class PaymentProviderContract
     [Fact]
     public async Task Cancellation_is_honoured_before_sending()
     {
+        var provider = Provider; // outside the assertions, so a credential-gated contract reports a skip
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
-        await Should.ThrowAsync<OperationCanceledException>(() => Provider.AuthorizeAsync(Authorization(1m), cancelled.Token));
-        await Should.ThrowAsync<OperationCanceledException>(() => Provider.RetrieveAsync(NewReference(), cancelled.Token));
+        await Should.ThrowAsync<OperationCanceledException>(() => provider.AuthorizeAsync(Authorization(1m), cancelled.Token));
+        await Should.ThrowAsync<OperationCanceledException>(() => provider.RetrieveAsync(NewReference(), cancelled.Token));
     }
 
     protected static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -268,6 +280,22 @@ public abstract class PaymentProviderContract
     }
 
     // A fresh key per call: one capture per payment means a second call is a second, refused, capture.
+    // By our reference only, waiting out the provider's consistency window (never longer).
+    private async Task<PaymentLookup> FoundByReference(PaymentReference reference)
+    {
+        var deadline = DateTimeOffset.UtcNow + ReferenceLookupLag;
+        while (true)
+        {
+            var lookup = (await Provider.RetrieveAsync(reference, Ct)).Value;
+            if (lookup.Found || DateTimeOffset.UtcNow >= deadline)
+            {
+                return lookup;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2), Ct);
+        }
+    }
+
     protected static CaptureDetails Capture(PaymentSnapshot payment, Money amount) =>
         new(payment.Reference, payment.Payment, NewKey("capture"), amount);
 

@@ -7,7 +7,8 @@ namespace TravelBooking.Modules.Payments.Domain;
 /// Authorization: Authorizing → any authorization outcome; ActionRequired and AuthorizationUnknown → any outcome but
 /// Authorizing (a completed challenge, a lookup).
 /// Release: Authorized or ActionRequired → Voiding (saved before the provider call) → Voided, Canceled (an unfinished
-/// challenge), VoidUnknown (looked up, then voided again with the same key) or ManualReview.
+/// challenge), Expired (the hold had already lapsed), VoidUnknown (looked up, then voided again with the same key) or
+/// ManualReview.
 /// Declined, Canceled, Expired, Failed and Voided are final.
 /// </summary>
 internal enum PaymentAttemptStatus
@@ -200,7 +201,13 @@ internal sealed class PaymentAttempt
         return MoveTo(PaymentAttemptStatus.Voiding, "Releasing the hold (void)", change, ProviderPaymentId);
     }
 
-    /// <summary>Records the void's outcome: Voided, Canceled (an unfinished challenge), VoidUnknown or ManualReview.</summary>
+    /// <summary>
+    /// Records what the provider showed about this attempt without changing its status: e.g. a hold found on an attempt
+    /// that is already settled, and its release. Appended to the history like any transition (never updated).
+    /// </summary>
+    public void RecordFinding(string reason, PaymentChange change, string? providerReference) => Record(Status, reason, change, providerReference);
+
+    /// <summary>Records the void's outcome: Voided, Canceled (an unfinished challenge), Expired (the hold had lapsed), VoidUnknown or ManualReview.</summary>
     public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> ResolveVoid(PaymentAttemptStatus to, string reason, PaymentChange change)
     {
         if (!IsVoidInProgress)
@@ -208,7 +215,7 @@ internal sealed class PaymentAttempt
             return Failure(Status is PaymentAttemptStatus.Voided or PaymentAttemptStatus.Canceled ? PaymentAttemptTransitionError.AlreadyFinal : PaymentAttemptTransitionError.Illegal);
         }
 
-        if (to is not (PaymentAttemptStatus.Voided or PaymentAttemptStatus.Canceled or PaymentAttemptStatus.VoidUnknown or PaymentAttemptStatus.ManualReview))
+        if (to is not (PaymentAttemptStatus.Voided or PaymentAttemptStatus.Canceled or PaymentAttemptStatus.Expired or PaymentAttemptStatus.VoidUnknown or PaymentAttemptStatus.ManualReview))
         {
             return Failure(PaymentAttemptTransitionError.Illegal);
         }

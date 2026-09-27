@@ -58,6 +58,9 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.AddOrdersBackgroundJobs();
             services.AddPaymentsBackgroundJobs();
             services.AddSingleton<BackgroundJobRunner>();
+
+            // The mock provider's notifications, signed the test's way (PaymentNotificationTests): maps the webhook endpoint.
+            services.AddSingleton<TravelBooking.Modules.Payments.Ports.IPaymentNotifications, TestPaymentNotifications>();
         });
     }
 }
