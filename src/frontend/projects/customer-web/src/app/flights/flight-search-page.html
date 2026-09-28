@@ -333,6 +333,11 @@
                               Price confirmed with the airline:
                               {{ formatMoney(check.confirmed.totalPrice) }}.
                             </p>
+                            @if (!session.signedIn()) {
+                              <p class="note" id="sign-in-to-book">
+                                Sign in to book this flight. Sign-in is coming soon.
+                              </p>
+                            }
                           }
                           @default {
                             @if (check.kind === 'changed' || check.kind === 'accepting') {
