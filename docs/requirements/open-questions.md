@@ -11,7 +11,7 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 | Q3 | **First product**: flights or hotels for the first vertical slice? | Scopes the MVP. Hotels are simpler (no ticketing/APIS); flights are the harder, higher-value flow | Phase 2 product slice | **Answered 2026-09-25:** flights first (see below) |
 | Q4 | **Team size and roles** now and at launch? | Affects PR review policy, CODEOWNERS, on-call, branch protection strictness | ADR 0012 review model | **Answered 2026-09-25** (see below) |
 | Q5 | **Charge currencies** and FX policy: charge in the customer's currency or the supplier's? Who carries FX risk? | Money model, Stripe configuration, reconciliation | **Gate:** before real payment/currency integration (Phase 5). Produces a separate FX-policy ADR; ADR 0010's technical conventions do not wait for it | Open |
-| Q6 | **Target suppliers** and their contract/commercial model (aggregator with balance, GDS with BSP/ARC accreditation, bed bank)? | Shapes provider ports and payment flows | **Gate:** before the supplier provider ports are frozen (ADR 0004) and before Phase 5 | **Open (preparation done 2026-09-26):** Amadeus, Sabre, Travelport and Duffel are technically prepared as candidate adapters (ADR 0018, `docs/architecture/flight-suppliers.md`); no supplier is chosen, credentialed or commercially verified |
+| Q6 | **Target suppliers** and their contract/commercial model (aggregator with balance, GDS with BSP/ARC accreditation, bed bank)? | Shapes provider ports and payment flows | **Gate:** before the supplier provider ports are frozen (ADR 0004) and before Phase 5 | **Answered 2026-09-27:** Amadeus is the first production flight supplier (ADR 0019); see Answered. Commercial model and credentials still pending (R1–R13) |
 | Q7 | Are **combined flight + hotel orders** in scope, and when? | Package travel liability (Q2) and Order aggregate design | Phase "second product" | Open |
 | Q8 | **Customer accounts**: is guest checkout allowed? | Identity flows, booking retrieval by reference + email | Phase 4 | **Answered 2026-09-26:** no guest checkout; login is required before booking (see below) |
 | Q9 | **Data retention periods** for PII, bookings, and financial records? | Privacy compliance vs financial/legal retention | Data design, Phase 4 | Open |
@@ -24,6 +24,11 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 
 ### Q1. Merchant of record: flights (answered 2026-09-25)
 **Answer:** **Option A. Our company is the merchant of record for flights**: we charge the customer, and the supplier is settled separately. This keeps card entry on our payment provider's hosted fields (PCI SAQ-A, ADR 0006) and supports the authorize → book → capture flow (ADR 0005). **Not decided:** the hotel model, charge currencies and FX (Q5), the payment provider's commercial terms, fraud rules (Q10), refund thresholds (Q11), and supplier settlement (Q6).
+
+### Q6. Target flight supplier (answered 2026-09-27)
+**Answer:** **Amadeus is the first production flight supplier** and the first real supplier integration. **Our company is the merchant of record** (Q1). Sabre, Travelport and Duffel remain supported future integrations, and their adapters are kept (ADR 0018). Recorded in [ADR 0019](../adr/0019-amadeus-first-production-flight-supplier.md).
+
+**Not decided yet**, and not production-ready: the Amadeus product (Self-Service or Enterprise), credentials, the commercial agreement and ticketing party, and the supplier confirmations listed as R1–R13 in ADR 0019. No live Amadeus call has been made.
 
 ### Q8. Customer accounts (answered 2026-09-26)
 **Answer:** **a customer must be signed in before proceeding to booking.** There is no guest checkout, so booking retrieval by reference, email and one-time code is not needed. Every order belongs to an authenticated customer. **Not decided:** the identity provider's tenant and configuration (ADR 0008 stays Proposed), whether search and offer selection need sign-in (today they are anonymous), and data retention (Q9).

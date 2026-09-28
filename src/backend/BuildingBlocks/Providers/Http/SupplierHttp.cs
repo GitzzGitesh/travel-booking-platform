@@ -61,8 +61,17 @@ public sealed record SupplierResponse(HttpStatusCode Status, string Body);
 /// </summary>
 public static class SupplierHttp
 {
+    /// <param name="describeFailure">
+    /// Optional: a diagnostic suffix for an error response, from its body (e.g. the supplier's error code), or null. It
+    /// only adds to the message: the kind always comes from <see cref="Classify"/>, so a write's Unknown stays Unknown.
+    /// </param>
     public static async Task<Result<SupplierResponse, ProviderError>> SendAsync(
-        HttpClient client, HttpRequestMessage request, TimeSpan timeout, SupplierCallKind kind, CancellationToken cancellationToken)
+        HttpClient client,
+        HttpRequestMessage request,
+        TimeSpan timeout,
+        SupplierCallKind kind,
+        CancellationToken cancellationToken,
+        Func<SupplierResponse, string?>? describeFailure = null)
     {
         // Cancelled by the caller before anything is sent: nothing was attempted.
         cancellationToken.ThrowIfCancellationRequested();
@@ -73,9 +82,15 @@ public static class SupplierHttp
         {
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutSource.Token);
             var body = await response.Content.ReadAsStringAsync(timeoutSource.Token);
-            return response.IsSuccessStatusCode
-                ? Result<SupplierResponse, ProviderError>.Success(new SupplierResponse(response.StatusCode, body))
-                : Result<SupplierResponse, ProviderError>.Failure(new ProviderError(Classify(response.StatusCode, kind), $"HTTP {(int)response.StatusCode}"));
+            if (response.IsSuccessStatusCode)
+            {
+                return Result<SupplierResponse, ProviderError>.Success(new SupplierResponse(response.StatusCode, body));
+            }
+
+            var error = new ProviderError(Classify(response.StatusCode, kind), $"HTTP {(int)response.StatusCode}");
+            return Result<SupplierResponse, ProviderError>.Failure(describeFailure?.Invoke(new SupplierResponse(response.StatusCode, body)) is { Length: > 0 } suffix
+                ? error with { Message = $"{error.Message}, {suffix}" }
+                : error);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -12,6 +12,9 @@ async function fillSearch(
   page: Page,
   options: { roundTrip?: boolean; cabin?: string; destination?: string } = {},
 ): Promise<void> {
+  // The page is server-rendered: typing before Angular hydrates it is lost when hydration resets the form. Hydration
+  // removes the server's `ngh` markers, so wait until none is left.
+  await expect(page.locator('[ngh]')).toHaveCount(0, { timeout: 15_000 });
   if (options.roundTrip) {
     await page.getByLabel('Round trip').check();
   }
