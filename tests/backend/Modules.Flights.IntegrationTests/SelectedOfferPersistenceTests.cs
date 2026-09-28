@@ -29,7 +29,7 @@ public sealed class SelectedOfferPersistenceTests(SqlServerFixture sql)
         }
 
         await using var read = sql.CreateContext();
-        var stored = await new SqlSelectedOfferStore(read).FindAsync(offer.SearchId, offer.OfferId, TestContext.Current.CancellationToken);
+        var stored = await new SqlSelectedOfferStore(read).FindAsync(offer.SearchId, offer.OfferId, offer.CustomerId, TestContext.Current.CancellationToken);
 
         stored.ShouldNotBeNull();
         stored.TotalPrice.ShouldBe(new Money(1234.5678m, new CurrencyCode("XTS")));

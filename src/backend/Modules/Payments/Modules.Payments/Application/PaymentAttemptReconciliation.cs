@@ -107,9 +107,16 @@ internal sealed partial class PaymentAttemptReconciler(
     private async Task VoidAsync(PaymentAttempt attempt, CancellationToken cancellationToken)
     {
         // Saved as Voiding before the provider is asked: a crash leaves a void to look up, never a forgotten one.
-        if (!attempt.BeginVoid(Change()).IsSuccess || !await store.TrySaveAsync(cancellationToken))
+        if (!attempt.BeginVoid(Change()).IsSuccess)
         {
+            // A hold to release that cannot be (no provider payment id): never silent, a person must release it.
+            LogCannotRelease(logger, attempt.Id, attempt.Status.ToString());
             return;
+        }
+
+        if (!await store.TrySaveAsync(cancellationToken))
+        {
+            return; // changed concurrently: the next run looks again
         }
 
         await SendVoidAsync(attempt, cancellationToken);
@@ -170,6 +177,9 @@ internal sealed partial class PaymentAttemptReconciler(
     }
 
     private PaymentChange Change() => new(timeProvider.GetUtcNow(), Actor, null);
+
+    [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentHoldNotReleasable", Message = "Alert: payment attempt {AttemptId} ({Status}) is to be released but cannot be voided; manual action needed")]
+    private static partial void LogCannotRelease(ILogger logger, Guid attemptId, string status);
 
     [LoggerMessage(Level = LogLevel.Error, EventName = "StrayPaymentHold", Message = "Alert: payment attempt {AttemptId} is settled, but provider {ProviderId} reports a hold on it; releasing it")]
     private static partial void LogStrayHold(ILogger logger, Guid attemptId, string providerId);

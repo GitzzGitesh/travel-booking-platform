@@ -11,19 +11,23 @@ namespace TravelBooking.Modules.Flights.Application;
 /// </summary>
 internal sealed class FlightSelections(ISelectedOfferStore store, RevalidateSelectedOfferHandler revalidation, FlightProviders providers, TimeProvider timeProvider) : IFlightSelections
 {
-    public async Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> GetBookableAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
-        Bookable(await store.FindByIdAsync(selectedOfferId, cancellationToken));
+    public async Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> GetBookableAsync(Guid selectedOfferId, string customerId, CancellationToken cancellationToken) =>
+        Bookable(Owned(await store.FindByIdAsync(selectedOfferId, cancellationToken), customerId));
 
-    public async Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, CancellationToken cancellationToken)
+    public async Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, string customerId, CancellationToken cancellationToken)
     {
+        if (Owned(await store.FindByIdAsync(selectedOfferId, cancellationToken), customerId) is not { } selected)
+        {
+            return Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(FlightSelectionUnavailable.NotFound);
+        }
+
         // Checkout asks this right before payment: an offer its supplier cannot book is refused before any money moves.
-        if (await store.FindByIdAsync(selectedOfferId, cancellationToken) is { } selected
-            && (providers.FindFor(selected.ProviderId, ProviderOperation.Book) is null || providers.FindFor(selected.ProviderId, ProviderOperation.RetrieveBooking) is null))
+        if (providers.FindFor(selected.ProviderId, ProviderOperation.Book) is null || providers.FindFor(selected.ProviderId, ProviderOperation.RetrieveBooking) is null)
         {
             return Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(FlightSelectionUnavailable.SupplierCannotBook);
         }
 
-        var revalidated = await revalidation.HandleAsync(selectedOfferId, cancellationToken);
+        var revalidated = await revalidation.HandleAsync(selectedOfferId, customerId, cancellationToken);
         if (revalidated.IsSuccess)
         {
             return Bookable(revalidated.Value);
@@ -38,6 +42,9 @@ internal sealed class FlightSelections(ISelectedOfferStore store, RevalidateSele
             _ => FlightSelectionUnavailable.TryAgain, // Conflict or ProviderFailed: nothing changed
         });
     }
+
+    // Only the selection's owner may order it: an anonymous selection, or another customer's, is simply not found.
+    private static SelectedOffer? Owned(SelectedOffer? offer, string customerId) => offer is not null && offer.IsOwnedBy(customerId) ? offer : null;
 
     private Result<BookableFlightSelection, FlightSelectionUnavailable> Bookable(SelectedOffer? offer)
     {

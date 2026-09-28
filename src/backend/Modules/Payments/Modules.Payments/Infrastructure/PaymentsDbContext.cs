@@ -54,6 +54,9 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         // The reconciliation job's work list.
         attempt.HasIndex(a => new { a.Status, a.UpdatedAt });
 
+        // The per-customer attempt limit (customer id + created date: database rules).
+        attempt.HasIndex(a => new { a.CustomerId, a.CreatedAt });
+
         // Finding an attempt from a provider notification that carries only the provider's payment id: one attempt per
         // provider payment, enforced by the database.
         attempt.HasIndex(a => new { a.ProviderId, a.ProviderPaymentId }).IsUnique().HasFilter("[ProviderPaymentId] IS NOT NULL");

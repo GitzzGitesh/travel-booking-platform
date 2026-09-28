@@ -16,7 +16,7 @@ public sealed class FlightSelectionsTests
         var offer = SelectedOfferStateTests.NewSelection();
         offer.Revalidate(SelectedOfferStateTests.Current(270m), SelectedOfferStateTests.Now);
 
-        var result = await Selections(offer).GetBookableAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Selections(offer).GetBookableAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Value.ShouldBe(new BookableFlightSelection(offer.Id, SelectedOfferStateTests.Selected, offer.OfferExpiresAt, null, null));
     }
@@ -29,7 +29,7 @@ public sealed class FlightSelectionsTests
         var quote = offer.PriceQuoteId!.Value;
         offer.AcceptPrice(quote, SelectedOfferStateTests.Now.AddMinutes(1));
 
-        var result = await Selections(offer).GetBookableAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Selections(offer).GetBookableAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Value.AgreedTotalPrice.ShouldBe(SelectedOfferStateTests.Xts(310.5m));
         result.Value.AcceptedPriceQuoteId.ShouldBe(quote);
@@ -43,7 +43,7 @@ public sealed class FlightSelectionsTests
         offer.Revalidate(SelectedOfferStateTests.Current(270m), SelectedOfferStateTests.Now);
         _clock.Advance(TimeSpan.FromMinutes(30));
 
-        var result = await Selections(offer).GetBookableAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Selections(offer).GetBookableAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBe(FlightSelectionUnavailable.Expired);
     }
@@ -55,8 +55,8 @@ public sealed class FlightSelectionsTests
         var changed = SelectedOfferStateTests.NewSelection();
         changed.Revalidate(SelectedOfferStateTests.Current(310.5m), SelectedOfferStateTests.Now);
 
-        (await Selections(selected).GetBookableAsync(selected.Id, TestContext.Current.CancellationToken)).Error.ShouldBe(FlightSelectionUnavailable.NeedsPriceCheck);
-        (await Selections(changed).GetBookableAsync(changed.Id, TestContext.Current.CancellationToken)).Error.ShouldBe(FlightSelectionUnavailable.NeedsPriceCheck);
+        (await Selections(selected).GetBookableAsync(selected.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken)).Error.ShouldBe(FlightSelectionUnavailable.NeedsPriceCheck);
+        (await Selections(changed).GetBookableAsync(changed.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken)).Error.ShouldBe(FlightSelectionUnavailable.NeedsPriceCheck);
     }
 
     [Theory]
@@ -67,12 +67,12 @@ public sealed class FlightSelectionsTests
         var offer = SelectedOfferStateTests.NewSelection();
         offer.MarkUnavailable(status);
 
-        (await Selections(offer).GetBookableAsync(offer.Id, TestContext.Current.CancellationToken)).Error.ShouldBe(expected);
+        (await Selections(offer).GetBookableAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken)).Error.ShouldBe(expected);
     }
 
     [Fact]
     public async Task An_unknown_selection_is_not_found() =>
-        (await Selections(SelectedOfferStateTests.NewSelection()).GetBookableAsync(Guid.NewGuid(), TestContext.Current.CancellationToken))
+        (await Selections(SelectedOfferStateTests.NewSelection()).GetBookableAsync(Guid.NewGuid(), SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken))
             .Error.ShouldBe(FlightSelectionUnavailable.NotFound);
 
     // GetBookableAsync reads the store only: the revalidation handler is never called here.
@@ -81,7 +81,7 @@ public sealed class FlightSelectionsTests
 
     private sealed class SingleOfferStore(SelectedOffer offer) : ISelectedOfferStore
     {
-        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, string? customerId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> TryAddAsync(SelectedOffer offer, CancellationToken cancellationToken) => throw new NotSupportedException();
 

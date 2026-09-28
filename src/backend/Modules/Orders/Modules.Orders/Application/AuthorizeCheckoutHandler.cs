@@ -41,14 +41,47 @@ internal enum CheckoutStatus
     PaymentManualReview,
 }
 
-internal sealed record CheckoutResult(Guid OrderId, CheckoutStatus Status, Guid? PaymentId, string? DeclineReason = null, string? CustomerAction = null)
+internal sealed record CheckoutResult(Guid OrderId, CheckoutStatus Status, Guid? PaymentId, string? CustomerAction = null)
 {
+    /// <summary>What a customer may be told (generic declines): never why a card was refused, never a manual review.</summary>
+    public CustomerPaymentState CustomerState => Status switch
+    {
+        CheckoutStatus.BookingStarted => CustomerPaymentState.Accepted,
+        CheckoutStatus.ActionRequired => CustomerPaymentState.ActionRequired,
+        CheckoutStatus.Declined or CheckoutStatus.PaymentFailed => CustomerPaymentState.Declined,
+        CheckoutStatus.PaymentPending => CustomerPaymentState.Pending,
+        CheckoutStatus.PaymentManualReview => CustomerPaymentState.Unavailable,
+        _ => throw new InvalidOperationException($"Unmapped checkout status {Status}."),
+    };
+
     // Never printed: the customer action is a live client secret.
     private bool PrintMembers(StringBuilder builder)
     {
-        builder.Append($"OrderId = {OrderId}, Status = {Status}, PaymentId = {PaymentId}, DeclineReason = {DeclineReason}, CustomerAction = {(CustomerAction is null ? "null" : "[redacted]")}");
+        builder.Append($"OrderId = {OrderId}, Status = {Status}, PaymentId = {PaymentId}, CustomerAction = {(CustomerAction is null ? "null" : "[redacted]")}");
         return true;
     }
+}
+
+/// <summary>
+/// The only payment states a customer-facing response may show (security rules: generic declines). The reason for a
+/// decline, provider codes and a manual review stay in operations data (the payment attempt and its history).
+/// </summary>
+internal enum CustomerPaymentState
+{
+    /// <summary>The payment is held and the booking has started.</summary>
+    Accepted,
+
+    /// <summary>Complete the challenge (e.g. 3-D Secure), then repeat the request with the same key.</summary>
+    ActionRequired,
+
+    /// <summary>The payment did not go through: nothing is held. Use another payment method (a new key).</summary>
+    Declined,
+
+    /// <summary>Not known yet: repeat the request with the same key later.</summary>
+    Pending,
+
+    /// <summary>Payment cannot be completed right now: contact support. (A manual review, never named as one.)</summary>
+    Unavailable,
 }
 
 internal abstract record CheckoutFailure
@@ -87,6 +120,9 @@ internal abstract record CheckoutFailure
 
     /// <summary>F-32: another payment attempt for this order (another key) may still hold funds; finish that one first.</summary>
     internal sealed record PaymentInProgress : CheckoutFailure;
+
+    /// <summary>Too many payment attempts for this order or customer: no new attempt started (Payments:AttemptLimits).</summary>
+    internal sealed record AttemptLimitReached : CheckoutFailure;
 
     /// <summary>
     /// The payment was authorized but the order will not book on it (its offer expired meanwhile, or the held amount is
@@ -161,6 +197,7 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
                 OrderPaymentFailure.IdempotencyKeyReused => new CheckoutFailure.IdempotencyKeyReused(),
                 OrderPaymentFailure.InvalidPaymentMethod => new CheckoutFailure.InvalidPaymentMethod(),
                 OrderPaymentFailure.PaymentInProgress => new CheckoutFailure.PaymentInProgress(),
+                OrderPaymentFailure.AttemptLimitReached => new CheckoutFailure.AttemptLimitReached(),
                 _ => new CheckoutFailure.InvalidRequest(),
             });
         }
@@ -173,7 +210,7 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
     {
         foreach (var item in order.Items)
         {
-            var revalidated = await selections.RevalidateAsync(item.SelectedOfferId, cancellationToken);
+            var revalidated = await selections.RevalidateAsync(item.SelectedOfferId, order.CustomerId, cancellationToken);
             if (!revalidated.IsSuccess)
             {
                 return revalidated.Error switch
@@ -217,7 +254,7 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
                 OrderPaymentStatus.Pending => CheckoutStatus.PaymentPending,
                 OrderPaymentStatus.ManualReview => CheckoutStatus.PaymentManualReview,
                 _ => CheckoutStatus.PaymentFailed,
-            }, payment.PaymentId, payment.DeclineReason, payment.CustomerAction));
+            }, payment.PaymentId, payment.CustomerAction));
         }
 
         var context = Context(command);

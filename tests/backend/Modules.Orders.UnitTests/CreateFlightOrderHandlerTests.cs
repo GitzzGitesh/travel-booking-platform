@@ -72,7 +72,8 @@ public sealed class CreateFlightOrderHandlerTests
 
         var someoneElse = await Handler(store).HandleAsync(Command("key-1", customer: "cust-2"), TestContext.Current.CancellationToken);
 
-        someoneElse.Error.ShouldBe(new CreateFlightOrderFailure.SelectionAlreadyOrdered(null));
+        // The selection is cust-1's: for anyone else it is simply not found, whether ordered or not.
+        someoneElse.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(FlightSelectionUnavailable.NotFound));
     }
 
     [Fact]
@@ -81,7 +82,7 @@ public sealed class CreateFlightOrderHandlerTests
         var store = new FakeStore();
         await Handler(store).HandleAsync(Command("key-1"), TestContext.Current.CancellationToken);
 
-        var other = await Handler(store).HandleAsync(Command("key-1", customer: "cust-2") with { SelectedOfferId = Guid.NewGuid() }, TestContext.Current.CancellationToken);
+        var other = await Handler(store, new StubSelections(null, owner: "cust-2")).HandleAsync(Command("key-1", customer: "cust-2") with { SelectedOfferId = Guid.NewGuid() }, TestContext.Current.CancellationToken);
 
         other.Value.Created.ShouldBeTrue();
         other.Value.Order.CustomerId.ShouldBe("cust-2");
@@ -142,15 +143,17 @@ public sealed class CreateFlightOrderHandlerTests
     private static CreateFlightOrderHandler Handler(FakeStore store, IFlightSelections? selections = null) =>
         new(selections ?? new StubSelections(null), store, new FakeTimeProvider(OrderTests.Now));
 
-    private sealed class StubSelections(FlightSelectionUnavailable? unavailable) : IFlightSelections
+    // The selection belongs to cust-1, as Flights enforces: anyone else gets NotFound.
+    private sealed class StubSelections(FlightSelectionUnavailable? unavailable, string owner = "cust-1") : IFlightSelections
     {
-        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> GetBookableAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
-            Task.FromResult(unavailable is { } reason
+        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> GetBookableAsync(Guid selectedOfferId, string customerId, CancellationToken cancellationToken) =>
+            Task.FromResult(customerId != owner ? Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(FlightSelectionUnavailable.NotFound)
+                : unavailable is { } reason
                 ? Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(reason)
                 : Result<BookableFlightSelection, FlightSelectionUnavailable>.Success(
                     new BookableFlightSelection(selectedOfferId, OrderTests.Price, OrderTests.Now.AddMinutes(30), null, null)));
 
-        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, string customerId, CancellationToken cancellationToken) =>
             throw new NotSupportedException("Order creation never calls the supplier.");
     }
 

@@ -57,7 +57,7 @@ internal static class OrderEndpoints
             CreateFlightOrderFailure.IdempotencyKeyReused => Problem(StatusCodes.Status409Conflict, "idempotency-conflict",
                 "This idempotency key was already used for another flight selection."),
             CreateFlightOrderFailure.SelectionAlreadyOrdered already => Problem(StatusCodes.Status409Conflict, "selection-already-ordered",
-                "This flight selection already has an order.", already.OrderId is { } own ? new Dictionary<string, object?> { ["orderId"] = own } : null),
+                "This flight selection already has an order.", new Dictionary<string, object?> { ["orderId"] = already.OrderId }),
             CreateFlightOrderFailure.SelectionUnavailable unavailable => Unavailable(unavailable.Reason),
             CreateFlightOrderFailure.CustomerRequired => Problem(StatusCodes.Status403Forbidden, "customer-required", "Sign in to create an order."),
             _ => throw new InvalidOperationException($"Unmapped order failure {result.Error.GetType().Name}."),

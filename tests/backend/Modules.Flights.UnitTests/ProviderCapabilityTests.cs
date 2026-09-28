@@ -32,7 +32,7 @@ public sealed class ProviderCapabilityTests
         var other = new StubProvider("other", FlightProviderCapabilities.NotDeclared);
         var handler = new RevalidateSelectedOfferHandler(new OneOfferStore(offer), new FlightProviders([owner, other], "stub"), new FakeTimeProvider(_now));
 
-        var result = await handler.HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await handler.HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.ProviderFailed>().Error.Kind.ShouldBe(ProviderErrorKind.Unavailable);
         (owner.Calls, other.Calls).ShouldBe((0, 0));
@@ -60,7 +60,7 @@ public sealed class ProviderCapabilityTests
         var store = new OneOfferStore(offer);
         var selections = new FlightSelections(store, new RevalidateSelectedOfferHandler(store, providers, new FakeTimeProvider(_now)), providers, new FakeTimeProvider(_now));
 
-        var result = await selections.RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await selections.RevalidateAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBe(TravelBooking.Modules.Flights.Contracts.FlightSelectionUnavailable.SupplierCannotBook);
         searchOnly.Calls.ShouldBe(0); // not even revalidated: nothing proceeds towards payment
@@ -152,7 +152,7 @@ public sealed class ProviderCapabilityTests
 
     private sealed class OneOfferStore(SelectedOffer offer) : ISelectedOfferStore
     {
-        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, string? customerId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> TryAddAsync(SelectedOffer offer, CancellationToken cancellationToken) => throw new NotSupportedException();
 

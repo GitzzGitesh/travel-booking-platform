@@ -105,9 +105,10 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         var mine = (await Create(key, selection.Id)).Value.Order;
 
         var theirs = await Create(NewKey(), selection.Id, customer: "test-customer-2");
-        var sameKey = await Create(key, (await ConfirmedSelection("JFK")).Id, customer: "test-customer-2");
+        var sameKey = await Create(key, (await ConfirmedSelection("JFK", owner: "test-customer-2")).Id, customer: "test-customer-2");
 
-        theirs.Error.ShouldBe(new CreateFlightOrderFailure.SelectionAlreadyOrdered(null));
+        // Another customer's selection is simply not found: nothing tells whether it exists or is ordered.
+        theirs.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(FlightSelectionUnavailable.NotFound));
         sameKey.Value.Created.ShouldBeTrue(); // keys are per customer
         using var scope = api.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
@@ -119,6 +120,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
     public async Task A_selection_that_was_not_revalidated_cannot_be_ordered()
     {
         var selected = await Select("JFK");
+        await Own(selected);
 
         var result = await Create(NewKey(), selected);
 
@@ -133,6 +135,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         var selected = await Select(destination);
         using var client = api.CreateClient();
         (await client.PostAsync($"/api/v1/flights/selected-offers/{selected}/revalidations", null, TestContext.Current.CancellationToken)).Dispose();
+        await Own(selected);
 
         var result = await Create(NewKey(), selected);
 
@@ -281,7 +284,9 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
     private static string NewKey() => $"order-{Guid.NewGuid():N}";
 
     /// <summary>Search, select and revalidate over HTTP; accept a changed price. Returns the selection and its prices.</summary>
-    private async Task<(Guid Id, TravelBooking.BuildingBlocks.Money SelectedPrice, TravelBooking.BuildingBlocks.Money AgreedPrice)> ConfirmedSelection(string destination)
+    // Selections are made and revalidated over anonymous HTTP here, then given to the customer the test orders as: the
+    // handler-level tests use plain customer ids, not tokens (CustomerOrderEndpointTests covers the signed-in flow).
+    private async Task<(Guid Id, TravelBooking.BuildingBlocks.Money SelectedPrice, TravelBooking.BuildingBlocks.Money AgreedPrice)> ConfirmedSelection(string destination, string owner = _customer)
     {
         var selected = await Select(destination);
         using var client = api.CreateClient();
@@ -297,7 +302,15 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         using var scope = api.Services.CreateScope();
         var offer = await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Flights.Infrastructure.FlightsDbContext>()
             .SelectedOffers.AsNoTracking().SingleAsync(o => o.Id == selected, TestContext.Current.CancellationToken);
+        await Own(selected, owner);
         return (selected, offer.TotalPrice, offer.AgreedPrice);
+    }
+
+    private async Task Own(Guid selectedOfferId, string owner = _customer)
+    {
+        using var scope = api.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Flights.Infrastructure.FlightsDbContext>().Database
+            .ExecuteSqlInterpolatedAsync($"UPDATE flights.SelectedOffers SET CustomerId = {owner} WHERE Id = {selectedOfferId}", TestContext.Current.CancellationToken);
     }
 
     private async Task<Guid> Select(string destination)

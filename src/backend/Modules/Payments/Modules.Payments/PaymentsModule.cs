@@ -27,6 +27,10 @@ public static class PaymentsModule
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PaymentOperations>();
+        services.AddOptions<PaymentAttemptLimits>()
+            .Bind(configuration.GetSection(PaymentAttemptLimits.SectionName))
+            .Validate(options => options.MaxAttemptsPerOrder > 0 && options.MaxAttemptsPerCustomerPerDay > 0, "Payments:AttemptLimits values must be positive.")
+            .ValidateOnStart();
         services.AddOptions<PaymentReconciliationOptions>()
             .Bind(configuration.GetSection(PaymentReconciliationOptions.SectionName))
             .Validate(options => options.NotFoundConclusiveAfter >= TimeSpan.Zero, "Payments:Reconciliation:NotFoundConclusiveAfter must not be negative.")
@@ -43,6 +47,9 @@ public static class PaymentsModule
         services.AddScoped<AuthorizeOrderPaymentHandler>();
         services.AddScoped<IOrderPayments>(provider => provider.GetRequiredService<AuthorizeOrderPaymentHandler>());
         services.AddScoped<IPaymentNotificationStore, SqlPaymentNotificationStore>();
+
+        // The way out of ManualReview (an operations action; its admin endpoint comes with staff identity).
+        services.AddScoped<ResolvePaymentReviewHandler>();
         services.AddScoped<ReceivePaymentNotificationHandler>();
 
         // Checked at startup in both hosts: one provider, and only a production-ready one outside Development and Staging.

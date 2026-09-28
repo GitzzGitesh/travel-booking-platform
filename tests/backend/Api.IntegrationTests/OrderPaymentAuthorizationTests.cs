@@ -19,6 +19,22 @@ public sealed class OrderPaymentAuthorizationTests(SqlApiFactory api) : IClassFi
     private static readonly Money _total = new(540m, new CurrencyCode("XTS"));
 
     [Fact]
+    public async Task An_order_gets_at_most_its_attempt_limit_counted_from_the_database()
+    {
+        var orderId = Guid.NewGuid();
+        for (var i = 0; i < 5; i++) // the default per-order limit
+        {
+            (await Authorize(Request(MockPaymentMethods.Declined) with { OrderId = orderId })).Value.Status.ShouldBe(OrderPaymentStatus.Declined);
+        }
+
+        var sixth = await Authorize(Request(MockPaymentMethods.Approved) with { OrderId = orderId });
+
+        sixth.Error.ShouldBe(OrderPaymentFailure.AttemptLimitReached);
+        using var scope = api.Services.CreateScope();
+        (await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().PaymentAttempts.CountAsync(a => a.OrderId == orderId, Ct)).ShouldBe(5);
+    }
+
+    [Fact]
     public async Task An_approved_payment_is_authorized_and_persisted_with_its_history()
     {
         var request = Request(MockPaymentMethods.Approved);
@@ -42,9 +58,11 @@ public sealed class OrderPaymentAuthorizationTests(SqlApiFactory api) : IClassFi
         var first = (await Authorize(request)).Value;
         var replay = (await Authorize(request)).Value;
 
-        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, _total, "InsufficientFunds"));
+        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, _total)); // no reason passed on
         replay.ShouldBe(first);
-        (await Load(first.PaymentId)).Events.Count.ShouldBe(2);
+        var stored = await Load(first.PaymentId);
+        stored.Events.Count.ShouldBe(2);
+        stored.DeclineReason.ShouldBe("InsufficientFunds"); // kept for operations
     }
 
     [Fact]

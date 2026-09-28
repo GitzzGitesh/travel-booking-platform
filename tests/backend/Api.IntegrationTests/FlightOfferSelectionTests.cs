@@ -53,6 +53,9 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         builder.UseSetting("ConnectionStrings:Orders", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Payments", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Customers", _sql.GetConnectionString());
+        // Many tests here pay as the same customer: the per-customer attempt limit is tested on its own (unit, and
+        // OrderPaymentAuthorizationTests for the per-order limit), so it does not cap unrelated tests.
+        builder.UseSetting("Payments:AttemptLimits:MaxAttemptsPerCustomerPerDay", "10000");
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<TimeProvider>(Clock);
