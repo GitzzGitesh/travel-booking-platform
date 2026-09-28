@@ -55,10 +55,10 @@ internal abstract record CreateFlightOrderFailure
     internal sealed record IdempotencyKeyReused : CreateFlightOrderFailure;
 
     /// <summary>
-    /// Another order already books this selection: at most one booking per selection. <paramref name="OrderId"/> is set
-    /// only when that order is the same customer's; another customer's order id is never revealed.
+    /// The caller already has an order for this selection (under another key): at most one booking per selection.
+    /// Selections belong to one customer, so another customer's order is never reported here.
     /// </summary>
-    internal sealed record SelectionAlreadyOrdered(Guid? OrderId) : CreateFlightOrderFailure;
+    internal sealed record SelectionAlreadyOrdered(Guid OrderId) : CreateFlightOrderFailure;
 
     internal sealed record SelectionUnavailable(FlightSelectionUnavailable Reason) : CreateFlightOrderFailure;
 }
@@ -89,7 +89,7 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
             return replayed;
         }
 
-        var selection = await selections.GetBookableAsync(command.SelectedOfferId, cancellationToken);
+        var selection = await selections.GetBookableAsync(command.SelectedOfferId, command.CustomerId, cancellationToken);
         if (!selection.IsSuccess)
         {
             return Failure(new CreateFlightOrderFailure.SelectionUnavailable(selection.Error));
@@ -110,9 +110,10 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
             return Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(order, Created: true));
         }
 
-        // A concurrent request won the key or the selection: answer as a replay would.
+        // A concurrent request won the key or the selection: answer as a replay would. The selection is the caller's
+        // own (checked above), so the order holding it is theirs too.
         return await Replay(command, cancellationToken)
-            ?? throw new InvalidOperationException("An order insert conflicted, but neither the key nor the selection is taken.");
+            ?? throw new InvalidOperationException("An order insert conflicted, but neither the key nor the caller's selection is taken.");
     }
 
     private async Task<Result<CreatedOrder, CreateFlightOrderFailure>?> Replay(CreateFlightOrder command, CancellationToken cancellationToken)
@@ -136,8 +137,11 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
             return Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(ours, Created: false));
         }
 
-        var owned = await store.FindOwnedAsync(orderId, command.CustomerId, cancellationToken) is not null;
-        return Failure(new CreateFlightOrderFailure.SelectionAlreadyOrdered(owned ? orderId : null));
+        // The caller's own order for this selection is named. Another customer's is never revealed: the request goes on
+        // as if there were none, and the selection (theirs, not the caller's) is not found.
+        return await store.FindOwnedAsync(orderId, command.CustomerId, cancellationToken) is not null
+            ? Failure(new CreateFlightOrderFailure.SelectionAlreadyOrdered(orderId))
+            : null;
     }
 
     /// <summary>The timeline actor for a customer's own action.</summary>

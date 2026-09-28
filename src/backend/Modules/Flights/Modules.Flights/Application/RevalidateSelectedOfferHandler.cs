@@ -42,10 +42,11 @@ internal abstract record SelectedOfferFailure
 /// </summary>
 internal sealed class RevalidateSelectedOfferHandler(ISelectedOfferStore store, FlightProviders providers, TimeProvider timeProvider)
 {
-    public async Task<Result<SelectedOffer, SelectedOfferFailure>> HandleAsync(Guid selectedOfferId, CancellationToken cancellationToken)
+    /// <param name="customerId">The caller (from a validated token only), or null: another customer's selection is not found.</param>
+    public async Task<Result<SelectedOffer, SelectedOfferFailure>> HandleAsync(Guid selectedOfferId, string? customerId, CancellationToken cancellationToken)
     {
         var offer = await store.FindForUpdateAsync(selectedOfferId, cancellationToken);
-        if (offer is null)
+        if (offer is null || !offer.IsVisibleTo(customerId))
         {
             return Failure(new SelectedOfferFailure.NotFound());
         }
@@ -125,10 +126,11 @@ internal sealed class RevalidateSelectedOfferHandler(ISelectedOfferStore store, 
 /// </summary>
 internal sealed class AcceptSelectedOfferPriceHandler(ISelectedOfferStore store, TimeProvider timeProvider)
 {
-    public async Task<Result<SelectedOffer, SelectedOfferFailure>> HandleAsync(Guid selectedOfferId, Guid priceQuoteId, CancellationToken cancellationToken)
+    /// <param name="customerId">The caller (from a validated token only), or null: only the owner accepts an owned selection's price.</param>
+    public async Task<Result<SelectedOffer, SelectedOfferFailure>> HandleAsync(Guid selectedOfferId, Guid priceQuoteId, string? customerId, CancellationToken cancellationToken)
     {
         var offer = await store.FindForUpdateAsync(selectedOfferId, cancellationToken);
-        if (offer is null)
+        if (offer is null || !offer.IsVisibleTo(customerId))
         {
             return Result<SelectedOffer, SelectedOfferFailure>.Failure(new SelectedOfferFailure.NotFound());
         }

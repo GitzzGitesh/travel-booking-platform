@@ -216,8 +216,11 @@ public sealed class SelectedOfferStateTests
 
     internal static Money Xts(decimal amount) => new(amount, new CurrencyCode("XTS"));
 
+    /// <summary>The signed-in customer who owns <see cref="NewSelection"/>.</summary>
+    internal const string Customer = "customer-1";
+
     internal static SelectedOffer NewSelection() =>
-        SelectedOffer.Select(Guid.NewGuid(), Guid.NewGuid(), Criteria(), Current(270m), Now.AddMinutes(-5));
+        SelectedOffer.Select(Guid.NewGuid(), Guid.NewGuid(), Criteria(), Current(270m), Now.AddMinutes(-5), Customer);
 
     internal static FlightOffer Current(decimal amount, DateTimeOffset? expires = null) => new(
         new ProviderOfferRef("stub", "stub-token-1"),
@@ -254,7 +257,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         var provider = new StubProvider(Success(270m));
 
-        var result = await Handler(store, provider).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, provider).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Value.Status.ShouldBe(SelectedOfferStatus.Confirmed);
         provider.Revalidated.ShouldHaveSingleItem().ShouldBe(new ProviderOfferRef("stub", "stub-token-1"));
@@ -266,7 +269,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
     {
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
 
-        var result = await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         var changed = result.Error.ShouldBeOfType<SelectedOfferFailure.PriceChanged>().Offer;
         changed.Status.ShouldBe(SelectedOfferStatus.PriceChanged);
@@ -281,7 +284,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var provider = new StubProvider(Success(270m));
         _clock.Advance(TimeSpan.FromMinutes(31));
 
-        var result = await Handler(store, provider).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, provider).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.OfferExpired>();
         provider.Revalidated.ShouldBeEmpty();
@@ -297,8 +300,8 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         var provider = new StubProvider(Failure(kind));
 
-        var first = await Handler(store, provider).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
-        var again = await Handler(store, provider).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var first = await Handler(store, provider).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
+        var again = await Handler(store, provider).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         offer.Status.ShouldBe(status);
         first.Error.GetType().ShouldBe(again.Error.GetType());
@@ -313,7 +316,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
     {
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
 
-        var result = await Handler(store, new StubProvider(Failure(kind))).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, new StubProvider(Failure(kind))).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.ProviderFailed>().Error.Kind.ShouldBe(kind);
         offer.Status.ShouldBe(SelectedOfferStatus.Selected);
@@ -327,7 +330,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, _) = StoreWith(offer);
         var provider = new StubProvider(Success(270m));
 
-        var result = await Handler(store, provider).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, provider).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.ProviderFailed>().Error.Kind.ShouldBe(ProviderErrorKind.Unavailable);
         offer.Status.ShouldBe(SelectedOfferStatus.Selected);
@@ -341,7 +344,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         var expired = Result<FlightOffer, ProviderError>.Success(SelectedOfferStateTests.Current(270m, SelectedOfferStateTests.Now.AddSeconds(-1)));
 
-        var result = await Handler(store, new StubProvider(expired)).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, new StubProvider(expired)).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.OfferExpired>();
         offer.Status.ShouldBe(SelectedOfferStatus.Expired);
@@ -352,7 +355,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
     {
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
 
-        var result = await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.PriceChanged>().Offer.ShouldBeSameAs(offer);
         store.Saves.ShouldBe(1);
@@ -362,10 +365,10 @@ public sealed class RevalidateSelectedOfferHandlerTests
     public async Task A_concurrent_change_while_accepting_is_a_conflict()
     {
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
-        await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
         store.SaveSucceeds = false;
 
-        var result = await new AcceptSelectedOfferPriceHandler(store, _clock).HandleAsync(offer.Id, offer.PriceQuoteId!.Value, TestContext.Current.CancellationToken);
+        var result = await new AcceptSelectedOfferPriceHandler(store, _clock).HandleAsync(offer.Id, offer.PriceQuoteId!.Value, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.Conflict>();
     }
@@ -375,7 +378,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
     {
         var (store, _) = StoreWith(SelectedOfferStateTests.NewSelection());
 
-        var result = await Handler(store, new StubProvider(Success(270m))).HandleAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+        var result = await Handler(store, new StubProvider(Success(270m))).HandleAsync(Guid.NewGuid(), SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.NotFound>();
     }
@@ -386,7 +389,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         store.SaveSucceeds = false;
 
-        var result = await Handler(store, new StubProvider(Success(270m))).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await Handler(store, new StubProvider(Success(270m))).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<SelectedOfferFailure.Conflict>();
     }
@@ -395,15 +398,15 @@ public sealed class RevalidateSelectedOfferHandlerTests
     public async Task Accepting_the_quote_confirms_it_and_a_stale_quote_is_rejected()
     {
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
-        await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, TestContext.Current.CancellationToken);
+        await Handler(store, new StubProvider(Success(310.5m))).HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
         var accept = new AcceptSelectedOfferPriceHandler(store, _clock);
 
-        var stale = await accept.HandleAsync(offer.Id, Guid.NewGuid(), TestContext.Current.CancellationToken);
-        var accepted = await accept.HandleAsync(offer.Id, offer.PriceQuoteId!.Value, TestContext.Current.CancellationToken);
+        var stale = await accept.HandleAsync(offer.Id, Guid.NewGuid(), SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
+        var accepted = await accept.HandleAsync(offer.Id, offer.PriceQuoteId!.Value, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         stale.Error.ShouldBeOfType<SelectedOfferFailure.StaleQuote>();
         accepted.Value.AgreedPrice.ShouldBe(SelectedOfferStateTests.Xts(310.5m));
-        (await accept.HandleAsync(Guid.NewGuid(), Guid.NewGuid(), TestContext.Current.CancellationToken))
+        (await accept.HandleAsync(Guid.NewGuid(), Guid.NewGuid(), SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken))
             .Error.ShouldBeOfType<SelectedOfferFailure.NotFound>();
     }
 
@@ -415,7 +418,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         var provider = new StubProvider(Success((decimal)amount));
 
-        var result = await new FlightSelections(store, Handler(store, provider), new FlightProviders([provider]), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await new FlightSelections(store, Handler(store, provider), new FlightProviders([provider]), _clock).RevalidateAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         provider.Revalidated.ShouldHaveSingleItem();
         if (expected is { } reason)
@@ -437,7 +440,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
     {
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
 
-        var result = await new FlightSelections(store, Handler(store, new StubProvider(Failure(kind))), new FlightProviders([new StubProvider(Failure(kind))]), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await new FlightSelections(store, Handler(store, new StubProvider(Failure(kind))), new FlightProviders([new StubProvider(Failure(kind))]), _clock).RevalidateAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBe(expected);
     }
@@ -448,7 +451,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         var (store, offer) = StoreWith(SelectedOfferStateTests.NewSelection());
         store.SaveSucceeds = false;
 
-        var result = await new FlightSelections(store, Handler(store, new StubProvider(Success(270m))), new FlightProviders([new StubProvider(Success(270m))]), _clock).RevalidateAsync(offer.Id, TestContext.Current.CancellationToken);
+        var result = await new FlightSelections(store, Handler(store, new StubProvider(Success(270m))), new FlightProviders([new StubProvider(Success(270m))]), _clock).RevalidateAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
         result.Error.ShouldBe(FlightSelectionUnavailable.TryAgain);
     }
@@ -472,7 +475,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
 
         public bool SaveSucceeds { get; set; } = true;
 
-        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, string? customerId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> TryAddAsync(SelectedOffer offer, CancellationToken cancellationToken) => throw new NotSupportedException();
 

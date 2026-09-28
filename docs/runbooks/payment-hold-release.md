@@ -16,7 +16,14 @@ All queries are read-only.
 The reconciliation job looks the payment up every run and repeats the void with the same key while the payment is still authorized. Check the Worker is running and `payments.JobLeases` shows `payments.reconcile-attempts` renewing. If the provider is down, wait for it to recover.
 
 ### Case B: `ManualReview`
-The provider reported something unexpected: a different amount, a captured payment, a void it refused, or a payment it no longer finds. Compare with the provider's dashboard using `ProviderPaymentId`. Resolving it needs the operator path, which does not exist yet (`docs/progress.md`). Until then, escalate.
+The provider reported something unexpected: a different amount, a captured payment, a void it refused, or a payment it no longer finds. Compare with the provider's dashboard using `ProviderPaymentId`, then resolve it with `ResolvePaymentReviewHandler` (operator id and reason required; the admin endpoint comes with staff identity, so until then engineering runs it for you).
+- It looks the payment up with the provider and moves the attempt only to what the provider holds:
+  - Authorized (this attempt's amount: then released by reconciliation if Orders asked, or used as usual);
+  - Declined, Canceled, Expired, Voided, or Failed (not found after the consistency window).
+- A capture, another amount, a failed lookup or "not found" too early leave it in review. The check is recorded, and you escalate.
+- Repeating the resolution changes nothing.
+- A payment the provider once had but no longer finds stays in review: check the Stripe account and key in use before anything else.
+- **Alert `PaymentHoldNotReleasable`:** a hold is to be released but has no provider payment id to void. Void it in the provider's dashboard, then record it with finance.
 
 ### Case C: outbox message given up (`FailedAt` set)
 The release request never reached Payments. Find the cause from `LastError` and the Worker logs (search for the message id). Once it is fixed, a database administrator can clear `FailedAt` and set `NextAttemptAt` to now on that one row. Redelivery is safe, because the Payments inbox ignores duplicates.

@@ -248,7 +248,7 @@ public sealed class FlightProvidersTests
         var other = new IdProvider("other");
         var handler = new RevalidateSelectedOfferHandler(new OneOfferStore(offer), new FlightProviders([other, stub]), new FakeTimeProvider(_now));
 
-        (await handler.HandleAsync(offer.Id, TestContext.Current.CancellationToken)).IsSuccess.ShouldBeTrue();
+        (await handler.HandleAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken)).IsSuccess.ShouldBeTrue();
 
         (stub.Calls, other.Calls).ShouldBe((1, 0));
     }
@@ -312,7 +312,7 @@ public sealed class FlightProvidersTests
 
     private sealed class OneOfferStore(SelectedOffer offer) : ISelectedOfferStore
     {
-        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, string? customerId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> TryAddAsync(SelectedOffer offer, CancellationToken cancellationToken) => throw new NotSupportedException();
 

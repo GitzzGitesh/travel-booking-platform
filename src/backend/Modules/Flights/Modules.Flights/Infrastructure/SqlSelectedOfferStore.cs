@@ -10,8 +10,8 @@ internal sealed class SqlSelectedOfferStore(FlightsDbContext db) : ISelectedOffe
     // SQL Server duplicate-key errors: unique index (2601) and unique constraint (2627).
     private static readonly int[] _uniqueViolations = [2601, 2627];
 
-    public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, CancellationToken cancellationToken) =>
-        db.SelectedOffers.AsNoTracking().SingleOrDefaultAsync(o => o.SearchId == searchId && o.OfferId == offerId, cancellationToken);
+    public Task<SelectedOffer?> FindAsync(Guid searchId, Guid offerId, string? customerId, CancellationToken cancellationToken) =>
+        db.SelectedOffers.AsNoTracking().SingleOrDefaultAsync(o => o.SearchId == searchId && o.OfferId == offerId && o.CustomerId == customerId, cancellationToken);
 
     public Task<SelectedOffer?> FindByIdAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
         db.SelectedOffers.AsNoTracking().SingleOrDefaultAsync(o => o.Id == selectedOfferId, cancellationToken);

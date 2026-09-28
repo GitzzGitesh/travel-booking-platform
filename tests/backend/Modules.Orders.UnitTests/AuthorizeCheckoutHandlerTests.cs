@@ -34,6 +34,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         _order.PaymentAuthorizationId.ShouldBe(_payments.PaymentId.ToString());
         _order.Timeline[^1].ProviderReference.ShouldBe(_payments.PaymentId.ToString());
         _selections.Revalidated.ShouldBe([_order.Items[0].SelectedOfferId]);
+        _selections.RevalidatedFor.ShouldBe([_order.CustomerId]); // only the owner's selection may be paid for
         var request = _payments.Requests.ShouldHaveSingleItem();
         request.ShouldBe(new OrderPaymentRequest(_order.Id, "cust-1", "pay-1", OrderTests.Price, "pm_test", "trace-1"));
     }
@@ -187,6 +188,38 @@ public sealed class AuthorizeCheckoutHandlerTests
         (release.OrderId, release.PaymentId).ShouldBe((_order.Id, _payments.PaymentId));
     }
 
+    [Theory]
+    [InlineData(CheckoutStatus.BookingStarted, CustomerPaymentState.Accepted)]
+    [InlineData(CheckoutStatus.ActionRequired, CustomerPaymentState.ActionRequired)]
+    [InlineData(CheckoutStatus.Declined, CustomerPaymentState.Declined)]
+    [InlineData(CheckoutStatus.PaymentFailed, CustomerPaymentState.Declined)]
+    [InlineData(CheckoutStatus.PaymentPending, CustomerPaymentState.Pending)]
+    [InlineData(CheckoutStatus.PaymentManualReview, CustomerPaymentState.Unavailable)] // never named as a review
+    internal void Customers_see_only_generic_payment_states(CheckoutStatus status, CustomerPaymentState expected)
+    {
+        new CheckoutResult(_order.Id, status, Guid.NewGuid()).CustomerState.ShouldBe(expected);
+        Enum.GetValues<CheckoutStatus>().ShouldAllBe(s => Enum.IsDefined(new CheckoutResult(_order.Id, s, null).CustomerState)); // every status is mapped
+    }
+
+    [Fact]
+    public async Task A_decline_reaches_checkout_without_a_reason()
+    {
+        _payments.Status = OrderPaymentStatus.Declined;
+
+        var result = (await Handle()).Value;
+
+        (result.Status, result.CustomerState).ShouldBe((CheckoutStatus.Declined, CustomerPaymentState.Declined));
+        typeof(CheckoutResult).GetProperties().Select(p => p.Name).ShouldNotContain("DeclineReason");
+    }
+
+    [Fact]
+    public async Task The_payment_attempt_limit_refuses_checkout_before_anything_is_booked()
+    {
+        _payments.Failure = OrderPaymentFailure.AttemptLimitReached;
+
+        (await Handle()).Error.ShouldBeOfType<CheckoutFailure.AttemptLimitReached>();
+    }
+
     [Fact]
     public void Tokens_and_customer_actions_are_never_printed()
     {
@@ -246,12 +279,16 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         public List<Guid> Revalidated { get; } = [];
 
-        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> GetBookableAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+        /// <summary>The customer each revalidation was asked for: the order's owner, who must own the selection.</summary>
+        public List<string> RevalidatedFor { get; } = [];
+
+        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> GetBookableAsync(Guid selectedOfferId, string customerId, CancellationToken cancellationToken) =>
             throw new NotSupportedException("The checkout always asks the supplier.");
 
-        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, CancellationToken cancellationToken)
+        public Task<Result<BookableFlightSelection, FlightSelectionUnavailable>> RevalidateAsync(Guid selectedOfferId, string customerId, CancellationToken cancellationToken)
         {
             Revalidated.Add(selectedOfferId);
+            RevalidatedFor.Add(customerId);
             return Task.FromResult(Next ?? Result<BookableFlightSelection, FlightSelectionUnavailable>.Success(
                 new BookableFlightSelection(selectedOfferId, OrderTests.Price, OrderTests.Now.AddMinutes(30), null, null)));
         }

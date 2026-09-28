@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TravelBooking.BuildingBlocks;
 using TravelBooking.Modules.Payments.Contracts;
@@ -34,10 +35,34 @@ internal interface IPaymentAttemptStore
     /// </summary>
     Task<IReadOnlyList<Guid>> FindReconcilableAsync(DateTimeOffset settledBefore, int limit, CancellationToken cancellationToken);
 
+    /// <summary>How many attempts this order has had, whatever their outcome.</summary>
+    Task<int> CountForOrderAsync(Guid orderId, CancellationToken cancellationToken);
+
+    /// <summary>How many attempts this customer started since <paramref name="since"/>, across all orders.</summary>
+    Task<int> CountForCustomerSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken);
+
     Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken);
 
     /// <summary>Records a consumed integration event, saved with the next <see cref="TrySaveAsync"/> (ADR 0007 inbox).</summary>
     void MarkConsumed(Guid messageId, string handler, DateTimeOffset at);
+}
+
+/// <summary>
+/// <c>Payments:AttemptLimits</c>: the minimum technical guardrail before checkout is customer-facing (card testing,
+/// repeated authorization). Counted from stored attempts, so it survives restarts. The values are business-configurable
+/// (fraud policy, Q10); the defaults only bound abuse.
+/// </summary>
+internal sealed class PaymentAttemptLimits
+{
+    public const string SectionName = "Payments:AttemptLimits";
+
+    public static readonly TimeSpan CustomerWindow = TimeSpan.FromHours(24);
+
+    /// <summary>Attempts (of any outcome) one order may have.</summary>
+    public int MaxAttemptsPerOrder { get; set; } = 5;
+
+    /// <summary>Attempts one customer may start across all orders in the last 24 hours.</summary>
+    public int MaxAttemptsPerCustomerPerDay { get; set; } = 20;
 }
 
 internal sealed class PaymentReconciliationOptions
@@ -62,11 +87,13 @@ internal sealed class PaymentReconciliationOptions
 /// provider authorization per attempt, ever; any later request for the same attempt looks it up instead (never blindly
 /// retry payment writes).
 /// </summary>
-internal sealed class AuthorizeOrderPaymentHandler(
+internal sealed partial class AuthorizeOrderPaymentHandler(
     IPaymentAttemptStore store,
     PaymentOperations operations,
     TimeProvider timeProvider,
-    IOptions<PaymentReconciliationOptions> reconciliation) : IOrderPayments
+    IOptions<PaymentReconciliationOptions> reconciliation,
+    IOptions<PaymentAttemptLimits>? limits = null,
+    ILogger<AuthorizeOrderPaymentHandler>? logger = null) : IOrderPayments
 {
     public const int MaxIdempotencyKeyLength = 100;
 
@@ -98,6 +125,12 @@ internal sealed class AuthorizeOrderPaymentHandler(
         catch (ArgumentException)
         {
             return Failure(OrderPaymentFailure.InvalidPaymentMethod); // never echoed or logged: it may be a card number
+        }
+
+        // A durable guardrail (counted from the stored attempts): never a new authorization past the limits.
+        if (await LimitReachedAsync(request, cancellationToken))
+        {
+            return Failure(OrderPaymentFailure.AttemptLimitReached);
         }
 
         // Saved before the provider call: whatever happens next, this attempt can be found and looked up.
@@ -237,6 +270,28 @@ internal sealed class AuthorizeOrderPaymentHandler(
         _ => null,
     };
 
+    private async Task<bool> LimitReachedAsync(OrderPaymentRequest request, CancellationToken cancellationToken)
+    {
+        var settings = limits?.Value ?? new PaymentAttemptLimits();
+        var forOrder = await store.CountForOrderAsync(request.OrderId, cancellationToken);
+        var forCustomer = await store.CountForCustomerSinceAsync(request.CustomerId, timeProvider.GetUtcNow() - PaymentAttemptLimits.CustomerWindow, cancellationToken);
+        if (forOrder < settings.MaxAttemptsPerOrder && forCustomer < settings.MaxAttemptsPerCustomerPerDay)
+        {
+            return false;
+        }
+
+        // A security event (security rules: suspicious payment velocity), with our ids only.
+        if (logger is not null)
+        {
+            LogLimitReached(logger, request.OrderId, request.CustomerId, forOrder, forCustomer);
+        }
+
+        return true;
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, EventName = "PaymentAttemptLimitReached", Message = "Security: payment attempt limit reached for order {OrderId}, customer {CustomerId} ({OrderAttempts} for the order, {CustomerAttempts} for the customer in 24 hours); no attempt started")]
+    private static partial void LogLimitReached(ILogger logger, Guid orderId, string customerId, int orderAttempts, int customerAttempts);
+
     private static OrderPaymentResult Report(PaymentAttempt attempt, PaymentOutcome? outcome) =>
         new(
             attempt.Id,
@@ -254,7 +309,6 @@ internal sealed class AuthorizeOrderPaymentHandler(
                 _ => OrderPaymentStatus.Failed,
             },
             attempt.Amount,
-            attempt.Status == PaymentAttemptStatus.Declined ? attempt.DeclineReason : null,
             attempt.Status == PaymentAttemptStatus.ActionRequired && attempt.ReleaseRequestedAt is null && outcome is PaymentOutcome.ActionRequired action
                 ? action.Payment.CustomerActionToken?.Value
                 : null);

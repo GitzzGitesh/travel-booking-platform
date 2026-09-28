@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Modules.Flights.Application;
 using TravelBooking.Modules.Flights.Domain;
 using TravelBooking.Modules.Flights.Ports;
@@ -13,9 +14,17 @@ internal static class SelectFlightOfferEndpoint
         SelectFlightOfferRequest request,
         SelectFlightOfferHandler handler,
         IAirportDirectory airports,
+        HttpContext http,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(request.SearchId!.Value, request.OfferId!.Value, cancellationToken);
+        // Anonymous, or a signed-in customer who then owns the selection (the only one who may order it).
+        var caller = await http.AuthenticateOptionalCustomerAsync();
+        if (caller.IsRejected)
+        {
+            return SelectedOfferProblems.Unauthorized();
+        }
+
+        var result = await handler.HandleAsync(request.SearchId!.Value, request.OfferId!.Value, caller.CustomerId, cancellationToken);
 
         if (!result.IsSuccess)
         {

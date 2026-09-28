@@ -53,7 +53,9 @@ public sealed class AuthorizeOrderPaymentHandlerTests
         var first = (await handler.AuthorizeAsync(Request("key-1"), Ct)).Value;
         var replay = (await handler.AuthorizeAsync(Request("key-1"), Ct)).Value;
 
-        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, _total, "InsufficientFunds"));
+        // Generic decline: the reason stays on the attempt (operations data), never in the result other modules pass on.
+        first.ShouldBe(new OrderPaymentResult(first.PaymentId, OrderPaymentStatus.Declined, _total));
+        _store.Attempts.Single(a => a.Id == first.PaymentId).DeclineReason.ShouldBe("InsufficientFunds");
         replay.ShouldBe(first);
         (_provider.Authorizations, _provider.Lookups).ShouldBe((1, 0));
     }
@@ -253,11 +255,49 @@ public sealed class AuthorizeOrderPaymentHandlerTests
         result.ToString().ShouldNotContain("secret_live_1");
     }
 
-    private AuthorizeOrderPaymentHandler Handler() => new(
+    [Fact]
+    public async Task No_attempt_starts_once_the_order_has_had_its_maximum_and_the_provider_is_not_called()
+    {
+        _provider.OnAuthorize = details => Snapshot(details.Reference, PaymentState.Declined);
+        var handler = Handler(new PaymentAttemptLimits { MaxAttemptsPerOrder = 3 });
+        for (var i = 1; i <= 3; i++)
+        {
+            (await handler.AuthorizeAsync(Request($"key-{i}"), Ct)).Value.Status.ShouldBe(OrderPaymentStatus.Declined);
+        }
+
+        var fourth = await handler.AuthorizeAsync(Request("key-4"), Ct);
+        var replay = await handler.AuthorizeAsync(Request("key-1"), Ct);
+
+        fourth.Error.ShouldBe(OrderPaymentFailure.AttemptLimitReached);
+        _provider.Authorizations.ShouldBe(3); // never a fourth authorization
+        _store.Attempts.Count.ShouldBe(3);
+        replay.Value.Status.ShouldBe(OrderPaymentStatus.Declined); // replaying an existing attempt is never limited
+    }
+
+    [Fact]
+    public async Task A_customer_is_limited_across_orders_within_24_hours_and_the_window_moves_on()
+    {
+        _provider.OnAuthorize = details => Snapshot(details.Reference, PaymentState.Declined);
+        var handler = Handler(new PaymentAttemptLimits { MaxAttemptsPerCustomerPerDay = 2 });
+        await handler.AuthorizeAsync(Request("k1") with { OrderId = Guid.NewGuid() }, Ct);
+        await handler.AuthorizeAsync(Request("k2") with { OrderId = Guid.NewGuid() }, Ct);
+
+        var third = await handler.AuthorizeAsync(Request("k3") with { OrderId = Guid.NewGuid() }, Ct);
+        var otherCustomer = await handler.AuthorizeAsync(Request("k4") with { OrderId = Guid.NewGuid(), CustomerId = "cust-2" }, Ct);
+        _clock.Advance(TimeSpan.FromHours(24) + TimeSpan.FromSeconds(1));
+        var nextDay = await handler.AuthorizeAsync(Request("k5") with { OrderId = Guid.NewGuid() }, Ct);
+
+        third.Error.ShouldBe(OrderPaymentFailure.AttemptLimitReached);
+        otherCustomer.IsSuccess.ShouldBeTrue();
+        nextDay.IsSuccess.ShouldBeTrue();
+    }
+
+    private AuthorizeOrderPaymentHandler Handler(PaymentAttemptLimits? limits = null) => new(
         _store,
         new PaymentOperations(_provider, _clock, NullLogger<PaymentOperations>.Instance),
         _clock,
-        Options.Create(new PaymentReconciliationOptions { NotFoundConclusiveAfter = _window }));
+        Options.Create(new PaymentReconciliationOptions { NotFoundConclusiveAfter = _window }),
+        Options.Create(limits ?? new PaymentAttemptLimits()));
 
     private static OrderPaymentRequest Request(string key) => new(_orderId, "cust-1", key, _total, "pm_test");
 

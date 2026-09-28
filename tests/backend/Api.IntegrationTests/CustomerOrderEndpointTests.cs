@@ -122,7 +122,7 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     public async Task A_customer_orders_a_confirmed_selection_at_its_agreed_price_and_replays_safely()
     {
         var token = Token();
-        var selection = await ConfirmedSelection("JFK");
+        var selection = await ConfirmedSelection("JFK", token);
         var key = NewKey();
 
         using var created = await CreateOrder(token, selection, key);
@@ -146,26 +146,140 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     {
         var alice = Token();
         var bob = Token();
-        var selection = await ConfirmedSelection("JFK");
+        var selection = await ConfirmedSelection("JFK", alice);
         var key = NewKey();
         using var created = await CreateOrder(alice, selection, key);
         var orderId = (await Read(created)).GetProperty("orderId").GetGuid();
 
         (await Send(HttpMethod.Get, $"{_orders}/{orderId}", bob)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
-        // Bob's own key space: his request for Alice's selection is refused without revealing her order.
+        // Bob's own key space: Alice's selection is not his, so for him it is not found (not "already ordered").
         using var taken = await CreateOrder(bob, selection, key);
-        taken.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        var problem = (await taken.Content.ReadFromJsonAsync<ProblemDetails>(Ct))!;
-        problem.Type.ShouldBe("selection-already-ordered");
-        problem.Extensions.ContainsKey("orderId").ShouldBeFalse();
+        (await Problem(taken)).ShouldBe((HttpStatusCode.UnprocessableEntity, "offer-expired"));
+    }
+
+    // ---------- Selection ownership ----------
+
+    [Fact]
+    public async Task Another_customer_can_neither_check_nor_accept_nor_order_a_customers_selection_and_learns_nothing()
+    {
+        var alice = Token();
+        var bob = Token();
+        var alicesSelection = await Select("ZPC", alice); // its revalidation will quote a changed price
+
+        using var bobChecks = await Revalidate(alicesSelection, bob);
+        using var anonymousChecks = await Revalidate(alicesSelection, token: null);
+        using var bobAccepts = await SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/v1/flights/selected-offers/{alicesSelection}/price-acceptances") { Content = JsonContent.Create(new { priceQuoteId = Guid.NewGuid() }) }, bob);
+        using var unknown = await Revalidate(Guid.NewGuid(), bob);
+        using var bobOrders = await CreateOrder(bob, alicesSelection, NewKey());
+
+        // Exactly what an unknown selection gets: nothing tells that Alice's exists.
+        (await Problem(bobChecks)).ShouldBe((HttpStatusCode.NotFound, "selected-offer-not-found"));
+        (await Problem(anonymousChecks)).ShouldBe((HttpStatusCode.NotFound, "selected-offer-not-found"));
+        (await Problem(bobAccepts)).ShouldBe((HttpStatusCode.NotFound, "selected-offer-not-found"));
+        (await Problem(unknown)).ShouldBe((HttpStatusCode.NotFound, "selected-offer-not-found"));
+        (await Problem(bobOrders)).ShouldBe((HttpStatusCode.UnprocessableEntity, "offer-expired"));
+        using var alicesOwn = await Revalidate(alicesSelection, alice);
+        (await Problem(alicesOwn)).ShouldBe((HttpStatusCode.UnprocessableEntity, "price-changed")); // still hers, untouched
+    }
+
+    [Fact]
+    public async Task An_anonymous_selection_can_be_checked_but_never_ordered()
+    {
+        var token = Token();
+        var anonymous = await Select("JFK", token: null);
+        using (var revalidated = await Revalidate(anonymous, token: null))
+        {
+            revalidated.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        using var ordered = await CreateOrder(token, anonymous, NewKey());
+
+        (await Problem(ordered)).ShouldBe((HttpStatusCode.UnprocessableEntity, "offer-expired")); // Q8: select while signed in
+    }
+
+    [Fact]
+    public async Task Selections_are_per_owner_so_nobody_can_block_or_see_anothers_and_a_signed_in_customer_can_select_after_browsing()
+    {
+        var alice = Token();
+        var (searchId, offerId) = await Search("JFK");
+        using var anonymous = await SelectOffer(searchId, offerId, token: null); // browsing before signing in
+        using var alices = await SelectOffer(searchId, offerId, alice);
+        using var alicesAgain = await SelectOffer(searchId, offerId, alice);
+        using var bobs = await SelectOffer(searchId, offerId, Token());
+
+        (anonymous.StatusCode, alices.StatusCode, alicesAgain.StatusCode, bobs.StatusCode)
+            .ShouldBe((HttpStatusCode.Created, HttpStatusCode.Created, HttpStatusCode.OK, HttpStatusCode.Created));
+        var ids = new[] { anonymous, alices, alicesAgain, bobs }.Select(r => r.Content.ReadFromJsonAsync<Selection>(JsonSerializerOptions.Web, Ct).Result!.SelectedOfferId).ToList();
+        ids[2].ShouldBe(ids[1]); // Alice's replay is hers
+        new[] { ids[0], ids[1], ids[3] }.Distinct().Count().ShouldBe(3); // three owners, three selections
+    }
+
+    [Fact]
+    public async Task A_token_that_is_not_valid_is_refused_on_the_selection_endpoints_never_treated_as_anonymous()
+    {
+        var (searchId, offerId) = await Search("JFK");
+        var forged = TestCustomerTokens.For("user-1", DateTimeOffset.UtcNow, wrongKey: true);
+
+        using var select = await SelectOffer(searchId, offerId, forged);
+        using var check = await Revalidate(Guid.NewGuid(), forged);
+
+        using var accept = await SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/v1/flights/selected-offers/{Guid.NewGuid()}/price-acceptances") { Content = JsonContent.Create(new { priceQuoteId = Guid.NewGuid() }) }, forged);
+        using var basic = await SendAsync(new HttpRequestMessage(HttpMethod.Post, "/api/v1/flights/selected-offers") { Content = JsonContent.Create(new { searchId, offerId }), Headers = { { "Authorization", "Basic dXNlcjpwYXNz" } } }, token: null);
+
+        (await Problem(select)).ShouldBe((HttpStatusCode.Unauthorized, "unauthorized"));
+        (await Problem(check)).ShouldBe((HttpStatusCode.Unauthorized, "unauthorized"));
+        (await Problem(accept)).ShouldBe((HttpStatusCode.Unauthorized, "unauthorized"));
+        (await Problem(basic)).ShouldBe((HttpStatusCode.Unauthorized, "unauthorized"));
+        select.Headers.WwwAuthenticate.ToString().ShouldBe("Bearer");
+    }
+
+    [Fact]
+    public async Task A_signed_token_that_fails_the_customer_policy_cannot_own_a_selection()
+    {
+        // With a required scope, a validly signed token without it (e.g. an app-only token) is refused, not anonymous.
+        using var scoped = api.WithWebHostBuilder(b => b.UseSetting("Authentication:Customers:RequiredScope", "orders.readwrite"));
+        using var client = scoped.CreateClient();
+        var (searchId, offerId) = await Search("JFK");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/flights/selected-offers") { Content = JsonContent.Create(new { searchId, offerId }) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", TestCustomerTokens.For($"object-{Guid.NewGuid():N}", DateTimeOffset.UtcNow));
+
+        using var response = await client.SendAsync(request, Ct);
+
+        (await Problem(response)).ShouldBe((HttpStatusCode.Unauthorized, "unauthorized"));
+    }
+
+    // ---------- Replay semantics ----------
+
+    [Fact]
+    public async Task A_replay_after_a_restart_returns_the_same_order_resource_and_creates_nothing()
+    {
+        var token = Token();
+        var selection = await ConfirmedSelection("JFK", token);
+        var key = NewKey();
+        using var created = await CreateOrder(token, selection, key);
+        var original = await Read(created);
+
+        // A new host on the same database: nothing is remembered in memory, the key is in the database.
+        using var restarted = api.WithWebHostBuilder(_ => { });
+        using var client = restarted.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, _orders) { Content = JsonContent.Create(new { selectedOfferId = selection }) };
+        request.Headers.Add("Idempotency-Key", key);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var replay = await client.SendAsync(request, Ct);
+
+        replay.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await Read(replay)).GetRawText().ShouldBe(original.GetRawText());
+        using var scope = api.Services.CreateScope();
+        (await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Orders.Infrastructure.OrdersDbContext>()
+            .Set<TravelBooking.Modules.Orders.Domain.Order>().CountAsync(o => o.IdempotencyKey == key, Ct)).ShouldBe(1);
     }
 
     [Fact]
     public async Task Parallel_order_requests_with_one_key_create_one_order()
     {
         var token = Token();
-        var selection = await ConfirmedSelection("JFK");
+        var selection = await ConfirmedSelection("JFK", token);
         var key = NewKey();
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => CreateOrder(token, selection, key)));
@@ -184,10 +298,10 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     {
         var token = Token();
         var key = NewKey();
-        using var first = await CreateOrder(token, await ConfirmedSelection("JFK"), key);
+        using var first = await CreateOrder(token, await ConfirmedSelection("JFK", token), key);
 
-        using var reused = await CreateOrder(token, await ConfirmedSelection("JFK"), key);
-        using var missing = await CreateOrder(token, await ConfirmedSelection("JFK"), key: null);
+        using var reused = await CreateOrder(token, await ConfirmedSelection("JFK", token), key);
+        using var missing = await CreateOrder(token, await ConfirmedSelection("JFK", token), key: null);
 
         (await Problem(reused)).ShouldBe((HttpStatusCode.Conflict, "idempotency-conflict"));
         (await Problem(missing)).ShouldBe((HttpStatusCode.BadRequest, "idempotency-key-required"));
@@ -198,11 +312,11 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     {
         var token = Token();
 
-        using var unchecked_ = await CreateOrder(token, await Select("JFK"), NewKey());
-        var changed = await Select("ZPC");
-        using (var client = api.CreateClient())
+        using var unchecked_ = await CreateOrder(token, await Select("JFK", token), NewKey());
+        var changed = await Select("ZPC", token);
+        using (var revalidated = await Revalidate(changed, token))
         {
-            (await client.PostAsync($"/api/v1/flights/selected-offers/{changed}/revalidations", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            revalidated.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         }
 
         using var notAccepted = await CreateOrder(token, changed, NewKey());
@@ -214,7 +328,8 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     [Fact]
     public async Task An_accepted_price_change_is_ordered_at_the_accepted_price_with_its_evidence()
     {
-        using var created = await CreateOrder(Token(), await ConfirmedSelection("ZPC"), NewKey());
+        var token = Token();
+        using var created = await CreateOrder(token, await ConfirmedSelection("ZPC", token), NewKey());
 
         created.StatusCode.ShouldBe(HttpStatusCode.Created);
         (await Read(created)).GetProperty("items")[0].GetProperty("priceChangeAccepted").GetBoolean().ShouldBeTrue();
@@ -223,10 +338,11 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     [Fact]
     public async Task An_expired_offer_cannot_be_ordered()
     {
-        var selection = await ConfirmedSelection("JFK");
+        var token = Token();
+        var selection = await ConfirmedSelection("JFK", token);
         api.Clock.Advance(TimeSpan.FromHours(2)); // past the mock offer's lifetime
 
-        using var expired = await CreateOrder(Token(), selection, NewKey());
+        using var expired = await CreateOrder(token, selection, NewKey());
 
         (await Problem(expired)).ShouldBe((HttpStatusCode.UnprocessableEntity, "offer-expired"));
     }
@@ -235,11 +351,8 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     public async Task A_sold_out_or_unknown_selection_cannot_be_ordered()
     {
         var token = Token();
-        var soldOut = await Select("ZSO");
-        using (var client = api.CreateClient())
-        {
-            (await client.PostAsync($"/api/v1/flights/selected-offers/{soldOut}/revalidations", null, Ct)).Dispose();
-        }
+        var soldOut = await Select("ZSO", token);
+        (await Revalidate(soldOut, token)).Dispose();
 
         using var gone = await CreateOrder(token, soldOut, NewKey());
         using var unknown = await CreateOrder(token, Guid.NewGuid(), NewKey());
@@ -252,7 +365,7 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     public async Task F32_one_selection_ordered_under_two_keys_is_one_order_and_the_second_key_is_told_which()
     {
         var token = Token();
-        var selection = await ConfirmedSelection("JFK");
+        var selection = await ConfirmedSelection("JFK", token);
         using var first = await CreateOrder(token, selection, NewKey());
         var orderId = (await Read(first)).GetProperty("orderId").GetGuid();
 
@@ -268,7 +381,7 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     public async Task F32_parallel_requests_with_different_keys_for_one_selection_create_one_order()
     {
         var token = Token();
-        var selection = await ConfirmedSelection("JFK");
+        var selection = await ConfirmedSelection("JFK", token);
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => CreateOrder(token, selection, NewKey())));
 
@@ -284,9 +397,11 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     public async Task Keys_belong_to_one_customer_another_customer_may_use_the_same_key()
     {
         var key = NewKey();
-        using var alices = await CreateOrder(Token(), await ConfirmedSelection("JFK"), key);
+        var alice = Token();
+        var bob = Token();
+        using var alices = await CreateOrder(alice, await ConfirmedSelection("JFK", alice), key);
 
-        using var bobs = await CreateOrder(Token(), await ConfirmedSelection("JFK"), key);
+        using var bobs = await CreateOrder(bob, await ConfirmedSelection("JFK", bob), key);
 
         (alices.StatusCode, bobs.StatusCode).ShouldBe((HttpStatusCode.Created, HttpStatusCode.Created));
     }
@@ -295,8 +410,8 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     public async Task A_malformed_key_or_request_is_a_client_error()
     {
         var token = Token();
-        using var tooLong = await CreateOrder(token, await ConfirmedSelection("JFK"), new string('k', 101));
-        using var withSpace = await CreateOrder(token, await ConfirmedSelection("JFK"), "order key");
+        using var tooLong = await CreateOrder(token, await ConfirmedSelection("JFK", token), new string('k', 101));
+        using var withSpace = await CreateOrder(token, await ConfirmedSelection("JFK", token), "order key");
         using var noSelection = await SendAsync(new HttpRequestMessage(HttpMethod.Post, _orders) { Content = JsonContent.Create(new { }), Headers = { { "Idempotency-Key", NewKey() } } }, token);
 
         (await Problem(tooLong)).ShouldBe((HttpStatusCode.BadRequest, "idempotency-key-required"));
@@ -330,12 +445,16 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
 
     private Task<HttpResponseMessage> Send(HttpMethod method, string url, string token) => SendAsync(new HttpRequestMessage(method, url), token);
 
-    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, string token)
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, string? token)
     {
         using var client = api.CreateClient();
         using (request)
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (token is not null)
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
             return await client.SendAsync(request, Ct);
         }
     }
@@ -346,16 +465,16 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     private static async Task<(HttpStatusCode, string?)> Problem(HttpResponseMessage response) =>
         (response.StatusCode, (await response.Content.ReadFromJsonAsync<ProblemDetails>(Ct))!.Type);
 
-    private async Task<Guid> ConfirmedSelection(string destination)
+    // Selected, revalidated and (if needed) accepted by the signed-in customer, who then owns the selection.
+    private async Task<Guid> ConfirmedSelection(string destination, string token)
     {
-        var selected = await Select(destination);
-        using var client = api.CreateClient();
-        using var revalidated = await client.PostAsync($"/api/v1/flights/selected-offers/{selected}/revalidations", null, Ct);
+        var selected = await Select(destination, token);
+        using var revalidated = await Revalidate(selected, token);
         if (revalidated.StatusCode == HttpStatusCode.UnprocessableEntity)
         {
             var problem = (await revalidated.Content.ReadFromJsonAsync<ProblemDetails>(Ct))!;
             var quote = problem.Extensions["priceQuoteId"].ShouldBeOfType<JsonElement>().GetGuid();
-            using var accepted = await client.PostAsJsonAsync($"/api/v1/flights/selected-offers/{selected}/price-acceptances", new { priceQuoteId = quote }, Ct);
+            using var accepted = await SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/v1/flights/selected-offers/{selected}/price-acceptances") { Content = JsonContent.Create(new { priceQuoteId = quote }) }, token);
             accepted.StatusCode.ShouldBe(HttpStatusCode.OK);
         }
         else
@@ -366,16 +485,29 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
         return selected;
     }
 
-    private async Task<Guid> Select(string destination)
+    private Task<HttpResponseMessage> Revalidate(Guid selectedOfferId, string? token) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/v1/flights/selected-offers/{selectedOfferId}/revalidations"), token);
+
+    // Searches anonymously (search is public), then selects as this caller: a token makes the selection theirs.
+    private async Task<Guid> Select(string destination, string? token)
+    {
+        var (searchId, offerId) = await Search(destination);
+        using var select = await SelectOffer(searchId, offerId, token);
+        select.StatusCode.ShouldBe(HttpStatusCode.Created);
+        return (await select.Content.ReadFromJsonAsync<Selection>(JsonSerializerOptions.Web, Ct))!.SelectedOfferId;
+    }
+
+    private async Task<(Guid SearchId, Guid OfferId)> Search(string destination)
     {
         using var client = api.CreateClient();
         var departure = DateOnly.FromDateTime(api.Clock.GetUtcNow().UtcDateTime).AddDays(30).ToString("yyyy-MM-dd");
         using var search = await client.PostAsJsonAsync("/api/v1/flights/searches", new { origin = "LHR", destination, departureDate = departure }, Ct);
         var found = (await search.Content.ReadFromJsonAsync<SearchResult>(JsonSerializerOptions.Web, Ct))!;
-        using var select = await client.PostAsJsonAsync("/api/v1/flights/selected-offers", new { found.SearchId, found.Offers[0].OfferId }, Ct);
-        select.StatusCode.ShouldBe(HttpStatusCode.Created);
-        return (await select.Content.ReadFromJsonAsync<Selection>(JsonSerializerOptions.Web, Ct))!.SelectedOfferId;
+        return (found.SearchId, found.Offers[0].OfferId);
     }
+
+    private Task<HttpResponseMessage> SelectOffer(Guid searchId, Guid offerId, string? token) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, "/api/v1/flights/selected-offers") { Content = JsonContent.Create(new { searchId, offerId }) }, token);
 
     private static string NewKey() => $"order-{Guid.NewGuid():N}";
 

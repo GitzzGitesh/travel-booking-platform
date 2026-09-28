@@ -65,6 +65,12 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
             .Take(limit)
             .ToListAsync(cancellationToken);
 
+    public Task<int> CountForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        db.PaymentAttempts.CountAsync(a => a.OrderId == orderId, cancellationToken);
+
+    public Task<int> CountForCustomerSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken) =>
+        db.PaymentAttempts.CountAsync(a => a.CustomerId == customerId && a.CreatedAt >= since, cancellationToken);
+
     public Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken) =>
         db.Set<InboxMessage>().AnyAsync(m => m.MessageId == messageId && m.Handler == handler, cancellationToken);
 

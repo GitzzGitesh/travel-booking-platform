@@ -59,6 +59,12 @@ internal sealed class FakeStore : IPaymentAttemptStore
         return Task.FromResult(true);
     }
 
+    public Task<int> CountForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        Task.FromResult(Attempts.Count(a => a.OrderId == orderId));
+
+    public Task<int> CountForCustomerSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken) =>
+        Task.FromResult(Attempts.Count(a => a.CustomerId == customerId && a.CreatedAt >= since));
+
     public Task<PaymentAttempt?> FindLiveByOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
         Task.FromResult(Attempts.SingleOrDefault(a => a.OrderId == orderId && PaymentAttempt.LiveStatuses.Contains(a.Status)));
 

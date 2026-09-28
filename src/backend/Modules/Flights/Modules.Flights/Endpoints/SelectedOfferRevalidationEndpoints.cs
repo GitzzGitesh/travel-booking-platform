@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.BuildingBlocks.Providers;
 using TravelBooking.Modules.Flights.Application;
 using TravelBooking.Modules.Flights.Domain;
@@ -12,9 +13,16 @@ internal static class SelectedOfferRevalidationEndpoints
     public static async Task<Results<Ok<ConfirmedFlightOfferResponse>, ProblemHttpResult>> Revalidate(
         Guid selectedOfferId,
         RevalidateSelectedOfferHandler handler,
+        HttpContext http,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(selectedOfferId, cancellationToken);
+        var caller = await http.AuthenticateOptionalCustomerAsync();
+        if (caller.IsRejected)
+        {
+            return SelectedOfferProblems.Unauthorized();
+        }
+
+        var result = await handler.HandleAsync(selectedOfferId, caller.CustomerId, cancellationToken);
         return result.IsSuccess
             ? TypedResults.Ok(ConfirmedFlightOfferResponse.From(result.Value))
             : SelectedOfferProblems.For(result.Error);
@@ -24,9 +32,16 @@ internal static class SelectedOfferRevalidationEndpoints
         Guid selectedOfferId,
         AcceptFlightOfferPriceRequest request,
         AcceptSelectedOfferPriceHandler handler,
+        HttpContext http,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(selectedOfferId, request.PriceQuoteId!.Value, cancellationToken);
+        var caller = await http.AuthenticateOptionalCustomerAsync();
+        if (caller.IsRejected)
+        {
+            return SelectedOfferProblems.Unauthorized();
+        }
+
+        var result = await handler.HandleAsync(selectedOfferId, request.PriceQuoteId!.Value, caller.CustomerId, cancellationToken);
         return result.IsSuccess
             ? TypedResults.Ok(ConfirmedFlightOfferResponse.From(result.Value))
             : SelectedOfferProblems.For(result.Error);
@@ -36,6 +51,10 @@ internal static class SelectedOfferRevalidationEndpoints
 /// <summary>Supplier-neutral Problem Details (api-design rules): stable types, no supplier codes or payloads.</summary>
 internal static class SelectedOfferProblems
 {
+    /// <summary>A bearer token was sent but is not a valid customer token: refused, never treated as anonymous.</summary>
+    public static ProblemHttpResult Unauthorized() =>
+        Problem(StatusCodes.Status401Unauthorized, "unauthorized", "Your session is not valid. Please sign in again.");
+
     public static ProblemHttpResult For(SelectedOfferFailure failure) => failure switch
     {
         SelectedOfferFailure.PriceChanged changed => PriceChanged(changed.Offer),

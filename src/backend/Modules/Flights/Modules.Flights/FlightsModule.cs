@@ -78,19 +78,22 @@ public static class FlightsModule
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .AllowAnonymous();
 
-        // Anonymous until identity exists (Phase 4); like search, it must be rate limited before leaving Development.
+        // Anonymous, or a signed-in customer (a bearer token must then be valid, else 401), who then owns the selection:
+        // only the owner may revalidate it, accept its price or order it. Rate limited per client.
         group.MapPost("/selected-offers", SelectFlightOfferEndpoint.Handle)
             .WithName("SelectFlightOffer")
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .AllowAnonymous();
 
-        // Revalidation before any booking step (F-01..F-03). Anonymous like selection until identity exists (Phase 4):
-        // the selection id is an unguessable server-issued id, and both must be rate limited before leaving Development.
+        // Revalidation before any booking step (F-01..F-03). An anonymous selection is open to anyone holding its
+        // unguessable id; an owned one to its owner only (anyone else: 404, as for an unknown selection).
         group.MapPost("/selected-offers/{selectedOfferId:guid}/revalidations", SelectedOfferRevalidationEndpoints.Revalidate)
             .WithName("RevalidateSelectedFlightOffer")
             .RequireRateLimiting(RateLimitPolicies.SupplierCalls)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .Produces<SelectedOfferProblemResponse>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")
@@ -102,6 +105,7 @@ public static class FlightsModule
         group.MapPost("/selected-offers/{selectedOfferId:guid}/price-acceptances", SelectedOfferRevalidationEndpoints.AcceptPrice)
             .WithName("AcceptSelectedFlightOfferPrice")
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .Produces<SelectedOfferProblemResponse>(StatusCodes.Status422UnprocessableEntity, "application/problem+json")

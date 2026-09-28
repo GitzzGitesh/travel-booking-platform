@@ -38,7 +38,10 @@ internal sealed class FlightsDbContext(DbContextOptions<FlightsDbContext> option
         offer.Property(o => o.Id).ValueGeneratedNever();
 
         // Idempotent selection: one snapshot per offer of a search, enforced by the database (booking rules).
-        offer.HasIndex(o => new { o.SearchId, o.OfferId }).IsUnique();
+        // One selection per search offer and owner (the signed-in customer, or anonymous): no filter, so SQL Server treats
+        // the anonymous (NULL) owner as one value and anonymous selections stay one row per offer.
+        offer.HasIndex(o => new { o.SearchId, o.OfferId, o.CustomerId }).IsUnique().HasFilter(null);
+        offer.Property(o => o.CustomerId).HasMaxLength(SelectedOffer.MaxCustomerIdLength).IsUnicode(false);
 
         offer.Property(o => o.ProviderId).HasMaxLength(50);
         offer.Property(o => o.ProviderOfferToken); // Opaque adapter token, stored verbatim; may be long (ADR 0014).

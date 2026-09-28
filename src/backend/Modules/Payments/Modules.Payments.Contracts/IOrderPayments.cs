@@ -51,12 +51,16 @@ public sealed record OrderPaymentRequest(Guid OrderId, string CustomerId, string
 /// <param name="PaymentId">Our payment attempt id: the authorization reference Orders records (ADR 0005).</param>
 /// <param name="Amount">The amount this attempt authorizes (or tried to).</param>
 /// <param name="CustomerAction">What the customer's browser needs for a challenge (SCA); only for the order's owner.</param>
-public sealed record OrderPaymentResult(Guid PaymentId, OrderPaymentStatus Status, Money Amount, string? DeclineReason = null, string? CustomerAction = null)
+/// <remarks>
+/// A decline carries no reason: why a card was refused stays in Payments (the attempt and its history, for operations),
+/// so it never reaches a customer response (generic declines, security rules: no help for card testing).
+/// </remarks>
+public sealed record OrderPaymentResult(Guid PaymentId, OrderPaymentStatus Status, Money Amount, string? CustomerAction = null)
 {
     // Never printed: the customer action is a live client secret.
     private bool PrintMembers(StringBuilder builder)
     {
-        builder.Append($"PaymentId = {PaymentId}, Status = {Status}, Amount = {Amount}, DeclineReason = {DeclineReason}, CustomerAction = {(CustomerAction is null ? "null" : "[redacted]")}");
+        builder.Append($"PaymentId = {PaymentId}, Status = {Status}, Amount = {Amount}, CustomerAction = {(CustomerAction is null ? "null" : "[redacted]")}");
         return true;
     }
 }
@@ -95,6 +99,12 @@ public enum OrderPaymentFailure
     /// found to hold nothing, before a new one starts (F-32).
     /// </summary>
     PaymentInProgress,
+
+    /// <summary>
+    /// Too many payment attempts for this order, or by this customer recently (Payments:AttemptLimits): no new attempt
+    /// starts. A guardrail against card testing; the limits themselves are a fraud-policy setting (Q10).
+    /// </summary>
+    AttemptLimitReached,
 
     InvalidRequest,
 }

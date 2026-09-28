@@ -9,6 +9,7 @@ namespace TravelBooking.Modules.Payments.Domain;
 /// Release: Authorized or ActionRequired → Voiding (saved before the provider call) → Voided, Canceled (an unfinished
 /// challenge), Expired (the hold had already lapsed), VoidUnknown (looked up, then voided again with the same key) or
 /// ManualReview.
+/// Review: ManualReview → Authorized or a status that holds nothing, as a provider lookup establishes (operations).
 /// Declined, Canceled, Expired, Failed and Voided are final.
 /// </summary>
 internal enum PaymentAttemptStatus
@@ -91,7 +92,13 @@ internal sealed class PaymentAttempt
     public string Reference => Id.ToString("N");
 
     /// <summary>Our idempotency key for the one void of this attempt: repeating it never releases twice.</summary>
-    public string VoidKey => $"{Reference}:void";
+    public string VoidKey => VoidGeneration == 0 ? $"{Reference}:void" : $"{Reference}:void-{VoidGeneration}";
+
+    /// <summary>
+    /// How many manual reviews this attempt came out of: each starts a new void key, so a void refused before a review is
+    /// not replayed from the provider's idempotency cache. A void is safe to repeat (it only releases a hold).
+    /// </summary>
+    public int VoidGeneration { get; private set; }
 
     /// <summary>
     /// Statuses in which the attempt holds, or may hold, funds: at most one such attempt per order. Each has a way out: a
@@ -199,6 +206,60 @@ internal sealed class PaymentAttempt
         }
 
         return MoveTo(PaymentAttemptStatus.Voiding, "Releasing the hold (void)", change, ProviderPaymentId);
+    }
+
+    /// <summary>The statuses a manual review may resolve to: what a lookup at the provider established.</summary>
+    public static IReadOnlyList<PaymentAttemptStatus> ReviewOutcomes { get; } =
+    [
+        PaymentAttemptStatus.Authorized, PaymentAttemptStatus.Declined, PaymentAttemptStatus.Canceled,
+        PaymentAttemptStatus.Expired, PaymentAttemptStatus.Failed, PaymentAttemptStatus.Voided,
+    ];
+
+    /// <summary>
+    /// Takes the attempt out of ManualReview, to what the provider was found to hold (never what someone says it holds):
+    /// Authorized (a hold of this attempt's amount, then released or used as usual) or a status that holds nothing.
+    /// The provider's payment found by the lookup is recorded when the attempt had none, and a different one than stored
+    /// is refused; Authorized needs it, since without it the hold could never be released. A new void generation
+    /// starts, so a void refused before the review is sent afresh, not replayed from the provider's idempotency cache.
+    /// Only from ManualReview; the same resolution again is a no-op without a history entry.
+    /// </summary>
+    public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> ResolveReview(
+        PaymentAttemptStatus to, string reason, PaymentChange change, string? providerId = null, string? providerPaymentId = null)
+    {
+        if (Status == to && to != PaymentAttemptStatus.ManualReview)
+        {
+            return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status);
+        }
+
+        if (Status != PaymentAttemptStatus.ManualReview)
+        {
+            return Failure(LiveStatuses.Contains(Status) ? PaymentAttemptTransitionError.Illegal : PaymentAttemptTransitionError.AlreadyFinal);
+        }
+
+        if (!ReviewOutcomes.Contains(to))
+        {
+            return Failure(PaymentAttemptTransitionError.Illegal);
+        }
+
+        if (providerPaymentId is not null
+            && ((ProviderPaymentId is not null && ProviderPaymentId != providerPaymentId) || (ProviderId is not null && ProviderId != providerId)))
+        {
+            return Failure(PaymentAttemptTransitionError.Illegal); // another payment than ours: stays in review
+        }
+
+        if (to == PaymentAttemptStatus.Authorized && (ProviderPaymentId ?? providerPaymentId) is null)
+        {
+            return Failure(PaymentAttemptTransitionError.Illegal); // a hold we could not release
+        }
+
+        if (ProviderPaymentId is null && providerId is not null && providerPaymentId is not null)
+        {
+            ProviderId = providerId;
+            ProviderPaymentId = providerPaymentId;
+        }
+
+        VoidGeneration++;
+        return MoveTo(to, reason, change, ProviderPaymentId);
     }
 
     /// <summary>

@@ -14,7 +14,16 @@ internal sealed class SelectedOffer
     {
     }
 
+    public const int MaxCustomerIdLength = 64;
+
     public Guid Id { get; private set; }
+
+    /// <summary>
+    /// The signed-in customer who made this selection (our internal customer id, from a validated token only), or null
+    /// for an anonymous selection. Only its owner may revalidate it, accept its price or order it; an anonymous
+    /// selection can be browsed and price-checked, but never ordered (Q8: sign-in before booking).
+    /// </summary>
+    public string? CustomerId { get; private set; }
 
     /// <summary>The search and the offer within it that the customer selected; unique together (idempotent selection).</summary>
     public Guid SearchId { get; private set; }
@@ -216,17 +225,30 @@ internal sealed class SelectedOffer
 
     private static (decimal?, CurrencyCode?) FromMoney(Money? money) => (money?.Amount, money?.Currency);
 
+    /// <summary>Whether this caller may see and change the selection: its owner, or anyone for an anonymous selection.</summary>
+    public bool IsVisibleTo(string? customerId) => CustomerId is null || string.Equals(CustomerId, customerId, StringComparison.Ordinal);
+
+    /// <summary>Whether this signed-in customer owns the selection, so that it may be ordered.</summary>
+    public bool IsOwnedBy(string? customerId) => CustomerId is not null && string.Equals(CustomerId, customerId, StringComparison.Ordinal);
+
     /// <summary>Takes the snapshot. The offer must still be valid at <paramref name="now"/>.</summary>
-    public static SelectedOffer Select(Guid searchId, Guid offerId, FlightSearchCriteria criteria, FlightOffer offer, DateTimeOffset now)
+    /// <param name="customerId">The signed-in customer (internal id), or null when the selection is anonymous.</param>
+    public static SelectedOffer Select(Guid searchId, Guid offerId, FlightSearchCriteria criteria, FlightOffer offer, DateTimeOffset now, string? customerId = null)
     {
         if (offer.ExpiresAt <= now)
         {
             throw new InvalidOperationException("An expired offer cannot be selected.");
         }
 
+        if (customerId is not null && (customerId.Length is 0 or > MaxCustomerIdLength || string.IsNullOrWhiteSpace(customerId)))
+        {
+            throw new ArgumentException("A customer id is 1 to 64 characters.", nameof(customerId));
+        }
+
         return new SelectedOffer
         {
             Id = Guid.NewGuid(),
+            CustomerId = customerId,
             SearchId = searchId,
             OfferId = offerId,
             ProviderId = offer.Reference.ProviderId,
