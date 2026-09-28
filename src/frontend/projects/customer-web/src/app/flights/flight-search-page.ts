@@ -35,6 +35,7 @@ import {
   type ProblemDetails,
   type SelectedFlightOfferResponse,
 } from '@travel-booking/api-client';
+import { CustomerSession } from '../customer-session';
 import { formatMoney } from './flight-format';
 import { FlightResults } from './flight-results';
 import { dayMonth, shortLabel } from './search/calendar';
@@ -136,6 +137,9 @@ function crossFieldRules(group: AbstractControl): ValidationErrors | null {
 export class FlightSearchPage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
+
+  /** Booking needs a signed-in customer (Q8): until sign-in exists, a confirmed price says so. */
+  protected readonly session = inject(CustomerSession);
   private readonly resultsHeading = viewChild<ElementRef<HTMLElement>>('resultsHeading');
   private readonly searchForm = viewChild.required<ElementRef<HTMLFormElement>>('searchForm');
   private readonly originInput = viewChild.required<ElementRef<HTMLInputElement>>('originInput');

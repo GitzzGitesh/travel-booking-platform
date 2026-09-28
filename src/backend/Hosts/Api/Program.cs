@@ -8,9 +8,14 @@ using TravelBooking.Integrations.Flights.Sabre;
 using TravelBooking.Integrations.Flights.Travelport;
 using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Integrations.Payments.Stripe;
+using TravelBooking.Modules.Customers;
 using TravelBooking.Modules.Flights;
 using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Payments;
+
+// With a single authentication scheme, ASP.NET makes it the default and authenticates every request. Customer tokens are
+// validated only where a customer policy asks for them (ADR 0008).
+AppContext.SetSwitch("Microsoft.AspNetCore.Authentication.SuppressAutoDefaultScheme", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +42,10 @@ builder.Services.AddFlightsModule(builder.Configuration);
 builder.Services.AddOrdersModule(builder.Configuration);
 builder.Services.AddPaymentsModule(builder.Configuration);
 
+// Customer identity (ADR 0008): customer bearer tokens (Entra External ID) mapped to our internal customer id. Tenant
+// values come from configuration (Authentication:Customers); until they are set, every customer token is refused.
+builder.Services.AddCustomersModule(builder.Configuration);
+
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {
     // The deterministic mock is the only flight provider until a real supplier is chosen (Q6). Allow-listed
@@ -62,9 +71,9 @@ builder.Services.AddDuffelFlightProvider(builder.Configuration);
 builder.Services.AddSabreFlightProvider(builder.Configuration);
 builder.Services.AddTravelportFlightProvider(builder.Configuration);
 
-// No fallback policy yet: without an authentication scheme it would turn every unmatched route into a 500.
-// It is added with the first authentication scheme (ADR 0008, Phase 4). Until then, deny-by-default is
-// enforced by EndpointAuthorizationTests in every environment.
+// Deny by default is enforced by EndpointAuthorizationTests, in every environment: each endpoint declares a policy or
+// an explicit AllowAnonymous. No fallback policy: ASP.NET applies it to requests that match no endpoint too, which
+// would turn every unknown route's 404 into a 401.
 builder.Services.AddAuthorization();
 builder.Services.AddHealthChecks();
 builder.Services.AddApiCors(builder.Configuration);
@@ -99,6 +108,7 @@ app.UseStatusCodePages();
 app.UseHttpsRedirection();
 app.UseCors();
 app.UseRateLimiter();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health").AllowAnonymous();
@@ -122,6 +132,10 @@ if (app.Environment.IsDevelopment())
     // still needs the hosting decision (trusted ingress addresses, AllowedHosts, a distributed limiter for more than
     // one instance, ADR 0011) and Q2 (docs/progress.md). It must only widen together with IFlightProvider registration.
     v1.MapFlightsEndpoints();
+
+    // The signed-in customer's endpoints: behind the same gate as the flights they order.
+    v1.MapCustomersEndpoints();
+    v1.MapOrdersEndpoints();
 }
 
 app.Run();

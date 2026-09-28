@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MsSql;
 using TravelBooking.BuildingBlocks.Background.Persistence;
+using TravelBooking.Modules.Customers.Infrastructure;
 using TravelBooking.Modules.Flights.Infrastructure;
 using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Orders.Infrastructure;
@@ -31,6 +32,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await scope.ServiceProvider.GetRequiredService<FlightsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<CustomersDbContext>().Database.MigrateAsync();
     }
 
     public new async ValueTask DisposeAsync()
@@ -50,6 +52,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         builder.UseSetting("ConnectionStrings:Flights", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Orders", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Payments", _sql.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:Customers", _sql.GetConnectionString());
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<TimeProvider>(Clock);
@@ -58,6 +61,9 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.AddOrdersBackgroundJobs();
             services.AddPaymentsBackgroundJobs();
             services.AddSingleton<BackgroundJobRunner>();
+
+            // Customer tokens signed by the tests' own key (no identity-provider tenant exists yet, ADR 0008).
+            services.UseTestCustomerTokens();
 
             // The mock provider's notifications, signed the test's way (PaymentNotificationTests): maps the webhook endpoint.
             services.AddSingleton<TravelBooking.Modules.Payments.Ports.IPaymentNotifications, TestPaymentNotifications>();

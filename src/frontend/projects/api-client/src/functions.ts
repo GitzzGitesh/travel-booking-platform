@@ -9,3 +9,9 @@ export type { RevalidateSelectedFlightOffer$Params as RevalidateSelectedFlightOf
 export { revalidateSelectedFlightOffer as revalidateSelectedFlightOffer } from './fn/flights/revalidate-selected-flight-offer';
 export type { AcceptSelectedFlightOfferPrice$Params as AcceptSelectedFlightOfferPrice$Params } from './fn/flights/accept-selected-flight-offer-price';
 export { acceptSelectedFlightOfferPrice as acceptSelectedFlightOfferPrice } from './fn/flights/accept-selected-flight-offer-price';
+export type { GetCurrentCustomer$Params as GetCurrentCustomer$Params } from './fn/customers/get-current-customer';
+export { getCurrentCustomer as getCurrentCustomer } from './fn/customers/get-current-customer';
+export type { CreateFlightOrder$Params as CreateFlightOrder$Params } from './fn/orders/create-flight-order';
+export { createFlightOrder as createFlightOrder } from './fn/orders/create-flight-order';
+export type { GetOrder$Params as GetOrder$Params } from './fn/orders/get-order';
+export { getOrder as getOrder } from './fn/orders/get-order';

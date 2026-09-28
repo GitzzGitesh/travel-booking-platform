@@ -563,6 +563,9 @@ describe('FlightSearchPage', () => {
 
         expect(bar().textContent).toContain('Price confirmed with the airline');
         expect(document.activeElement?.id).toBe('price-check-heading');
+        // Q8: booking needs a signed-in customer; without sign-in the customer is told so, and no order is sent.
+        expect(bar().textContent).toContain('Sign in to book this flight');
+        http.expectNone((r) => r.url.includes('/api/v1/orders'));
       });
 
       it('F-01 shows the previous and new price and applies it only after acceptance', async () => {
