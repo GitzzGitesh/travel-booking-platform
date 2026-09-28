@@ -176,10 +176,10 @@ public sealed class PaymentOperationsTests
         var failing = new StubProvider { Lookup = Result<PaymentLookup, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unavailable, "stub")) };
         var throwing = new StubProvider { Throw = new HttpRequestException() };
 
-        (await Operations(found).ReconcileAsync(_reference, Ct)).ShouldBeOfType<PaymentOutcome.AuthorizationExpired>();
-        (await Operations(missing).ReconcileAsync(_reference, Ct)).ShouldBe(new PaymentOutcome.NotFound(_now));
-        (await Operations(failing).ReconcileAsync(_reference, Ct)).ShouldBe(new PaymentOutcome.Unknown(ProviderErrorKind.Unavailable));
-        (await Operations(throwing).ReconcileAsync(_reference, Ct)).ShouldBeOfType<PaymentOutcome.Unknown>();
+        (await Operations(found).ReconcileAsync(_reference, null, Ct)).ShouldBeOfType<PaymentOutcome.AuthorizationExpired>();
+        (await Operations(missing).ReconcileAsync(_reference, null, Ct)).ShouldBe(new PaymentOutcome.NotFound(_now));
+        (await Operations(failing).ReconcileAsync(_reference, null, Ct)).ShouldBe(new PaymentOutcome.Unknown(ProviderErrorKind.Unavailable));
+        (await Operations(throwing).ReconcileAsync(_reference, null, Ct)).ShouldBeOfType<PaymentOutcome.Unknown>();
         found.Writes.ShouldBe(0);
     }
 

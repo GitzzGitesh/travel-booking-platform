@@ -42,6 +42,9 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
         "/api/v1/flights/selected-offers",
         "/api/v1/flights/selected-offers/{selectedOfferId:guid}/revalidations",
         "/api/v1/flights/selected-offers/{selectedOfferId:guid}/price-acceptances",
+
+        // The payment provider's webhook: authenticated by the provider's signature, mapped only when Stripe is enabled.
+        "/api/v1/payments/notifications/{providerId}",
     ];
 
     [Theory]

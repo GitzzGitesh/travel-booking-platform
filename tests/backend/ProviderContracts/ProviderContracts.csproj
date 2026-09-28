@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Duffel\Integrations.Flights.Duffel.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Amadeus\Integrations.Flights.Amadeus.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Integrations\Payments\Integrations.Payments.Mock\Integrations.Payments.Mock.csproj" />
+    <ProjectReference Include="..\..\..\src\backend\Integrations\Payments\Integrations.Payments.Stripe\Integrations.Payments.Stripe.csproj" />
   </ItemGroup>
 
 </Project>

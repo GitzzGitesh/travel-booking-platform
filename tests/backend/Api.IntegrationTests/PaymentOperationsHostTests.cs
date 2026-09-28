@@ -30,7 +30,7 @@ public sealed class PaymentOperationsHostTests(WebApplicationFactory<Program> fa
 
         captured.ShouldBeOfType<PaymentOutcome.Captured>();
         refunded.ShouldBeOfType<PaymentOutcome.RefundSucceeded>().Refund.Amount.ShouldBe(_total with { Amount = 40m });
-        (await payments.ReconcileAsync(reference, Ct)).ShouldBeOfType<PaymentOutcome.Captured>().Payment.Refunded.ShouldBe(_total with { Amount = 40m });
+        (await payments.ReconcileAsync(reference, null, Ct)).ShouldBeOfType<PaymentOutcome.Captured>().Payment.Refunded.ShouldBe(_total with { Amount = 40m });
     }
 
     [Fact]
@@ -60,8 +60,8 @@ public sealed class PaymentOperationsHostTests(WebApplicationFactory<Program> fa
         (await payments.AuthorizeAsync(new AuthorizationDetails(notHeld, _total, new PaymentMethodToken(MockPaymentMethods.TimeoutNotAuthorized)), Ct))
             .ShouldBeOfType<PaymentOutcome.Unknown>();
 
-        (await payments.ReconcileAsync(held, Ct)).ShouldBeOfType<PaymentOutcome.Authorized>();
-        (await payments.ReconcileAsync(notHeld, Ct)).ShouldBeOfType<PaymentOutcome.NotFound>();
+        (await payments.ReconcileAsync(held, null, Ct)).ShouldBeOfType<PaymentOutcome.Authorized>();
+        (await payments.ReconcileAsync(notHeld, null, Ct)).ShouldBeOfType<PaymentOutcome.NotFound>();
     }
 
     [Fact]

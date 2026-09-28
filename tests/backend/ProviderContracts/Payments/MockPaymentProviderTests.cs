@@ -34,6 +34,21 @@ public sealed class MockPaymentProviderTests : PaymentProviderContract
         (await Provider.AuthorizeAsync(details with { PaymentMethod = ApprovedMethod }, Ct)).Error.Kind.ShouldBe(ProviderErrorKind.IdempotencyConflict);
     }
 
+    [Theory]
+    [InlineData(MockPaymentMethods.ChallengeCompleted, PaymentState.Authorized)]
+    [InlineData(MockPaymentMethods.ChallengeFailed, PaymentState.Declined)]
+    [InlineData(MockPaymentMethods.RequiresAction, PaymentState.RequiresAction)] // abandoned: never paid
+    public async Task A_challenge_outcome_is_learnt_by_the_next_lookup(string method, PaymentState expected)
+    {
+        var challenged = (await Provider.AuthorizeAsync(Authorization(270m, new PaymentMethodToken(method)), Ct)).Value;
+
+        var found = (await Provider.RetrieveAsync(challenged.Reference, challenged.Payment, Ct)).Value.Payment.ShouldNotBeNull();
+
+        challenged.State.ShouldBe(PaymentState.RequiresAction);
+        found.State.ShouldBe(expected);
+        (found.CustomerActionToken is null).ShouldBe(expected is not PaymentState.RequiresAction);
+    }
+
     [Fact]
     public async Task An_authorization_timeout_that_authorized_is_found_by_our_reference()
     {

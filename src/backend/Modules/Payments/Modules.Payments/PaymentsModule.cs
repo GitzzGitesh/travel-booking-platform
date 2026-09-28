@@ -1,19 +1,25 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Contracts;
+using TravelBooking.Modules.Payments.Endpoints;
 using TravelBooking.Modules.Payments.Infrastructure;
+using TravelBooking.Modules.Payments.Ports;
 
 namespace TravelBooking.Modules.Payments;
 
 /// <summary>
 /// The Payments module's entry point (ADR 0004: it owns the <see cref="Ports.IPaymentProvider"/> port). The host composes
-/// a provider adapter. Other modules use <see cref="IOrderPayments"/> only. No endpoints: card entry and webhooks come
-/// with the real provider, which waits for ADR 0006 (Q2, Q5).
+/// one provider adapter. Other modules use <see cref="IOrderPayments"/> only. Its one endpoint receives the provider's
+/// notifications (webhooks), mapped only when the composed provider sends them (ADR 0006).
 /// </summary>
 public static class PaymentsModule
 {
@@ -36,7 +42,31 @@ public static class PaymentsModule
         services.AddScoped<IPaymentAttemptStore, SqlPaymentAttemptStore>();
         services.AddScoped<AuthorizeOrderPaymentHandler>();
         services.AddScoped<IOrderPayments>(provider => provider.GetRequiredService<AuthorizeOrderPaymentHandler>());
+        services.AddScoped<IPaymentNotificationStore, SqlPaymentNotificationStore>();
+        services.AddScoped<ReceivePaymentNotificationHandler>();
+
+        // Checked at startup in both hosts: one provider, and only a production-ready one outside Development and Staging.
+        services.AddSingleton<IValidateOptions<PaymentProviderComposition>, PaymentProviderCompositionValidator>();
+        services.AddOptions<PaymentProviderComposition>().ValidateOnStart();
         return services;
+    }
+
+    /// <summary>
+    /// Maps the provider notification (webhook) endpoint, only when the composed provider sends notifications. Anonymous
+    /// by design: the provider's signature authenticates it. Not part of the client API (excluded from OpenAPI).
+    /// </summary>
+    public static IEndpointRouteBuilder MapPaymentsEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        if (!endpoints.ServiceProvider.GetServices<IPaymentNotifications>().Any())
+        {
+            return endpoints;
+        }
+
+        endpoints.MapPost("/payments/notifications/{providerId}", PaymentNotificationEndpoint.Handle)
+            .WithName("ReceivePaymentNotification")
+            .ExcludeFromDescription()
+            .AllowAnonymous();
+        return endpoints;
     }
 
     /// <summary>
@@ -48,6 +78,7 @@ public static class PaymentsModule
         services.AddScoped<PaymentAttemptReconciler>();
         services.AddBackgroundJob<ReconcilePaymentAttemptsJob, PaymentsDbContext>(ReconcilePaymentAttemptsJob.Name, TimeSpan.FromSeconds(30));
         services.AddIntegrationEventHandler<OrderPaymentReleaseRequested, OrderPaymentReleaseRequestedHandler>();
+        services.AddBackgroundJob<ProcessPaymentNotificationsJob, PaymentsDbContext>(ProcessPaymentNotificationsJob.Name, TimeSpan.FromSeconds(10));
         return services;
     }
 }

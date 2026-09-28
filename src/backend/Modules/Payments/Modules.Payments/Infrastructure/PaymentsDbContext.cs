@@ -4,6 +4,7 @@ using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Domain;
+using TravelBooking.Modules.Payments.Ports;
 
 namespace TravelBooking.Modules.Payments.Infrastructure;
 
@@ -14,6 +15,8 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
     public const string ConnectionStringName = "Payments";
 
     public DbSet<PaymentAttempt> PaymentAttempts => Set<PaymentAttempt>();
+
+    public DbSet<PaymentNotificationRecord> PaymentNotifications => Set<PaymentNotificationRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +53,10 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
 
         // The reconciliation job's work list.
         attempt.HasIndex(a => new { a.Status, a.UpdatedAt });
+
+        // Finding an attempt from a provider notification that carries only the provider's payment id: one attempt per
+        // provider payment, enforced by the database.
+        attempt.HasIndex(a => new { a.ProviderId, a.ProviderPaymentId }).IsUnique().HasFilter("[ProviderPaymentId] IS NOT NULL");
         attempt.Ignore(a => a.Reference);
         attempt.Ignore(a => a.VoidKey);
         attempt.Ignore(a => a.IsAuthorizationSettled);
@@ -70,6 +77,23 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         events.Property(e => e.ToStatus).HasMaxLength(30);
         events.Property(e => e.Reason).HasMaxLength(500);
         events.Property(e => e.ProviderReference).HasMaxLength(255);
+
+        // Provider notifications (webhooks): one row per provider event (deduplication by a unique constraint).
+        var notification = modelBuilder.Entity<PaymentNotificationRecord>();
+        notification.ToTable("PaymentNotifications");
+        notification.HasKey(n => n.Id);
+        notification.Property(n => n.Id).ValueGeneratedNever();
+        notification.HasIndex(n => new { n.ProviderId, n.EventId }).IsUnique();
+        notification.Property(n => n.ProviderId).HasMaxLength(50);
+        notification.Property(n => n.EventId).HasMaxLength(PaymentNotification.MaxEventIdLength).IsUnicode(false);
+        notification.Property(n => n.Kind).HasConversion<string>().HasMaxLength(20);
+        notification.Property(n => n.Reference).HasMaxLength(PaymentReference.MaxLength).IsUnicode(false);
+        notification.Property(n => n.ProviderPaymentId).HasMaxLength(255);
+        notification.Property(n => n.Outcome).HasMaxLength(PaymentNotificationRecord.MaxOutcomeLength);
+        notification.Property(n => n.EventType).HasMaxLength(PaymentNotification.MaxEventTypeLength).IsUnicode(false);
+
+        // The processing job's work list.
+        notification.HasIndex(n => new { n.ProcessedAt, n.ReceivedAt });
     }
 }
 

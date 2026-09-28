@@ -18,6 +18,7 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 | Q10 | **Fraud tolerance and review process**: automatic block vs manual review queue? | Checkout UX, ops staffing, Stripe Radar rules | Phase 5 | Open |
 | Q11 | **Refund approval policy**: which refunds need maker-checker, and what are the thresholds? | Admin permissions and workflow | Refund phase | Open |
 | Q13 | Are **group bookings (10+ passengers)** and **unaccompanied minors / child-only bookings** in scope? | The flight port limits a booking to 1–9 seated passengers with at least one adult (the usual GDS/NDC limit); both cases would need different flows | Before either flow is designed | Open. Out of scope until decided |
+| Q14 | **Contracting merchant entity** for payments: which company, in which country, holds the payment provider account (and settles in which currencies)? | Payment provider availability (Stripe is self-serve in the UK, EU, US and UAE; not in Tunisia; invite-only in India), settlement currencies, INR/TND eligibility, fees | Before a production payment account (ADR 0006, P1) | Open |
 | Q12 | **Customer support channels** (email, chat, phone) and tooling? | Notifications, admin features, integrations | Admin phase | Open |
 
 ## Answered

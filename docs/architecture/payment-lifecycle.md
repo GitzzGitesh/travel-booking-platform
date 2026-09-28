@@ -32,7 +32,14 @@
   - a refused void, or an unexpected lookup → `ManualReview`.
   - Voiding and VoidUnknown count as live, so no new attempt starts while a hold may exist. Nothing is captured.
   - The mock keeps payments in memory per process, so a separately started Worker cannot see the Api's mock payments.
-- **Not yet built, and gates for exposing checkout:** capture on the attempt; an audited operator way out of ManualReview; a cap on attempts per order and customer with generic declines to clients (card testing; a fraud-policy question, Q10); webhooks; and any endpoint. The real provider waits for ADR 0006, whose not-found consistency window must be set from that provider's behaviour: if it is too short, a later attempt could hold funds twice.
+- **Built since (ADR 0006, Proposed):** provider notifications (webhooks, below) and a Stripe adapter mapped from documentation. It is not production-ready and is refused outside Development and Staging.
+- **Not yet built, and gates for exposing checkout:**
+  - capture on the attempt;
+  - an audited operator way out of ManualReview;
+  - a cap on attempts per order and customer, with generic declines to clients (card testing; a fraud-policy question, Q10);
+  - any customer payment endpoint.
+
+  The not-found consistency window (`Payments:Reconciliation:NotFoundConclusiveAfter`) must be at least the provider's declared minimum, which startup enforces: 1 hour for Stripe's search. If it is too short, a later attempt could hold funds twice.
 
 ## Principles
 - Card data never touches our servers: Stripe Elements collects it; we hold PaymentIntent IDs only.
@@ -90,10 +97,20 @@ Invariants:
 - A refund request with a reused idempotency key returns the existing refund.
 - The customer refund is independent of the supplier refunding us. Both are tracked for reconciliation.
 
-## Webhook handling
-1. `Api` receives the webhook, **verifies the signature**, and inserts it into `payments.InboxEvents` (unique `ProviderEventId`). Duplicates are ignored. It returns 2xx quickly.
-2. `Worker` processes inbox events in order of receipt. Each handler loads the payment, checks that the transition is valid from the current state (out-of-order tolerance), applies it, and writes the timeline.
-3. Unknown event types are stored and ignored (logged at info).
+## Confirmation flow (ADR 0006, option A)
+1. The browser's hosted fields (Stripe Payment Element) create a token. Card data goes only to the provider (SAQ-A).
+2. The checkout step sends the token, never an amount. The server saves the attempt as Authorizing, then creates and confirms the payment in one call. The amount is the order's server-side total, the call uses manual capture, and it is keyed by our payment reference.
+3. The outcome:
+   - **Authorized** means the booking may start;
+   - **ActionRequired** returns the challenge secret to the order's owner only, and the browser runs the challenge (e.g. 3DS);
+   - **Declined** is final, and another card is a new attempt.
+4. The challenge's result is never taken from the browser. It is learnt from a lookup: when the customer repeats the step with the same key, when reconciliation runs, or when a notification prompts one. With the provider's payment id known, the lookup reads the payment directly, which is consistent at once.
+5. An abandoned challenge stays ActionRequired (never paid). When the order's offer expires, the release request cancels it (payment-hold-release runbook).
+
+## Webhook handling (notifications)
+1. The `Api` receives `POST /api/v1/payments/notifications/{providerId}`. The route is anonymous (the provider's signature authenticates it) and mapped only when the composed provider sends notifications. The adapter **verifies the signature over the raw body**, including its age (replay tolerance). A rejection is a 400 and a security event, and nothing is stored.
+2. A verified notification is stored as one row in `payments.PaymentNotifications`, unique on (provider, event id), so a duplicate is acknowledged and changes nothing. Only the event id, the kind, our reference and the provider's payment id are kept, not the raw event (personal data, Q9). This deviates from the booking rules and is still to be confirmed (ADR 0006, decision 4). Event types the core does not use are acknowledged and not stored. The endpoint answers 200 quickly.
+3. The `Worker` job processes notifications in order of receipt: it reconciles the attempt they concern, which means a **lookup** with the provider. It never applies the event's content (the provider payment id it carries is only a hint for a direct read). So late and out-of-order events are harmless: an open attempt is looked up and gets the current state. A settled attempt is looked up too, and a hold found on one we consider over is voided at once with its own key, recorded, and alerted. The attempt stays final. An Authorized hold that lapses (F-24) is detected with capture orchestration. The row records what processing did, and processing markers (processed at, attempts, outcome) are updated on it, like the outbox's. Refund notifications are recorded but not acted on until refunds are persisted.
 
 ## Reconciliation (finance)
 Daily job: our payment and refund records ↔ Stripe balance transactions ↔ payouts. Mismatches go to a finance queue. Supplier statement reconciliation is added with the first real supplier.

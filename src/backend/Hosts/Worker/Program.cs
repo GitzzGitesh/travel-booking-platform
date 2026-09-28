@@ -5,6 +5,7 @@ using TravelBooking.Integrations.Flights.Mock;
 using TravelBooking.Integrations.Flights.Sabre;
 using TravelBooking.Integrations.Flights.Travelport;
 using TravelBooking.Integrations.Payments.Mock;
+using TravelBooking.Integrations.Payments.Stripe;
 using TravelBooking.Modules.Flights;
 using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Payments;
@@ -18,11 +19,17 @@ builder.Services.AddPaymentsModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {
-    // The mocks are the only providers until a real supplier (Q6) and payment provider (ADR 0006) are chosen. They keep
-    // their state in memory, per process: this Worker cannot see payments or bookings the Api made with them.
+    // The mocks keep their state in memory, per process: this Worker cannot see payments or bookings the Api made with
+    // them. The payment mock is composed unless Stripe is enabled (ADR 0006).
     builder.Services.AddMockFlightProvider(builder.Configuration);
-    builder.Services.AddMockPaymentProvider(builder.Configuration);
+    if (!builder.Configuration.IsStripeEnabled())
+    {
+        builder.Services.AddMockPaymentProvider(builder.Configuration);
+    }
 }
+
+// Stripe (ADR 0006), as in the Api: the Worker looks payments up and processes its notifications.
+builder.Services.AddStripePaymentProvider(builder.Configuration);
 
 // Candidate flight suppliers (Q6): each is composed only when enabled in configuration (Integrations:Flights:<Name>),
 // with its credentials from user-secrets / Key Vault. Startup refuses any adapter below ProductionReady outside

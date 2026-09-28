@@ -87,6 +87,9 @@ internal sealed partial class PaymentOperations(IPaymentProvider provider, TimeP
 
                 // Voiding a payment still waiting for the customer's challenge cancels it: nothing was ever held.
                 PaymentState.Canceled => new PaymentOutcome.Canceled(payment),
+
+                // The hold had already lapsed: nothing is held either way.
+                PaymentState.Expired => new PaymentOutcome.AuthorizationExpired(payment),
                 _ => null,
             },
             cancellationToken);
@@ -98,9 +101,12 @@ internal sealed partial class PaymentOperations(IPaymentProvider provider, TimeP
                 : null,
             cancellationToken);
 
-    /// <summary>Resolves an unknown payment outcome by our reference. A read: safe to repeat.</summary>
-    public Task<PaymentOutcome> ReconcileAsync(PaymentReference reference, CancellationToken cancellationToken) =>
-        Read(() => provider.RetrieveAsync(reference, cancellationToken), lookup => lookup.Payment switch
+    /// <summary>
+    /// Resolves an unknown payment outcome by our reference (and the provider's payment id, when known). A read: safe to
+    /// repeat. A known id from another provider is not passed on.
+    /// </summary>
+    public Task<PaymentOutcome> ReconcileAsync(PaymentReference reference, ProviderPaymentRef? knownPayment, CancellationToken cancellationToken) =>
+        Read(() => provider.RetrieveAsync(reference, knownPayment?.ProviderId == provider.Id ? knownPayment : null, cancellationToken), lookup => lookup.Payment switch
         {
             null => new PaymentOutcome.NotFound(timeProvider.GetUtcNow()),
             { } payment when Matches(payment, reference) => FromState(payment),
@@ -218,4 +224,11 @@ internal sealed partial class PaymentOperations(IPaymentProvider provider, TimeP
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Payment at provider {ProviderId} for reference {PaymentReference} does not match what was requested; manual review required.")]
     private static partial void LogMismatch(ILogger logger, string providerId, string paymentReference);
+}
+
+internal static class PaymentAttemptProviderExtensions
+{
+    /// <summary>The provider's payment, once its id is known.</summary>
+    public static ProviderPaymentRef? KnownProviderPayment(this Domain.PaymentAttempt attempt) =>
+        attempt.ProviderId is not null && attempt.ProviderPaymentId is not null ? new ProviderPaymentRef(attempt.ProviderId, attempt.ProviderPaymentId) : null;
 }

@@ -258,6 +258,57 @@ public sealed class PaymentAttemptReconciliationTests
     }
 
     [Fact]
+    public async Task A_notification_revealing_a_hold_on_a_declined_attempt_releases_it_once_and_records_it()
+    {
+        var attempt = await Attempt(details => Ok(Snapshot(details.Reference, PaymentState.Declined)));
+        _provider.OnLookup = reference => Found(reference, PaymentState.Authorized); // e.g. the declined payment confirmed again
+        _provider.OnVoid = details => Ok(Snapshot(details.Reference, PaymentState.Voided));
+
+        var outcome = await Reconciler().ReconcileNotifiedAsync(attempt.Id, null, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Declined); // still final: it never becomes the order's live attempt
+        _provider.Voids.ShouldHaveSingleItem().Key.Value.ShouldBe($"{attempt.Reference}:stray-void");
+        attempt.Events[^1].Reason.ShouldStartWith("Hold found on a Declined attempt; released");
+        outcome.ShouldContain("released");
+    }
+
+    [Fact]
+    public async Task A_hold_on_a_settled_attempt_that_cannot_be_released_fails_the_notification_for_a_retry()
+    {
+        var attempt = await Attempt(details => Ok(Snapshot(details.Reference, PaymentState.Declined)));
+        _provider.OnLookup = reference => Found(reference, PaymentState.Authorized);
+        _provider.OnVoid = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "stub"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => Reconciler().ReconcileNotifiedAsync(attempt.Id, null, Ct));
+
+        attempt.Events[^1].Reason.ShouldContain("NOT released");
+    }
+
+    [Fact]
+    public async Task A_notification_about_a_settled_attempt_that_holds_nothing_changes_nothing()
+    {
+        var attempt = await Attempt(details => Ok(Snapshot(details.Reference, PaymentState.Declined)));
+        var events = attempt.Events.Count;
+        _provider.OnLookup = reference => Found(reference, PaymentState.Declined);
+
+        await Reconciler().ReconcileNotifiedAsync(attempt.Id, null, Ct);
+
+        (attempt.Events.Count, _provider.Voids.Count).ShouldBe((events, 0));
+    }
+
+    [Fact]
+    public async Task A_voided_hold_that_had_already_lapsed_ends_expired()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestRelease(attempt);
+        _provider.OnVoid = details => Ok(Snapshot(details.Reference, PaymentState.Expired));
+
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Expired);
+    }
+
+    [Fact]
     public async Task The_live_attempt_is_reported_to_orders_with_its_release_state()
     {
         var attempt = await Attempt(Authorized());
@@ -289,7 +340,7 @@ public sealed class PaymentAttemptReconciliationTests
 
     private AuthorizeOrderPaymentHandler Handler() => new(_store, Operations(), _clock, Options.Create(new PaymentReconciliationOptions()));
 
-    private PaymentAttemptReconciler Reconciler() => new(_store, Handler(), Operations(), _clock);
+    private PaymentAttemptReconciler Reconciler() => new(_store, Handler(), Operations(), _clock, NullLogger<PaymentAttemptReconciler>.Instance);
 
     private OrderPaymentReleaseRequestedHandler ReleaseHandler() => new(_store, _clock);
 

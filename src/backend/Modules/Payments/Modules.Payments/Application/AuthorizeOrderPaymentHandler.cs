@@ -135,9 +135,14 @@ internal sealed class AuthorizeOrderPaymentHandler(
     /// Looks an open attempt up with the provider by our reference and records the outcome (never a second
     /// authorization). Returns the attempt as stored afterwards, with the outcome.
     /// </summary>
-    internal async Task<(PaymentAttempt Attempt, PaymentOutcome Outcome)> LookUpAsync(PaymentAttempt attempt, string actor, string? correlationId, CancellationToken cancellationToken)
+    internal Task<(PaymentAttempt Attempt, PaymentOutcome Outcome)> LookUpAsync(PaymentAttempt attempt, string actor, string? correlationId, CancellationToken cancellationToken) =>
+        LookUpAsync(attempt, attempt.KnownProviderPayment(), actor, correlationId, cancellationToken);
+
+    /// <param name="knownPayment">The provider's payment id, if known: stored, or a notification's hint (checked against our reference).</param>
+    internal async Task<(PaymentAttempt Attempt, PaymentOutcome Outcome)> LookUpAsync(
+        PaymentAttempt attempt, ProviderPaymentRef? knownPayment, string actor, string? correlationId, CancellationToken cancellationToken)
     {
-        var outcome = await operations.ReconcileAsync(new PaymentReference(attempt.Reference), cancellationToken);
+        var outcome = await operations.ReconcileAsync(new PaymentReference(attempt.Reference), knownPayment, cancellationToken);
         return (await ApplyAndSaveAsync(attempt, outcome, fromLookup: true, actor, correlationId, cancellationToken), outcome);
     }
 

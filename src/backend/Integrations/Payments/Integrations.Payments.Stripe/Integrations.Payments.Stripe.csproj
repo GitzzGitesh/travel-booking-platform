@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Stripe payment adapter (ADR 0004, ADR 0006): Payment Intents with manual capture, confirmed on our server with a token the
+    browser created with Stripe's hosted fields (card data never reaches us). Plain HTTP (form-encoded), no Stripe SDK: Stripe
+    DTOs, mapping, error mapping and webhook verification stay in this project.
+    Stage: mapped from Stripe's public documentation; not verified against Stripe test mode yet (credential-gated).
+  -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ProviderContracts" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Modules\Payments\Modules.Payments\Modules.Payments.csproj" />
+  </ItemGroup>
+
+</Project>
