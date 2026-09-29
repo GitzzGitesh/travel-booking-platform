@@ -14,10 +14,13 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Api.IntegrationTests" />
+    <InternalsVisibleTo Include="Modules.Customers.UnitTests" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Modules.Customers.Contracts\Modules.Customers.Contracts.csproj" />
+    <ProjectReference Include="..\..\Orders\Modules.Orders.Contracts\Modules.Orders.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

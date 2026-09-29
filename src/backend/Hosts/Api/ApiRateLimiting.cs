@@ -28,6 +28,12 @@ public sealed class ApiRateLimitingOptions
     public RateLimitWindowOptions Anonymous { get; set; } = new();
 
     public RateLimitWindowOptions SupplierCalls { get; set; } = new();
+
+    /// <summary>
+    /// A signed-in customer's writes (orders, travellers, and checkout when exposed; Q10), per customer: see
+    /// <see cref="CustomerWriteLimiter"/>. Sized for the largest booking (an order, its travellers, nine documents, checkout).
+    /// </summary>
+    public RateLimitWindowOptions Customer { get; set; } = new();
 }
 
 internal static class ApiRateLimiting
@@ -42,7 +48,7 @@ internal static class ApiRateLimiting
     {
         services.AddOptions<ApiRateLimitingOptions>()
             .Bind(configuration.GetSection(ApiRateLimitingOptions.SectionName))
-            .Validate(o => IsValid(o.Anonymous) && IsValid(o.SupplierCalls), "RateLimiting windows need PermitLimit 1-100000 and WindowSeconds 1-3600.")
+            .Validate(o => IsValid(o.Anonymous) && IsValid(o.SupplierCalls) && IsValid(o.Customer), "RateLimiting windows need PermitLimit 1-100000 and WindowSeconds 1-3600.")
             .ValidateOnStart();
 
         services.AddRateLimiter(limiter =>
@@ -50,6 +56,19 @@ internal static class ApiRateLimiting
             limiter.OnRejected = WriteRejection;
             AddPolicy(limiter, RateLimitPolicies.Anonymous, options => options.Anonymous);
             AddPolicy(limiter, RateLimitPolicies.SupplierCalls, options => options.SupplierCalls);
+        });
+
+        // Per signed-in customer, after authorization (an endpoint filter), for their writes only.
+        services.AddSingleton(provider =>
+        {
+            var window = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ApiRateLimitingOptions>>().Value.Customer;
+            return new CustomerWriteLimiter(PartitionedRateLimiter.Create<string, string>(customerId =>
+                RateLimitPartition.GetFixedWindowLimiter(customerId, _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = window.PermitLimit,
+                    Window = TimeSpan.FromSeconds(window.WindowSeconds),
+                    QueueLimit = 0,
+                })));
         });
         return services;
     }

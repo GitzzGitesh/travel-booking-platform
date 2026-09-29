@@ -103,7 +103,10 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
             bookable.AgreedTotalPrice,
             bookable.OfferExpiresAt,
             bookable is { AcceptedPriceQuoteId: { } quote, PriceAcceptedAt: { } acceptedAt } ? new PriceConsent(quote, acceptedAt) : null,
-            new TransitionContext(timeProvider.GetUtcNow(), Actor(command.CustomerId), command.CorrelationId));
+            new TransitionContext(timeProvider.GetUtcNow(), Actor(command.CustomerId), command.CorrelationId),
+            bookable.LastTravelDate is { } lastTravelDate
+                ? new TravellerNeeds(bookable.Adults, bookable.Children, bookable.Infants, bookable.DocumentsRequired, lastTravelDate)
+                : null);
 
         if (await store.TryAddAsync(order, cancellationToken))
         {

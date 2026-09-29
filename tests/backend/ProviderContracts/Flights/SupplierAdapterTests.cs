@@ -206,6 +206,20 @@ public sealed class SupplierAdapterTests
         failed.ShouldBe(new ProviderError(ProviderErrorKind.Unavailable, "HTTP 500"));
     }
 
+    [Theory]
+    [InlineData("""{"travelerRequirements":[{"travelerId":"1","documentRequired":true}]}""", true)]
+    [InlineData("""{"travelerRequirements":[{"travelerId":"1","documentRequired":false},{"travelerId":"2"}]}""", false)]
+    [InlineData("""{"emailAddressRequired":true}""", false)]
+    public async Task Amadeus_revalidation_requires_documents_only_when_the_supplier_says_so(string requirements, bool required)
+    {
+        var handler = new FakeHandler().Respond(HttpStatusCode.OK, _token)
+            .Respond(HttpStatusCode.OK, $$$"""{"data":{"type":"flight-offers-pricing","flightOffers":[{{{_amadeusOffer}}}],"bookingRequirements":{{{requirements}}}}}""");
+
+        var repriced = (await Amadeus(handler).RevalidateAsync(new ProviderOfferRef("amadeus", JsonDocument.Parse(_amadeusOffer).RootElement.GetRawText()), Ct)).Value;
+
+        repriced.DocumentsRequired.ShouldBe(required);
+    }
+
     [Fact]
     public async Task Amadeus_revalidation_prices_the_stored_offer_itself()
     {
@@ -215,6 +229,7 @@ public sealed class SupplierAdapterTests
         var repriced = (await Amadeus(handler).RevalidateAsync(reference, Ct)).Value;
 
         repriced.TotalPrice.Amount.ShouldBe(500m);
+        repriced.DocumentsRequired.ShouldBeFalse(); // not stated by the supplier: never assumed (Q9)
         var pricing = handler.Requests[1];
         pricing.Path.ShouldBe("/v1/shopping/flight-offers/pricing");
         var sentOffer = JsonDocument.Parse(pricing.Body!).RootElement.GetProperty("data").GetProperty("flightOffers")[0];

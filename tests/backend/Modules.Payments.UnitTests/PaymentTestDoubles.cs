@@ -44,6 +44,7 @@ internal sealed class FakeStore : IPaymentAttemptStore
         {
             FailNextSave = false;
             _pendingConsumed.Clear();
+            _pendingTrip = null;
             return Task.FromResult(false);
         }
 
@@ -53,11 +54,35 @@ internal sealed class FakeStore : IPaymentAttemptStore
             return Task.FromResult(false); // the inbox's primary key
         }
 
+        if (_pendingTrip is { } trip)
+        {
+            _pendingTrip = null;
+            if (Trips.Any(t => t.CustomerId == trip.CustomerId && t.IdempotencyKey == trip.IdempotencyKey))
+            {
+                return Task.FromResult(false); // the trips' unique key
+            }
+
+            Trips.Add(trip);
+        }
+
         _consumed.UnionWith(_pendingConsumed);
         _pendingConsumed.Clear();
         Saves++;
         return Task.FromResult(true);
     }
+
+    public List<AttemptLimitTrip> Trips { get; } = [];
+
+    private AttemptLimitTrip? _pendingTrip;
+
+    public void RecordLimitTrip(AttemptLimitTrip trip) => _pendingTrip = trip;
+
+    public Task<int> CountLimitTripsSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken) =>
+        Task.FromResult(Trips.Count(t => t.CustomerId == customerId && t.At >= since));
+
+    public Task<IReadOnlyList<CustomerTrips>> FindCustomersToReviewAsync(DateTimeOffset since, int minimumTrips, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<CustomerTrips>>([.. Trips.Where(t => t.At >= since).GroupBy(t => t.CustomerId)
+            .Where(g => g.Count() >= minimumTrips).Select(g => new CustomerTrips(g.Key, g.Count()))]);
 
     public Task<int> CountForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
         Task.FromResult(Attempts.Count(a => a.OrderId == orderId));

@@ -64,6 +64,15 @@ internal sealed class SelectedOffer
 
     public SelectedOfferStatus Status { get; private set; }
 
+    /// <summary>
+    /// The supplier requires travel documents for this offer (as of its last revalidation). Only then are they
+    /// collected (Q9); until the supplier says so, they are not.
+    /// </summary>
+    public bool DocumentsRequired { get; private set; }
+
+    /// <summary>The local date of the last arrival: the retention clock for travellers' personal data (Q9).</summary>
+    public DateOnly LastTravelDate => DateOnly.FromDateTime(Slices[^1].Segments[^1].ArrivalLocal);
+
     /// <summary>When the supplier last revalidated the offer (an instant, UTC).</summary>
     public DateTimeOffset? RevalidatedAt { get; private set; }
 
@@ -133,6 +142,7 @@ internal sealed class SelectedOffer
 
         // The latest fare facts; after a price change they describe the quoted price the customer is asked to accept.
         Fare = current.ConsistentFare;
+        DocumentsRequired = current.DocumentsRequired;
 
         if (current.TotalPrice == AgreedPrice)
         {
@@ -262,6 +272,7 @@ internal sealed class SelectedOffer
             Cabin = criteria.Cabin,
             Slices = offer.Slices,
             Fare = offer.ConsistentFare,
+            DocumentsRequired = offer.DocumentsRequired,
             Status = SelectedOfferStatus.Selected,
         };
     }

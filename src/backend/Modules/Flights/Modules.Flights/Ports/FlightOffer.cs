@@ -19,6 +19,12 @@ public sealed record FlightOffer(ProviderOfferRef Reference, Money TotalPrice, D
     public FlightFare Fare { get; init; } = FlightFare.NotStated;
 
     /// <summary>
+    /// The supplier requires travel documents (passport or ID) for this offer before booking (Q9: collected only then).
+    /// False when the supplier does not say so: adapters never assume a requirement.
+    /// </summary>
+    public bool DocumentsRequired { get; init; }
+
+    /// <summary>
     /// The fare facts to trust: a breakdown that does not add up to the total (a supplier's rounding, or a mapping error)
     /// is dropped, never shown or stored; the total stays the price. The core applies this to every offer it receives.
     /// </summary>

@@ -248,8 +248,11 @@ public sealed class OrderTests
         order.RefreshOffer(Guid.NewGuid(), Price, Now.AddMinutes(50), null, _system).Error.ShouldBeOfType<OrderTransitionError.ItemNotFound>();
     }
 
-    internal static Order NewOrder(Guid? selectedOfferId = null) =>
-        Order.CreateForFlight("cust-1", "key-1", selectedOfferId ?? Guid.NewGuid(), Price, Now.AddMinutes(30), null, new TransitionContext(Now, "customer", "trace-0"));
+    /// <summary>One adult, no documents required, travelling in 30 days.</summary>
+    internal static readonly TravellerNeeds OneAdult = new(1, 0, 0, false, DateOnly.FromDateTime(Now.UtcDateTime).AddDays(30));
+
+    internal static Order NewOrder(Guid? selectedOfferId = null, TravellerNeeds? needs = null) =>
+        Order.CreateForFlight("cust-1", "key-1", selectedOfferId ?? Guid.NewGuid(), Price, Now.AddMinutes(30), null, new TransitionContext(Now, "customer", "trace-0"), needs ?? OneAdult);
 
     private static Result<FlightOrderItemStatus, OrderTransitionError> Apply(Order order, Guid item, FlightOrderItemStatus to) => to switch
     {

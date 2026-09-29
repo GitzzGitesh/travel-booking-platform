@@ -18,7 +18,7 @@ public sealed class FlightSelectionsTests
 
         var result = await Selections(offer).GetBookableAsync(offer.Id, SelectedOfferStateTests.Customer, TestContext.Current.CancellationToken);
 
-        result.Value.ShouldBe(new BookableFlightSelection(offer.Id, SelectedOfferStateTests.Selected, offer.OfferExpiresAt, null, null));
+        result.Value.ShouldBe(new BookableFlightSelection(offer.Id, SelectedOfferStateTests.Selected, offer.OfferExpiresAt, null, null, offer.Adults, offer.Children, offer.Infants, offer.DocumentsRequired, offer.LastTravelDate));
     }
 
     [Fact]

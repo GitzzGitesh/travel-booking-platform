@@ -41,16 +41,43 @@ internal interface IPaymentAttemptStore
     /// <summary>How many attempts this customer started since <paramref name="since"/>, across all orders.</summary>
     Task<int> CountForCustomerSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken);
 
+    /// <summary>Records a refusal by the attempt limits, saved with the next <see cref="TrySaveAsync"/> (append-only).</summary>
+    void RecordLimitTrip(AttemptLimitTrip trip);
+
+    Task<int> CountLimitTripsSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken);
+
+    /// <summary>Customers with at least <paramref name="minimumTrips"/> refusals since <paramref name="since"/>: the review list.</summary>
+    Task<IReadOnlyList<CustomerTrips>> FindCustomersToReviewAsync(DateTimeOffset since, int minimumTrips, CancellationToken cancellationToken);
+
     Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken);
 
     /// <summary>Records a consumed integration event, saved with the next <see cref="TrySaveAsync"/> (ADR 0007 inbox).</summary>
     void MarkConsumed(Guid messageId, string handler, DateTimeOffset at);
 }
 
+/// <summary>A refusal by the attempt limits: an append-only record for the review list and alerting (Q10).</summary>
+internal sealed record AttemptLimitTrip(string CustomerId, Guid OrderId, string IdempotencyKey, DateTimeOffset At)
+{
+    public long Id { get; private set; }
+}
+
+/// <summary>A customer on the review list, with their refusals in the period.</summary>
+internal sealed record CustomerTrips(string CustomerId, int Trips);
+
 /// <summary>
-/// <c>Payments:AttemptLimits</c>: the minimum technical guardrail before checkout is customer-facing (card testing,
-/// repeated authorization). Counted from stored attempts, so it survives restarts. The values are business-configurable
-/// (fraud policy, Q10); the defaults only bound abuse.
+/// The review list (Q10): customers who reached the payment attempt limit repeatedly in the last 24 hours, for the fraud
+/// and operations team. Accounts are never blocked automatically in the MVP. Its admin endpoint comes with staff identity.
+/// </summary>
+internal sealed class PaymentAttemptReviewList(IPaymentAttemptStore store, TimeProvider timeProvider, Microsoft.Extensions.Options.IOptions<PaymentAttemptLimits> limits)
+{
+    public Task<IReadOnlyList<CustomerTrips>> FindAsync(CancellationToken cancellationToken) =>
+        store.FindCustomersToReviewAsync(timeProvider.GetUtcNow() - PaymentAttemptLimits.CustomerWindow, limits.Value.AlertAfterTrips, cancellationToken);
+}
+
+/// <summary>
+/// <c>Payments:AttemptLimits</c> (Q10, approved 2026-09-28): the platform's guardrail against card testing and repeated
+/// authorization; Stripe Radar (with 3-D Secure) is the fraud engine. Counted from stored attempts, so it survives
+/// restarts. The values are configurable, so operations can revise them.
 /// </summary>
 internal sealed class PaymentAttemptLimits
 {
@@ -62,7 +89,13 @@ internal sealed class PaymentAttemptLimits
     public int MaxAttemptsPerOrder { get; set; } = 5;
 
     /// <summary>Attempts one customer may start across all orders in the last 24 hours.</summary>
-    public int MaxAttemptsPerCustomerPerDay { get; set; } = 20;
+    public int MaxAttemptsPerCustomerPerDay { get; set; } = 10;
+
+    /// <summary>
+    /// Refusals ("trips") by one customer within 24 hours that raise an operational alert and put them on the review
+    /// list (Q10: no automatic account block in the MVP).
+    /// </summary>
+    public int AlertAfterTrips { get; set; } = 3;
 }
 
 internal sealed class PaymentReconciliationOptions
@@ -280,14 +313,43 @@ internal sealed partial class AuthorizeOrderPaymentHandler(
             return false;
         }
 
-        // A security event (security rules: suspicious payment velocity), with our ids only.
+        // A security event (security rules: suspicious payment velocity), with our ids only; and a durable trip, so
+        // repeated trips raise an operational alert and put the customer on the review list. One trip per request key
+        // (a unique index): a retried refusal is not a new one. The refusal stands even if the trip cannot be recorded.
+        var now = timeProvider.GetUtcNow();
         if (logger is not null)
         {
             LogLimitReached(logger, request.OrderId, request.CustomerId, forOrder, forCustomer);
         }
 
+        var trips = 0;
+        try
+        {
+            store.RecordLimitTrip(new AttemptLimitTrip(request.CustomerId, request.OrderId, request.IdempotencyKey, now));
+            if (await store.TrySaveAsync(cancellationToken))
+            {
+                trips = await store.CountLimitTripsSinceAsync(request.CustomerId, now - PaymentAttemptLimits.CustomerWindow, cancellationToken);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException && logger is not null)
+        {
+            LogTripNotRecorded(logger, request.OrderId, exception.GetType().Name);
+        }
+
+        // Once per window, when the threshold is reached, not on every later trip (the review list shows the rest).
+        if (trips == settings.AlertAfterTrips && logger is not null)
+        {
+            LogRepeatedTrips(logger, request.CustomerId, trips);
+        }
+
         return true;
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, EventName = "PaymentAttemptLimitTripNotRecorded", Message = "The payment attempt limit refusal for order {OrderId} could not be recorded ({ExceptionType}); refused anyway")]
+    private static partial void LogTripNotRecorded(ILogger logger, Guid orderId, string exceptionType);
+
+    [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentAttemptLimitRepeated", Message = "Alert: customer {CustomerId} reached the payment attempt limit {Trips} times in 24 hours; on the review list")]
+    private static partial void LogRepeatedTrips(ILogger logger, string customerId, int trips);
 
     [LoggerMessage(Level = LogLevel.Warning, EventName = "PaymentAttemptLimitReached", Message = "Security: payment attempt limit reached for order {OrderId}, customer {CustomerId} ({OrderAttempts} for the order, {CustomerAttempts} for the customer in 24 hours); no attempt started")]
     private static partial void LogLimitReached(ILogger logger, Guid orderId, string customerId, int orderAttempts, int customerAttempts);

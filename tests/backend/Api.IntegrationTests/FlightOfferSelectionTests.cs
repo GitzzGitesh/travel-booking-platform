@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MsSql;
 using TravelBooking.BuildingBlocks.Background.Persistence;
+using TravelBooking.Modules.Customers;
 using TravelBooking.Modules.Customers.Infrastructure;
 using TravelBooking.Modules.Flights.Infrastructure;
 using TravelBooking.Modules.Orders;
@@ -56,6 +57,10 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         // Many tests here pay as the same customer: the per-customer attempt limit is tested on its own (unit, and
         // OrderPaymentAuthorizationTests for the per-order limit), so it does not cap unrelated tests.
         builder.UseSetting("Payments:AttemptLimits:MaxAttemptsPerCustomerPerDay", "10000");
+
+        // A document key made for this run only (ADR 0020): real keys come from user-secrets / Key Vault, never Git.
+        builder.UseSetting("Customers:DocumentEncryption:ActiveKeyId", "test-1");
+        builder.UseSetting("Customers:DocumentEncryption:Keys:test-1", Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<TimeProvider>(Clock);
@@ -63,6 +68,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             // The Worker's jobs, run explicitly by the tests: the scheduler itself is never started here.
             services.AddOrdersBackgroundJobs();
             services.AddPaymentsBackgroundJobs();
+            services.AddCustomersBackgroundJobs();
             services.AddSingleton<BackgroundJobRunner>();
 
             // Customer tokens signed by the tests' own key (no identity-provider tenant exists yet, ADR 0008).

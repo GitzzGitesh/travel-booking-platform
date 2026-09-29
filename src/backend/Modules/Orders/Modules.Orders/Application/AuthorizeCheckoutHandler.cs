@@ -1,5 +1,6 @@
 using System.Text;
 using TravelBooking.BuildingBlocks;
+using TravelBooking.Modules.Customers.Contracts;
 using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 using TravelBooking.Modules.Payments.Contracts;
@@ -121,6 +122,12 @@ internal abstract record CheckoutFailure
     /// <summary>F-32: another payment attempt for this order (another key) may still hold funds; finish that one first.</summary>
     internal sealed record PaymentInProgress : CheckoutFailure;
 
+    /// <summary>
+    /// The travellers (names, dates of birth, genders, one per passenger), the booker's contact, and the travel documents
+    /// when the supplier requires them, are not all provided yet (Q9): nothing is charged.
+    /// </summary>
+    internal sealed record TravellersIncomplete(bool DocumentsRequired) : CheckoutFailure;
+
     /// <summary>Too many payment attempts for this order or customer: no new attempt started (Payments:AttemptLimits).</summary>
     internal sealed record AttemptLimitReached : CheckoutFailure;
 
@@ -140,7 +147,7 @@ internal abstract record CheckoutFailure
 /// order to Booking. Idempotent by the payment key; an unknown payment outcome is never booked on. The supplier booking
 /// itself needs the travellers (Q9) and comes later.
 /// </summary>
-internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelections selections, IOrderPayments payments, TimeProvider timeProvider)
+internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelections selections, IOrderPayments payments, IOrderTravellers travellers, TimeProvider timeProvider)
 {
     /// <summary>
     /// How long an offer must still be valid to start a payment: the authorization and the booking both need time, and
@@ -183,9 +190,16 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
             return Failure(unavailable);
         }
 
+        // No payment before the travellers (and, when the supplier requires them, their documents) are complete (Q9).
+        var incomplete = await TravellersIncompleteAsync(order, cancellationToken);
         if (!await store.TrySaveAsync(cancellationToken))
         {
             return Failure(new CheckoutFailure.TryAgain());
+        }
+
+        if (incomplete is not null)
+        {
+            return Failure(incomplete); // the refreshed terms are saved (e.g. documents now required); nothing is charged
         }
 
         var payment = await payments.AuthorizeAsync(
@@ -203,6 +217,22 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
         }
 
         return await Complete(order, payment.Value, command, cancellationToken);
+    }
+
+    /// <summary>Whether the order's travellers are complete for its needs; the reason not, if any.</summary>
+    private async Task<CheckoutFailure?> TravellersIncompleteAsync(Order order, CancellationToken cancellationToken)
+    {
+        if (order.Items.Select(i => i.TravellerNeeds).FirstOrDefault(n => n is { IsKnown: true }) is not { } needs)
+        {
+            return new CheckoutFailure.TravellersIncomplete(DocumentsRequired: false); // an order from before traveller needs were recorded
+        }
+
+        var documentsRequired = order.Items.Any(i => i.TravellerNeeds is { DocumentsRequired: true });
+        var provided = await travellers.GetReadinessAsync(order.Id, order.CustomerId, cancellationToken);
+        var complete = provided.Adults == needs.Adults && provided.Children == needs.Children && provided.Infants == needs.Infants
+            && provided.ContactProvided
+            && (!documentsRequired || provided.DocumentsProvided == needs.Adults + needs.Children + needs.Infants);
+        return complete ? null : new CheckoutFailure.TravellersIncomplete(documentsRequired);
     }
 
     /// <summary>Revalidates each item and adopts its fresh terms; the first reason it cannot be paid for, if any.</summary>
@@ -225,7 +255,7 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
 
             var bookable = revalidated.Value;
             var consent = bookable is { AcceptedPriceQuoteId: { } quote, PriceAcceptedAt: { } acceptedAt } ? new PriceConsent(quote, acceptedAt) : null;
-            var refreshed = order.RefreshOffer(item.Id, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, consent, context);
+            var refreshed = order.RefreshOffer(item.Id, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, consent, context, bookable.DocumentsRequired);
             if (!refreshed.IsSuccess)
             {
                 return refreshed.Error is OrderTransitionError.PriceNotAccepted
@@ -263,6 +293,13 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
         {
             // Held for an earlier total (the price changed while this attempt was unresolved): never booked on.
             return await Unused(order, payment.PaymentId, "the held amount is not the order's total", context, cancellationToken);
+        }
+
+        // Travellers are checked again here: a resumed attempt (after a challenge, or from before they were required)
+        // skipped the check above, and they may have changed while the payment was being authorized.
+        if (await TravellersIncompleteAsync(order, cancellationToken) is not null)
+        {
+            return await Unused(order, payment.PaymentId, "the travellers were not complete when booking was to start", context, cancellationToken);
         }
 
         if (!order.StartBooking(reference, context).IsSuccess)

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -275,6 +276,68 @@ public sealed class AuthorizeOrderPaymentHandlerTests
     }
 
     [Fact]
+    public async Task Repeated_refusals_are_recorded_and_put_the_customer_on_the_review_list_without_blocking()
+    {
+        _provider.OnAuthorize = details => Snapshot(details.Reference, PaymentState.Declined);
+        var limits = new PaymentAttemptLimits { MaxAttemptsPerOrder = 1, AlertAfterTrips = 3 };
+        var handler = Handler(limits);
+        await handler.AuthorizeAsync(Request("key-1"), Ct);
+        for (var i = 2; i <= 4; i++)
+        {
+            (await handler.AuthorizeAsync(Request($"key-{i}"), Ct)).Error.ShouldBe(OrderPaymentFailure.AttemptLimitReached);
+        }
+
+        var reviewList = await new PaymentAttemptReviewList(_store, _clock, Options.Create(limits)).FindAsync(Ct);
+        var anotherOrder = await handler.AuthorizeAsync(Request("key-5") with { OrderId = Guid.NewGuid() }, Ct);
+
+        _store.Trips.Count.ShouldBe(3);
+        reviewList.ShouldBe([new CustomerTrips("cust-1", 3)]);
+        anotherOrder.IsSuccess.ShouldBeTrue(); // on the review list, never blocked automatically (Q10)
+    }
+
+    [Fact]
+    public async Task A_retried_refusal_is_one_trip_and_the_alert_fires_once_at_the_threshold()
+    {
+        _provider.OnAuthorize = details => Snapshot(details.Reference, PaymentState.Declined);
+        var logger = new EventLogger();
+        var handler = Handler(new PaymentAttemptLimits { MaxAttemptsPerOrder = 1, AlertAfterTrips = 2 }, logger);
+        await handler.AuthorizeAsync(Request("key-1"), Ct);
+
+        await handler.AuthorizeAsync(Request("key-2"), Ct);
+        await handler.AuthorizeAsync(Request("key-2"), Ct); // the same refused request, retried
+        var alertsAfterOne = logger.Events.Count(e => e == "PaymentAttemptLimitRepeated");
+        await handler.AuthorizeAsync(Request("key-3"), Ct);
+        await handler.AuthorizeAsync(Request("key-4"), Ct);
+
+        _store.Trips.Select(t => t.IdempotencyKey).ShouldBe(["key-2", "key-3", "key-4"]);
+        alertsAfterOne.ShouldBe(0);
+        logger.Events.Count(e => e == "PaymentAttemptLimitRepeated").ShouldBe(1); // at the second trip only
+        logger.Events.Count(e => e == "PaymentAttemptLimitReached").ShouldBe(4); // every refusal is a security event
+    }
+
+    [Fact]
+    public async Task The_refusal_stands_when_its_trip_cannot_be_recorded()
+    {
+        _provider.OnAuthorize = details => Snapshot(details.Reference, PaymentState.Declined);
+        var handler = Handler(new PaymentAttemptLimits { MaxAttemptsPerOrder = 1 });
+        await handler.AuthorizeAsync(Request("key-1"), Ct);
+        _store.FailNextSave = true;
+
+        var refused = await handler.AuthorizeAsync(Request("key-2"), Ct);
+
+        refused.Error.ShouldBe(OrderPaymentFailure.AttemptLimitReached);
+        _store.Trips.ShouldBeEmpty();
+        _provider.Authorizations.ShouldBe(1);
+    }
+
+    [Fact]
+    public void The_approved_defaults_apply_until_operations_change_them() =>
+        new PaymentAttemptLimits().ShouldSatisfyAllConditions(
+            l => l.MaxAttemptsPerOrder.ShouldBe(5),
+            l => l.MaxAttemptsPerCustomerPerDay.ShouldBe(10),
+            l => l.AlertAfterTrips.ShouldBe(3));
+
+    [Fact]
     public async Task A_customer_is_limited_across_orders_within_24_hours_and_the_window_moves_on()
     {
         _provider.OnAuthorize = details => Snapshot(details.Reference, PaymentState.Declined);
@@ -292,12 +355,13 @@ public sealed class AuthorizeOrderPaymentHandlerTests
         nextDay.IsSuccess.ShouldBeTrue();
     }
 
-    private AuthorizeOrderPaymentHandler Handler(PaymentAttemptLimits? limits = null) => new(
+    private AuthorizeOrderPaymentHandler Handler(PaymentAttemptLimits? limits = null, ILogger<AuthorizeOrderPaymentHandler>? logger = null) => new(
         _store,
         new PaymentOperations(_provider, _clock, NullLogger<PaymentOperations>.Instance),
         _clock,
         Options.Create(new PaymentReconciliationOptions { NotFoundConclusiveAfter = _window }),
-        Options.Create(limits ?? new PaymentAttemptLimits()));
+        Options.Create(limits ?? new PaymentAttemptLimits()),
+        logger);
 
     private static OrderPaymentRequest Request(string key) => new(_orderId, "cust-1", key, _total, "pm_test");
 
@@ -308,4 +372,17 @@ public sealed class AuthorizeOrderPaymentHandlerTests
     private static Result<PaymentSnapshot, ProviderError> Ok(PaymentSnapshot payment) => Result<PaymentSnapshot, ProviderError>.Success(payment);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private sealed class EventLogger : ILogger<AuthorizeOrderPaymentHandler>
+    {
+        public List<string> Events { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Events.Add(eventId.Name ?? string.Empty);
+    }
 }

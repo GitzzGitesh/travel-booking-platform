@@ -62,6 +62,43 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                     b.ToTable("JobLeases", "payments");
                 });
 
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Application.AttemptLimitTrip", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CustomerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.HasIndex("CustomerId", "At");
+
+                    b.HasIndex("CustomerId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("AttemptLimitTrips", "payments");
+                });
+
             modelBuilder.Entity("TravelBooking.Modules.Payments.Application.PaymentNotificationRecord", b =>
                 {
                     b.Property<Guid>("Id")

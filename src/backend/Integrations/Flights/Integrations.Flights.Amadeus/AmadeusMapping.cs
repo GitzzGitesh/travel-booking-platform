@@ -16,6 +16,17 @@ internal static class AmadeusMapping
 {
     public const string Source = "GDS";
 
+    /// <summary>
+    /// Flight Offers Price states what booking needs in <c>bookingRequirements.travelerRequirements[].documentRequired</c>
+    /// (documented; to confirm in the sandbox): any traveller requiring a document means documents are collected (Q9).
+    /// Absent means not required.
+    /// </summary>
+    public static bool DocumentsRequired(JsonElement pricingData) =>
+        pricingData.TryGetProperty("bookingRequirements", out var requirements)
+        && requirements.TryGetProperty("travelerRequirements", out var travelers)
+        && travelers.ValueKind == JsonValueKind.Array
+        && travelers.EnumerateArray().Any(t => t.TryGetProperty("documentRequired", out var required) && required.ValueKind == JsonValueKind.True);
+
     /// <param name="currency">The currency to price in (<c>currencyCode</c>), or null for the supplier's default.</param>
     public static AmadeusSearchRequest ToSearchRequest(FlightSearchCriteria criteria, int maxOffers, string? currency = null)
     {

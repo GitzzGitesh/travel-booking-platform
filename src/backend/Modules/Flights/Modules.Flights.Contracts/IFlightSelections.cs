@@ -30,12 +30,20 @@ public interface IFlightSelections
 /// A confirmed selection: the price the customer agreed to, until the supplier's offer expires. When that price was an
 /// accepted change (F-01), the accepted quote and its time are the consent evidence; both are null otherwise.
 /// </summary>
+/// <param name="Adults">The passenger mix travellers must be given for (with <paramref name="Children"/> and <paramref name="Infants"/>).</param>
+/// <param name="DocumentsRequired">The supplier requires travel documents for this offer (Q9: only then are they collected).</param>
+/// <param name="LastTravelDate">The local date of the last arrival: the retention clock for travellers' personal data (Q9).</param>
 public sealed record BookableFlightSelection(
     Guid SelectedOfferId,
     Money AgreedTotalPrice,
     DateTimeOffset OfferExpiresAt,
     Guid? AcceptedPriceQuoteId,
-    DateTimeOffset? PriceAcceptedAt);
+    DateTimeOffset? PriceAcceptedAt,
+    int Adults = 1,
+    int Children = 0,
+    int Infants = 0,
+    bool DocumentsRequired = false,
+    DateOnly? LastTravelDate = null);
 
 public enum FlightSelectionUnavailable
 {

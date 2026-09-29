@@ -9,6 +9,12 @@ export type { RevalidateSelectedFlightOffer$Params as RevalidateSelectedFlightOf
 export { revalidateSelectedFlightOffer as revalidateSelectedFlightOffer } from './fn/flights/revalidate-selected-flight-offer';
 export type { AcceptSelectedFlightOfferPrice$Params as AcceptSelectedFlightOfferPrice$Params } from './fn/flights/accept-selected-flight-offer-price';
 export { acceptSelectedFlightOfferPrice as acceptSelectedFlightOfferPrice } from './fn/flights/accept-selected-flight-offer-price';
+export type { GetOrderTravellers$Params as GetOrderTravellers$Params } from './fn/travellers/get-order-travellers';
+export { getOrderTravellers as getOrderTravellers } from './fn/travellers/get-order-travellers';
+export type { SaveOrderTravellers$Params as SaveOrderTravellers$Params } from './fn/travellers/save-order-travellers';
+export { saveOrderTravellers as saveOrderTravellers } from './fn/travellers/save-order-travellers';
+export type { SaveTravelDocument$Params as SaveTravelDocument$Params } from './fn/travellers/save-travel-document';
+export { saveTravelDocument as saveTravelDocument } from './fn/travellers/save-travel-document';
 export type { GetCurrentCustomer$Params as GetCurrentCustomer$Params } from './fn/customers/get-current-customer';
 export { getCurrentCustomer as getCurrentCustomer } from './fn/customers/get-current-customer';
 export type { CreateFlightOrder$Params as CreateFlightOrder$Params } from './fn/orders/create-flight-order';
