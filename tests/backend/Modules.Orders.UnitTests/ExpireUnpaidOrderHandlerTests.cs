@@ -33,7 +33,8 @@ public sealed class ExpireUnpaidOrderHandlerTests
         _order.Timeline.Count.ShouldBe(entries);
         var entry = _order.Timeline[^1];
         (entry.FromStatus, entry.ToStatus, entry.Actor).ShouldBe(("AwaitingPayment", "Abandoned", ExpireUnpaidOrderHandler.Actor));
-        _store.Published.ShouldBeEmpty();
+        var abandoned = _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderAbandoned>(); // once, for Customers' retention
+        (abandoned.OrderId, abandoned.OccurredAt).ShouldBe((_order.Id, entry.At));
     }
 
     [Fact]
@@ -76,7 +77,7 @@ public sealed class ExpireUnpaidOrderHandlerTests
         (await Handle()).ShouldBe(ExpiryOutcome.WaitingForPayment);
 
         (_order.Status, _order.Timeline.Count, _store.Saves).ShouldBe((OrderStatus.AwaitingPayment, entries, 0));
-        _store.Published.ShouldBeEmpty();
+        _store.Published.ShouldBeEmpty(); // nor is the order abandoned, so its personal data keeps the normal retention
     }
 
     [Fact]
@@ -103,6 +104,7 @@ public sealed class ExpireUnpaidOrderHandlerTests
         (await Handle()).ShouldBe(ExpiryOutcome.Abandoned);
 
         _order.Status.ShouldBe(OrderStatus.Abandoned);
+        _store.Published.OfType<OrderAbandoned>().ShouldHaveSingleItem(); // only once the payment is settled
     }
 
     [Fact]

@@ -30,6 +30,12 @@ internal interface IPersonalDataStore
     /// list, oldest first.
     /// </summary>
     Task<IReadOnlyList<Guid>> FindDueForPurgeAsync(DateOnly today, int limit, CancellationToken cancellationToken);
+
+    /// <summary>Whether this handler already consumed the event (ADR 0007 inbox).</summary>
+    Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken);
+
+    /// <summary>Records the event as consumed, saved with the next <see cref="TrySaveAsync"/> (a unique key).</summary>
+    void MarkConsumed(Guid messageId, string handler, DateTimeOffset at);
 }
 
 internal enum DocumentProtectionError
@@ -66,6 +72,9 @@ internal sealed class PersonalDataRetentionOptions
     public int PersonalDataMonthsAfterTravel { get; set; } = 25;
 
     public int DocumentDaysAfterTravel { get; set; } = 30;
+
+    /// <summary>Days after an order is abandoned (never booked, no payment unsettled) until its personal data is anonymised.</summary>
+    public int PersonalDataDaysAfterAbandonment { get; set; } = 30;
 
     public RetentionDates DatesFor(DateOnly lastTravelDate) =>
         new(lastTravelDate, lastTravelDate.AddMonths(PersonalDataMonthsAfterTravel), lastTravelDate.AddDays(DocumentDaysAfterTravel));

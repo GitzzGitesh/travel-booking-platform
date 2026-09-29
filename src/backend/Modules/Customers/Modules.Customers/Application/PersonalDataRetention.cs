@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Customers.Domain;
+using TravelBooking.Modules.Orders.Contracts;
 
 namespace TravelBooking.Modules.Customers.Application;
 
@@ -117,6 +119,44 @@ internal sealed class PersonalDataPurger(IPersonalDataStore store, TimeProvider 
         }
 
         return changed && await store.TrySaveAsync(cancellationToken);
+    }
+}
+
+/// <summary>
+/// Orders abandoned an order (ADR 0007 inbox: once per event). Its retention is shortened (Q9, approved 2026-09-29), and
+/// the purge runs for it at once, so its documents are shredded now unless a legal hold applies. The hourly purge
+/// anonymises the rest after the grace period. The event only comes once no payment for the order is unsettled.
+/// </summary>
+internal sealed class OrderAbandonedHandler(
+    IPersonalDataStore store, PersonalDataPurger purger, TimeProvider timeProvider, IOptions<PersonalDataRetentionOptions> retention)
+    : IIntegrationEventHandler<OrderAbandoned>
+{
+    public const string Name = "customers.order-abandoned";
+    public const string Actor = "system:orders";
+
+    public async Task HandleAsync(OrderAbandoned integrationEvent, CancellationToken cancellationToken)
+    {
+        if (await store.HasConsumedAsync(integrationEvent.EventId, Name, cancellationToken))
+        {
+            return;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        if (await store.FindSetAsync(integrationEvent.OrderId, cancellationToken) is { AnonymisedAt: null } set
+            && set.OrderAbandoned(DateOnly.FromDateTime(integrationEvent.OccurredAt.UtcDateTime), retention.Value.PersonalDataDaysAfterAbandonment, now))
+        {
+            store.Audit(new RetentionEvent(integrationEvent.OrderId, RetentionAction.ShortenedForAbandonedOrder, Actor,
+                "The order was abandoned before booking", now, integrationEvent.CorrelationId));
+        }
+
+        store.MarkConsumed(integrationEvent.EventId, Name, now);
+        if (!await store.TrySaveAsync(cancellationToken))
+        {
+            // The set changed at the same moment (e.g. a legal hold): fail so the outbox delivers the event again.
+            throw new InvalidOperationException($"The travellers of order {integrationEvent.OrderId} changed concurrently.");
+        }
+
+        await purger.PurgeAsync(integrationEvent.OrderId, cancellationToken); // if this fails, the hourly purge does it
     }
 }
 

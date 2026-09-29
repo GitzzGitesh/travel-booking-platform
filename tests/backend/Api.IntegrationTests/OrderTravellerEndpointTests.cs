@@ -161,6 +161,27 @@ public sealed class OrderTravellerEndpointTests(SqlApiFactory api) : IClassFixtu
     }
 
     [Fact]
+    public async Task An_order_abandoned_unpaid_has_its_documents_shredded_at_once_and_its_travellers_anonymised_30_days_later()
+    {
+        var token = Token();
+        var order = await NewOrder(_documentsRequiredDestination, token);
+        (await PutTravellers(token, order.Id, Adult())).Dispose();
+        (await PutDocument(token, order.Id, 0)).Dispose();
+
+        api.Clock.Advance(TimeSpan.FromMinutes(31)); // the offer expired, never paid
+        await Run(TravelBooking.Modules.Orders.Application.ExpireUnpaidOrdersJob.Name);
+        await Run("orders.outbox"); // OrderAbandoned, consumed by Customers
+
+        (await CountDocuments(order.Id)).ShouldBe(0);
+        (await Send(HttpMethod.Get, Travellers(order.Id), token)).StatusCode.ShouldBe(HttpStatusCode.OK); // the grace period
+
+        api.Clock.Advance(TimeSpan.FromDays(31));
+        await Purge();
+
+        (await Send(HttpMethod.Get, Travellers(order.Id), token)).StatusCode.ShouldBe(HttpStatusCode.NotFound); // anonymised
+    }
+
+    [Fact]
     public async Task Each_customer_has_their_own_limit_on_writes_while_reads_are_limited_by_address_only()
     {
         using var limited = Limited(new() { ["RateLimiting:Customer:PermitLimit"] = "2" });
@@ -277,9 +298,11 @@ public sealed class OrderTravellerEndpointTests(SqlApiFactory api) : IClassFixtu
             .HandleAsync(new LegalHoldRequest(orderId, hold, "ops-1", "disputed payment"), Ct);
     }
 
-    private async Task Purge()
+    private Task Purge() => Run(PurgePersonalDataJob.Name);
+
+    private async Task Run(string job)
     {
-        var schedule = api.Services.GetServices<BackgroundJobSchedule>().Single(s => s.Name == PurgePersonalDataJob.Name);
+        var schedule = api.Services.GetServices<BackgroundJobSchedule>().Single(s => s.Name == job);
         using var scope = api.Services.CreateScope();
         await ((IBackgroundJob)scope.ServiceProvider.GetRequiredService(schedule.JobType)).RunOnceAsync(Ct);
     }

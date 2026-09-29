@@ -15,6 +15,7 @@ using TravelBooking.Modules.Customers.Application;
 using TravelBooking.Modules.Customers.Contracts;
 using TravelBooking.Modules.Customers.Endpoints;
 using TravelBooking.Modules.Customers.Infrastructure;
+using TravelBooking.Modules.Orders.Contracts;
 
 namespace TravelBooking.Modules.Customers;
 
@@ -115,6 +116,7 @@ public static class CustomersModule
     public static IServiceCollection AddCustomersBackgroundJobs(this IServiceCollection services)
     {
         services.AddBackgroundJob<PurgePersonalDataJob, CustomersDbContext>(PurgePersonalDataJob.Name, TimeSpan.FromHours(1));
+        services.AddIntegrationEventHandler<OrderAbandoned, OrderAbandonedHandler>();
         return services;
     }
 

@@ -105,6 +105,7 @@ internal enum RetentionAction
     LegalHoldReleased,
     Anonymised,
     DocumentsShredded,
+    ShortenedForAbandonedOrder,
 }
 
 /// <summary>An append-only record of retention actions on an order's personal data, with the actor and reason (audit).</summary>

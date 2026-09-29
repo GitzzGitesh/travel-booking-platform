@@ -20,8 +20,9 @@ Background: ADR 0020, Q9 and Q10 in `docs/requirements/open-questions.md`, `docs
 All queries are read-only.
 1. The purge job: `customers.JobLeases` for `customers.purge-personal-data` (last holder and expiry), and the Worker logs.
 2. Sets due but not purged: `customers.TravellerSets` with `LegalHold = 0` and `AnonymisedAt` null and `RetainUntil` in the past, or with live documents past `DocumentsRetainUntil`.
-3. What happened to a set: `customers.RetentionEvents` by `OrderId` (holds, shredding, anonymisation, with actor and reason) and `customers.DocumentAccessLog` by `DocumentId` (every store, read and shred, with the correlation id). Neither ever contains personal data.
-4. The review list (Q10): customers with at least `Payments:AttemptLimits:AlertAfterTrips` refusals (default 3) in 24 hours, from `payments.AttemptLimitTrips` grouped by `CustomerId`. The admin view comes with staff identity. Until then, query read-only.
+3. Abandoned orders: an `OrderAbandoned` message in `orders.OutboxMessages` (processed, or failed with `LastError`), and its row in `customers.InboxMessages` (handler `customers.order-abandoned`). Consumed means the set's dates were shortened (a `ShortenedForAbandonedOrder` retention event) and its documents were shredded unless a legal hold applies.
+4. What happened to a set: `customers.RetentionEvents` by `OrderId` (holds, shredding, anonymisation, with actor and reason) and `customers.DocumentAccessLog` by `DocumentId` (every store, read and shred, with the correlation id). Neither ever contains personal data.
+5. The review list (Q10): customers with at least `Payments:AttemptLimits:AlertAfterTrips` refusals (default 3) in 24 hours, from `payments.AttemptLimitTrips` grouped by `CustomerId`. The admin view comes with staff identity. Until then, query read-only.
 
 ## Resolve
 ### Purge stopped

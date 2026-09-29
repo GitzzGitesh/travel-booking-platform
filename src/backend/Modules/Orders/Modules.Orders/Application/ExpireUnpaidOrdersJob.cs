@@ -55,7 +55,7 @@ internal sealed class ExpireUnpaidOrderHandler(IOrderStore store, IOrderPayments
         var live = await payments.FindLiveAsync(orderId, cancellationToken);
         var outcome = live switch
         {
-            null => order.AbandonExpired(context) > 0 ? ExpiryOutcome.Abandoned : ExpiryOutcome.NothingToDo,
+            null => Abandon(order, context),
             { Status: OrderPaymentStatus.Authorized or OrderPaymentStatus.ActionRequired, ReleaseRequested: false }
                 => await RequestReleaseAsync(order, live.PaymentId, context, cancellationToken),
             _ => ExpiryOutcome.WaitingForPayment, // unknown, releasing, or with a person
@@ -64,6 +64,23 @@ internal sealed class ExpireUnpaidOrderHandler(IOrderStore store, IOrderPayments
         return outcome is ExpiryOutcome.NothingToDo or ExpiryOutcome.WaitingForPayment || await store.TrySaveAsync(cancellationToken)
             ? outcome
             : ExpiryOutcome.Conflict;
+    }
+
+    // No payment is unsettled here (checked above), so the travellers' personal data may go sooner (Q9): Customers is told
+    // in the same save, once the whole order is abandoned.
+    private ExpiryOutcome Abandon(Order order, TransitionContext context)
+    {
+        if (order.AbandonExpired(context) == 0)
+        {
+            return ExpiryOutcome.NothingToDo;
+        }
+
+        if (order.Status is OrderStatus.Abandoned)
+        {
+            store.Publish(new OrderAbandoned(Guid.NewGuid(), context.At, order.Id, context.CorrelationId), context.CorrelationId);
+        }
+
+        return ExpiryOutcome.Abandoned;
     }
 
     private async Task<ExpiryOutcome> RequestReleaseAsync(Order order, Guid paymentId, TransitionContext context, CancellationToken cancellationToken)

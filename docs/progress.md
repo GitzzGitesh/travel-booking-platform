@@ -67,9 +67,13 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
   - Shredding documents when the supplier stops requiring them (they are shredded 30 days after travel).
   - Retention of `AttemptLimitTrips` (security audit, 12 months).
   - KEK rotation through Key Vault key wrapping (recommended before production; row shredding does not reach backups, see ADR 0020).
-- **For the owner:**
-  - Personal data of orders that are abandoned or expire unpaid is kept until 25 months after the planned travel. Should it be removed sooner?
-  - Ages are checked against the last travel date. Some carriers use the age at first departure for children and adults. This is to confirm per supplier. Runbook `personal-data-retention.md`. **Counsel items (Q9):** the final financial retention period (Q14), invoice-name requirements, the cross-border transfer basis, minors, and per-market document rules |
+- **Abandoned orders (approved 2026-09-29):**
+  - When the order becomes Abandoned (`OrderAbandoned` through the Orders outbox, Customers inbox, migration `AddCustomersInbox`), its documents are shredded at once, and its traveller and booker data is anonymised 30 days later.
+  - An order is abandoned only when no payment attempt is unsettled, so unsettled payments keep the normal retention.
+  - A legal hold blocks the purge.
+  - Booked orders keep 25 months after travel.
+- ADR 0020 **Accepted** 2026-09-29.
+- **To confirm per supplier:** ages are checked against the last travel date; some carriers use the age at first departure for children and adults. Runbook `personal-data-retention.md`. **Counsel items (Q9):** the final financial retention period (Q14), invoice-name requirements, the cross-border transfer basis, minors, and per-market document rules |
 | 4e | **Next:** supplier booking then capture | **Blocked:** a bookable supplier (Amadeus R1–R7, ADR 0019). Traveller data is available (row 4f) |
 | 4d | **Payment provider groundwork (ADR 0006, revised, Proposed)** | **Done (not production-ready).** Recommendation: Stripe, with server-side confirmation (a browser-created token is confirmed by our server; the challenge runs in the browser; its result is learnt by lookup). The port gains `IsProductionReady` (fail closed, enforced at startup), a lookup by known provider payment id, and `IPaymentNotifications`. Webhook intake: `POST /api/v1/payments/notifications/{providerId}`, verified, one row per event (migration `AddPaymentNotifications`), processed by a Worker job that looks the payment up. `Integrations.Payments.Stripe`: plain HTTP, test keys only, USD/EUR/GBP (INR once confirmed, TND refused), fixture-tested; the shared contract runs against Stripe test mode only with credentials (skipped otherwise). Mock: completed and failed challenge scenarios. **Needs:** the owner's acceptance of Stripe, Q14 and P1–P10 in ADR 0006. **Deviation to confirm:** notifications are stored without the raw event |
 | 5 | Supplier booking after authorization (`FlightSupplierBooking` behind a Flights Contracts entry point), then capture or void, and the checkout endpoint | **Next technically:** the orchestration can run against the mock supplier, with travellers read through an audited Customers contract. A production supplier still needs Amadeus R1–R7 |

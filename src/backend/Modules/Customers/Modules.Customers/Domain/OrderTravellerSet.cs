@@ -161,6 +161,26 @@ internal sealed class OrderTravellerSet
         DocumentsRetainUntil = retention.DocumentsUntil;
     }
 
+    /// <summary>
+    /// The order was abandoned before booking, with no payment unsettled (Q9, approved 2026-09-29): its documents are due
+    /// at once (the retention dates are the last day kept), and the rest of the personal data after a grace period. Only
+    /// ever shortens retention. A legal hold still blocks the purge. Returns whether anything changed.
+    /// </summary>
+    public bool OrderAbandoned(DateOnly abandonedOn, int graceDays, DateTimeOffset at)
+    {
+        var documentsUntil = abandonedOn.AddDays(-1);
+        var personalDataUntil = abandonedOn.AddDays(graceDays);
+        if (DocumentsRetainUntil <= documentsUntil && RetainUntil <= personalDataUntil)
+        {
+            return false;
+        }
+
+        DocumentsRetainUntil = DocumentsRetainUntil < documentsUntil ? DocumentsRetainUntil : documentsUntil;
+        RetainUntil = RetainUntil < personalDataUntil ? RetainUntil : personalDataUntil;
+        Touch(at);
+        return true;
+    }
+
     public void PlaceLegalHold(DateTimeOffset at)
     {
         LegalHold = true;

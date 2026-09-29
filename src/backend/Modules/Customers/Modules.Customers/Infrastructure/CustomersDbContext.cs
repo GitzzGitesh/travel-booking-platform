@@ -31,7 +31,7 @@ internal sealed class CustomersDbContext(DbContextOptions<CustomersDbContext> op
         customer.HasIndex(c => new { c.IdentityIssuer, c.IdentitySubject }).IsUnique();
         customer.Ignore(c => c.CustomerId);
 
-        modelBuilder.AddJobLeases(); // ADR 0007: the personal-data purge job's lease
+        modelBuilder.AddInbox().AddJobLeases(); // ADR 0007: consumed events (abandoned orders), and the purge job's lease
         MapPersonalData(modelBuilder);
     }
 
@@ -115,6 +115,12 @@ internal sealed class SqlPersonalDataStore(CustomersDbContext db) : IPersonalDat
     public void Audit(DocumentAccess access) => db.Set<DocumentAccess>().Add(access);
 
     public void Audit(RetentionEvent retentionEvent) => db.Set<RetentionEvent>().Add(retentionEvent);
+
+    public Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken) =>
+        db.Set<InboxMessage>().AnyAsync(m => m.MessageId == messageId && m.Handler == handler, cancellationToken);
+
+    public void MarkConsumed(Guid messageId, string handler, DateTimeOffset at) =>
+        db.Set<InboxMessage>().Add(InboxMessage.For(messageId, handler, at));
 
     public async Task<bool> TrySaveAsync(CancellationToken cancellationToken)
     {

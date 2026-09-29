@@ -208,6 +208,64 @@ public sealed class PersonalDataTests
         _store.Events.Select(e => (e.Action, e.Actor)).Take(2).ShouldBe([(RetentionAction.LegalHoldPlaced, "operator:ops-1"), (RetentionAction.LegalHoldReleased, "operator:ops-1")]);
     }
 
+    // ---------- Abandoned orders (Q9, approved 2026-09-29) ----------
+
+    [Fact]
+    public async Task An_abandoned_orders_documents_are_shredded_at_once_and_its_personal_data_anonymised_30_days_later()
+    {
+        _orders.Needs = Needs(documentsRequired: true);
+        await Save([Adult()]);
+        await SaveDocument(0);
+        var abandoned = Abandoned();
+
+        await AbandonedHandler().HandleAsync(abandoned, Ct);
+        await AbandonedHandler().HandleAsync(abandoned, Ct); // redelivered: consumed once
+
+        var set = _store.Sets.Single();
+        (set.DocumentsRetainUntil, set.RetainUntil).ShouldBe((Today.AddDays(-1), Today.AddDays(30)));
+        _store.Documents.Single().IsShredded.ShouldBeTrue();
+        set.Travellers[0].GivenNames.ShouldBe("Ada"); // kept during the grace period
+        _store.Events.Select(e => e.Action).ShouldBe([RetentionAction.ShortenedForAbandonedOrder, RetentionAction.DocumentsShredded]);
+
+        _clock.Advance(TimeSpan.FromDays(30));
+        (await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct)).ShouldBeFalse(); // the 30th day is still kept
+        _clock.Advance(TimeSpan.FromDays(1));
+        (await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct)).ShouldBeTrue();
+        _store.Sets.Single().AnonymisedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task A_legal_hold_keeps_an_abandoned_orders_data_until_released()
+    {
+        _orders.Needs = Needs(documentsRequired: true);
+        await Save([Adult()]);
+        await SaveDocument(0);
+        await new LegalHoldHandler(_store, _clock).HandleAsync(new LegalHoldRequest(_orderId, true, "ops-1", "case 42"), Ct);
+
+        await AbandonedHandler().HandleAsync(Abandoned(), Ct);
+        _clock.Advance(TimeSpan.FromDays(60));
+        await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct);
+
+        _store.Documents.Single().IsShredded.ShouldBeFalse();
+        _store.Sets.Single().AnonymisedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Abandonment_only_ever_shortens_retention_and_needs_no_travellers()
+    {
+        // Travelled long ago: the normal retention already ends within the grace period.
+        _orders.Needs = Needs() with { LastTravelDate = Today.AddMonths(-25).AddDays(10) };
+        await Save([Adult()]);
+        var before = (_store.Sets.Single().RetainUntil, _store.Sets.Single().DocumentsRetainUntil);
+
+        await AbandonedHandler().HandleAsync(Abandoned(), Ct);
+        await AbandonedHandler().HandleAsync(Abandoned(Guid.NewGuid()), Ct); // an order with no travellers: nothing to do
+
+        (_store.Sets.Single().RetainUntil, _store.Sets.Single().DocumentsRetainUntil).ShouldBe(before);
+        _store.Events.ShouldBeEmpty();
+        _store.Consumed.Count.ShouldBe(2);
+    }
+
     [Theory]
     [InlineData("", "reason")]
     [InlineData("ops 1", "reason")]
@@ -239,6 +297,16 @@ public sealed class PersonalDataTests
     private static TravellerDetails Child() => new(PassengerKind.Child, "Byron", "Lovelace", new DateOnly(2018, 5, 1), TravellerGender.Male);
 
     private static TravelDocumentDetails Document() => new(TravelDocumentType.Passport, "P1234567", "GB", "GB", new DateOnly(2030, 1, 1));
+
+    private static DateOnly Today => DateOnly.FromDateTime(_now.UtcDateTime);
+
+    private static TravelBooking.Modules.Orders.Contracts.OrderAbandoned Abandoned(Guid? orderId = null) =>
+        new(orderId is null ? _abandonedEvent : Guid.NewGuid(), _now, orderId ?? _orderId, "trace-abandon");
+
+    private static readonly Guid _abandonedEvent = Guid.NewGuid();
+
+    private OrderAbandonedHandler AbandonedHandler() =>
+        new(_store, new PersonalDataPurger(_store, _clock), _clock, Options.Create(new PersonalDataRetentionOptions()));
 
     private static readonly string _testKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
@@ -296,5 +364,12 @@ public sealed class PersonalDataTests
 
         public Task<IReadOnlyList<Guid>> FindDueForPurgeAsync(DateOnly today, int limit, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<Guid>>([.. Sets.Select(s => s.OrderId)]);
+
+        public HashSet<(Guid, string)> Consumed { get; } = [];
+
+        public Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken) =>
+            Task.FromResult(Consumed.Contains((messageId, handler)));
+
+        public void MarkConsumed(Guid messageId, string handler, DateTimeOffset at) => Consumed.Add((messageId, handler));
     }
 }
