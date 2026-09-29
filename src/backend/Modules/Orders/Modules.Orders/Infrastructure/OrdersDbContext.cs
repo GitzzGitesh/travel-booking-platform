@@ -56,6 +56,17 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         item.Property(i => i.ProviderId).HasMaxLength(50);
         item.Property(i => i.SupplierLocator).HasMaxLength(100);
 
+        // What the item needs from its travellers (Q9): optional, since items created before it have none.
+        item.OwnsOne(i => i.TravellerNeeds, needs =>
+        {
+            needs.Property(n => n.Adults).HasColumnName("TravellerAdults");
+            needs.Property(n => n.Children).HasColumnName("TravellerChildren");
+            needs.Property(n => n.Infants).HasColumnName("TravellerInfants");
+            needs.Property(n => n.DocumentsRequired).HasColumnName("DocumentsRequired");
+            needs.Property(n => n.LastTravelDate).HasColumnName("LastTravelDate");
+            needs.Ignore(n => n.IsKnown);
+        });
+
         var timeline = modelBuilder.Entity<OrderTimelineEntry>();
         timeline.ToTable("OrderTimeline");
         timeline.HasKey(e => e.Id);

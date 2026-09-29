@@ -42,6 +42,7 @@ internal sealed class FlightsDbContext(DbContextOptions<FlightsDbContext> option
         // the anonymous (NULL) owner as one value and anonymous selections stay one row per offer.
         offer.HasIndex(o => new { o.SearchId, o.OfferId, o.CustomerId }).IsUnique().HasFilter(null);
         offer.Property(o => o.CustomerId).HasMaxLength(SelectedOffer.MaxCustomerIdLength).IsUnicode(false);
+        offer.Ignore(o => o.LastTravelDate);
 
         offer.Property(o => o.ProviderId).HasMaxLength(50);
         offer.Property(o => o.ProviderOfferToken); // Opaque adapter token, stored verbatim; may be long (ADR 0014).

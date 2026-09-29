@@ -26,6 +26,7 @@
   </Folder>
   <Folder Name="/src/backend/Modules/Customers/">
     <Project Path="src/backend/Modules/Customers/Modules.Customers/Modules.Customers.csproj" />
+    <Project Path="src/backend/Modules/Customers/Modules.Customers.Contracts/Modules.Customers.Contracts.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Orders/">
     <Project Path="src/backend/Modules/Orders/Modules.Orders/Modules.Orders.csproj" />
@@ -42,6 +43,7 @@
     <Project Path="tests/backend/BuildingBlocks.UnitTests/BuildingBlocks.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.IntegrationTests/Modules.Flights.IntegrationTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.UnitTests/Modules.Flights.UnitTests.csproj" />
+    <Project Path="tests/backend/Modules.Customers.UnitTests/Modules.Customers.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Orders.UnitTests/Modules.Orders.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Payments.UnitTests/Modules.Payments.UnitTests.csproj" />
     <Project Path="tests/backend/ProviderContracts/ProviderContracts.csproj" />

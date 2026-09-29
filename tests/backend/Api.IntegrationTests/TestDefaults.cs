@@ -17,5 +17,6 @@ internal static class TestDefaults
     {
         Environment.SetEnvironmentVariable("RateLimiting__Anonymous__PermitLimit", "100000");
         Environment.SetEnvironmentVariable("RateLimiting__SupplierCalls__PermitLimit", "100000");
+        Environment.SetEnvironmentVariable("RateLimiting__Customer__PermitLimit", "100000");
     }
 }

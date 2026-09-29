@@ -81,6 +81,17 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         events.Property(e => e.Reason).HasMaxLength(500);
         events.Property(e => e.ProviderReference).HasMaxLength(255);
 
+        // Refusals by the payment attempt limits (Q10): append-only, for the review list and alerting.
+        var trip = modelBuilder.Entity<AttemptLimitTrip>();
+        trip.ToTable("AttemptLimitTrips");
+        trip.HasKey(t => t.Id);
+        trip.Property(t => t.Id).UseIdentityColumn();
+        trip.Property(t => t.CustomerId).HasMaxLength(PaymentAttempt.MaxCustomerIdLength);
+        trip.Property(t => t.IdempotencyKey).HasMaxLength(AuthorizeOrderPaymentHandler.MaxIdempotencyKeyLength).IsUnicode(false);
+        trip.HasIndex(t => new { t.CustomerId, t.IdempotencyKey }).IsUnique(); // a retried refusal is one trip
+        trip.HasIndex(t => new { t.CustomerId, t.At });
+        trip.HasIndex(t => t.At);
+
         // Provider notifications (webhooks): one row per provider event (deduplication by a unique constraint).
         var notification = modelBuilder.Entity<PaymentNotificationRecord>();
         notification.ToTable("PaymentNotifications");

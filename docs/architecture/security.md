@@ -22,8 +22,8 @@ Tokens: the Api validates JWTs from both issuers with separate authentication sc
 |---|---|---|
 | Public | Airports, marketing content | None |
 | Internal | Markups, supplier config, metrics | Staff auth |
-| PII | Name, email, phone, DOB, address; the customer's identity-provider issuer and user object id (`oid`, pseudonymous), kept **only** in `customers.Customers`, where they map to our internal customer id | Access by permission, never logged, retention rules. Orders, payment attempts and timelines store the **internal** customer id, never the subject, so erasing a customer means deleting one mapping row (retention: Q9) |
-| Sensitive PII | Passport/ID numbers, nationality + document expiry | **Encrypted at rest (application-level or Always Encrypted, per ADR)**, access audited, shortest retention |
+| PII | Traveller names, date of birth and gender, booker email and phone (Q9: nothing else in the MVP, no special-category data), kept only in the Customers personal-data store (ADR 0020) and anonymised 25 months after the last flight unless on legal hold; address only if a supplier or tax rule requires it; the customer's identity-provider issuer and user object id (`oid`, pseudonymous), kept **only** in `customers.Customers`, where they map to our internal customer id | Access by permission, never logged, retention rules. Orders, payment attempts and timelines store the **internal** customer id, never the subject, so erasing a customer means deleting one mapping row (retention: Q9) |
+| Sensitive PII | Passport/ID numbers, nationality + document expiry | Collected only when the supplier requires it. **Encrypted per document** (AES-256-GCM envelope, key-encryption key from user-secrets / Key Vault; ADR 0020), never returned by the API or logged, every store/read/shred audited in `customers.DocumentAccessLog`, crypto-shredded 30 days after the last flight |
 | Payment | PaymentIntent IDs, last4, brand | No PAN/CVV ever. Tokens only |
 | Secrets | Supplier keys, Stripe secret keys, webhook secrets | Key Vault only, managed identity, rotation |
 
@@ -32,7 +32,7 @@ Tokens: the Api validates JWTs from both issuers with separate authentication sc
 |---|---|
 | Price tampering | Server-side pricing from the persisted offer; client price ignored |
 | IDOR on orders | Ownership checks; opaque IDs; tests for cross-customer access |
-| Card testing / fraud | Stripe Radar, rate limits on checkout, velocity rules |
+| Card testing / fraud | Stripe Radar (the fraud engine, Q10) with 3-D Secure per its risk policy; payment attempt limits (`Payments:AttemptLimits`: 5 per order, 10 per customer in 24 hours), repeated refusals raising `PaymentAttemptLimitRepeated` and a review list (no automatic block in the MVP); per-address rate limits before authentication, and a per-customer write limit (`RateLimiting:Customer`) on customer order and traveller endpoints |
 | Search scraping (supplier cost) | Rate limiting, bot protection (WAF), caching |
 | Credential stuffing / account takeover | IdP protections, MFA, anomaly alerts |
 | Webhook spoofing / replay | Signature verification, inbox dedupe, timestamp tolerance |

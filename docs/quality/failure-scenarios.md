@@ -6,7 +6,7 @@ Status: `Planned` → `Covered (link to test)` → `Verified E2E`.
 
 Levels: U = domain/application unit · I = integration (real DB) · A = API · C = concurrency · P = provider contract · E = Playwright E2E.
 
-**Identifiers and count.** This file is the only authoritative source for scenario IDs and the scenario count. It currently holds **38 scenarios in 7 categories**. IDs are numbered in bands of ten per category, so gaps are intentional, and the highest ID (F-62) is not the count:
+**Identifiers and count.** This file is the only authoritative source for scenario IDs and the scenario count. It currently holds **42 scenarios in 7 categories**. IDs are numbered in bands of ten per category, so gaps are intentional, and the highest ID (F-62) is not the count:
 
 | Band | Category | Scenarios |
 |---|---|---|
@@ -16,7 +16,7 @@ Levels: U = domain/application unit · I = integration (real DB) · A = API · C
 | `F-3x` | Duplicates, ordering, and concurrency | F-30–F-38 (9) |
 | `F-4x` | Cancellation and refunds | F-40–F-44 (5) |
 | `F-5x` | Supplier-initiated changes | F-50–F-52 (3) |
-| `F-6x` | Security | F-60–F-62 (3) |
+| `F-6x` | Security and personal data | F-60–F-66 (7) |
 
 Add a new scenario with the next free ID in its category's band, and update this table in the same change. Never renumber or reuse an ID, because tests and PRs reference them. Other documents refer to scenarios by ID and must not restate the count.
 
@@ -83,6 +83,10 @@ Add a new scenario with the next free ID in its category's band, and update this
 ## Security
 | ID | Scenario | Expected behaviour | Levels | Status |
 |---|---|---|---|---|
-| F-60 | Customer accesses another customer's order | 404 (no existence leak); security event | A | Planned |
+| F-60 | Customer accesses another customer's order | 404 (no existence leak); security event | A | Done for orders (row 4c) and travellers and documents (row 4f): 404 with nothing revealed (A: CustomerOrderEndpointTests, OrderTravellerEndpointTests). The security event on repeated misses is planned |
 | F-61 | Staff without permission attempts an admin action | 403; audited | A | Planned |
 | F-62 | Endpoint without an authorization policy | Architecture/API test fails the build | A | Planned |
+| F-63 | The supplier starts (or stops) requiring travel documents at revalidation; travellers change during payment | Recorded on the order timeline. Checkout refuses payment until each traveller's document is given, and no document is accepted when not required. Travellers are frozen while a payment is live. A resumed or raced payment whose travellers are incomplete releases its hold and books nothing | U, A | Done (row 4f; U: AuthorizeCheckoutHandlerTests, PersonalDataTests; A: OrderTravellerEndpointTests; P: mock ZDR and Amadeus `documentRequired`) |
+| F-64 | Document encryption key missing, wrong or ciphertext tampered with | Nothing stored without a key (503 `documents-unavailable`); a moved or altered ciphertext never decrypts; a read releases data only after its audit row is saved | U | Done (row 4f; U: PersonalDataTests) |
+| F-65 | Personal data due for purge, or under legal hold | Documents shredded after last flight + 30 days, travellers and contact anonymised after + 25 months, idempotently; a held set is neither purged nor changed until released | U, I | Done (row 4f; U: PersonalDataTests; I/A: OrderTravellerEndpointTests) |
+| F-66 | Card testing: repeated payment attempts | Attempt limits refuse with a generic message, and the order stays AwaitingPayment. Refusals are recorded once per key, and the refusal stands even if recording fails. Reaching the threshold raises `PaymentAttemptLimitRepeated` once and lists the customer for review, with no automatic block. Per-customer write limit and per-address limit before authentication (429) | U, A | Done (row 4f; U: AuthorizeOrderPaymentHandlerTests; A: OrderTravellerEndpointTests rate limits). The checkout endpoint limit applies when checkout is exposed |

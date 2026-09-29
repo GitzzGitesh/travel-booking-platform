@@ -367,6 +367,279 @@
         }
       }
     },
+    "/api/v1/orders/{orderId}/travellers": {
+      "put": {
+        "tags": [
+          "Travellers"
+        ],
+        "operationId": "SaveOrderTravellers",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveTravellersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderTravellersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Travellers"
+        ],
+        "operationId": "GetOrderTravellers",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderTravellersResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{orderId}/travellers/{position}/document": {
+      "put": {
+        "tags": [
+          "Travellers"
+        ],
+        "operationId": "SaveTravelDocument",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TravelDocumentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/customers/me": {
       "get": {
         "tags": [
@@ -665,6 +938,52 @@
           "revalidatedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ContactRequest": {
+        "required": [
+          "email",
+          "phone"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 0,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "phone": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ContactResponse": {
+        "required": [
+          "email",
+          "phone"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "phone": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1051,7 +1370,8 @@
           "status",
           "agreedPrice",
           "offerExpiresAt",
-          "priceChangeAccepted"
+          "priceChangeAccepted",
+          "travellers"
         ],
         "type": "object",
         "properties": {
@@ -1075,6 +1395,16 @@
           },
           "priceChangeAccepted": {
             "type": "boolean"
+          },
+          "travellers": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TravellersNeededResponse"
+              }
+            ]
           }
         }
       },
@@ -1102,6 +1432,24 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/OrderItemResponse"
+            }
+          }
+        }
+      },
+      "OrderTravellersResponse": {
+        "required": [
+          "contact",
+          "travellers"
+        ],
+        "type": "object",
+        "properties": {
+          "contact": {
+            "$ref": "#/components/schemas/ContactResponse"
+          },
+          "travellers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TravellerResponse"
             }
           }
         }
@@ -1170,6 +1518,33 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SaveTravellersRequest": {
+        "required": [
+          "contact",
+          "travellers"
+        ],
+        "type": "object",
+        "properties": {
+          "contact": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContactRequest"
+              }
+            ]
+          },
+          "travellers": {
+            "maxItems": 9,
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TravellerRequest"
+            }
           }
         }
       },
@@ -1310,12 +1685,220 @@
             "format": "uuid"
           }
         }
+      },
+      "TravelDocumentKind": {
+        "enum": [
+          "Passport",
+          "IdentityCard",
+          null
+        ]
+      },
+      "TravelDocumentRequest": {
+        "required": [
+          "type",
+          "number",
+          "issuingCountry",
+          "nationality",
+          "expiryDate"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TravelDocumentKind"
+              }
+            ]
+          },
+          "number": {
+            "maxLength": 20,
+            "minLength": 0,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "issuingCountry": {
+            "maxLength": 2,
+            "minLength": 2,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "nationality": {
+            "maxLength": 2,
+            "minLength": 2,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expiryDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          }
+        }
+      },
+      "TravellerGenderType": {
+        "enum": [
+          "Female",
+          "Male",
+          null
+        ]
+      },
+      "TravellerRequest": {
+        "required": [
+          "type",
+          "givenNames",
+          "surname",
+          "dateOfBirth",
+          "gender"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TravellerType"
+              }
+            ]
+          },
+          "givenNames": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surname": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "dateOfBirth": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TravellerGenderType"
+              }
+            ]
+          }
+        }
+      },
+      "TravellerResponse": {
+        "required": [
+          "position",
+          "type",
+          "givenNames",
+          "surname",
+          "dateOfBirth",
+          "gender",
+          "documentProvided"
+        ],
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "type": "string"
+          },
+          "givenNames": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surname": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "dateOfBirth": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "gender": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "documentProvided": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TravellersNeededResponse": {
+        "required": [
+          "adults",
+          "children",
+          "infants",
+          "documentsRequired"
+        ],
+        "type": "object",
+        "properties": {
+          "adults": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "children": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "infants": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "documentsRequired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TravellerType": {
+        "enum": [
+          "Adult",
+          "Child",
+          "Infant",
+          null
+        ]
       }
     }
   },
   "tags": [
     {
       "name": "Flights"
+    },
+    {
+      "name": "Travellers"
     },
     {
       "name": "Customers"

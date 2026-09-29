@@ -100,12 +100,20 @@ internal sealed record OrderResponse(Guid OrderId, string Status, DateTimeOffset
             item.Status.ToString(),
             new OrderAmountResponse(item.AgreedPrice.Amount.ToString(CultureInfo.InvariantCulture), item.AgreedPrice.Currency.Value),
             item.OfferExpiresAt,
-            item.AcceptedPriceQuoteId is not null)).ToList());
+            item.AcceptedPriceQuoteId is not null,
+            item.TravellerNeeds is { IsKnown: true } needs
+                ? new TravellersNeededResponse(needs.Adults, needs.Children, needs.Infants, needs.DocumentsRequired)
+                : null)).ToList());
 }
 
 /// <param name="PriceChangeAccepted">The customer accepted a changed price for this item before ordering (F-01).</param>
+/// <param name="Travellers">The travellers to give before payment (Q9); null for an order made before this was recorded.</param>
 internal sealed record OrderItemResponse(
-    Guid ItemId, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, DateTimeOffset OfferExpiresAt, bool PriceChangeAccepted);
+    Guid ItemId, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, DateTimeOffset OfferExpiresAt, bool PriceChangeAccepted,
+    TravellersNeededResponse? Travellers);
+
+/// <param name="DocumentsRequired">The supplier requires a travel document for each traveller (Q9: collected only then).</param>
+internal sealed record TravellersNeededResponse(int Adults, int Children, int Infants, bool DocumentsRequired);
 
 /// <summary>An amount as a decimal string with its ISO-4217 currency (api-design rules: never a JSON number).</summary>
 internal sealed record OrderAmountResponse(string Amount, string Currency);

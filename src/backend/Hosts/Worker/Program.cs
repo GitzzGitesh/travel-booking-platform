@@ -6,6 +6,7 @@ using TravelBooking.Integrations.Flights.Sabre;
 using TravelBooking.Integrations.Flights.Travelport;
 using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Integrations.Payments.Stripe;
+using TravelBooking.Modules.Customers;
 using TravelBooking.Modules.Flights;
 using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Payments;
@@ -16,6 +17,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddFlightsModule(builder.Configuration);
 builder.Services.AddOrdersModule(builder.Configuration);
 builder.Services.AddPaymentsModule(builder.Configuration);
+builder.Services.AddCustomersModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {
@@ -41,6 +43,7 @@ builder.Services.AddTravelportFlightProvider(builder.Configuration);
 
 builder.Services.AddOrdersBackgroundJobs();
 builder.Services.AddPaymentsBackgroundJobs();
+builder.Services.AddCustomersBackgroundJobs();
 builder.Services.AddBackgroundJobRunner();
 
 var host = builder.Build();

@@ -44,6 +44,7 @@ builder.Services.AddPaymentsModule(builder.Configuration);
 
 // Customer identity (ADR 0008): customer bearer tokens (Entra External ID) mapped to our internal customer id. Tenant
 // values come from configuration (Authentication:Customers); until they are set, every customer token is refused.
+// Travel documents are encrypted with a key-encryption key from user-secrets / Key Vault (ADR 0020): none in appsettings.
 builder.Services.AddCustomersModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())

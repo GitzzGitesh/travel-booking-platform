@@ -258,6 +258,41 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.OwnsOne("TravelBooking.Modules.Orders.Domain.TravellerNeeds", "TravellerNeeds", b1 =>
+                        {
+                            b1.Property<Guid>("FlightOrderItemId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<int>("Adults")
+                                .HasColumnType("int")
+                                .HasColumnName("TravellerAdults");
+
+                            b1.Property<int>("Children")
+                                .HasColumnType("int")
+                                .HasColumnName("TravellerChildren");
+
+                            b1.Property<bool>("DocumentsRequired")
+                                .HasColumnType("bit")
+                                .HasColumnName("DocumentsRequired");
+
+                            b1.Property<int>("Infants")
+                                .HasColumnType("int")
+                                .HasColumnName("TravellerInfants");
+
+                            b1.Property<DateOnly>("LastTravelDate")
+                                .HasColumnType("date")
+                                .HasColumnName("LastTravelDate");
+
+                            b1.HasKey("FlightOrderItemId");
+
+                            b1.ToTable("FlightOrderItems", "orders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("FlightOrderItemId");
+                        });
+
+                    b.Navigation("TravellerNeeds");
                 });
 
             modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.OrderTimelineEntry", b =>

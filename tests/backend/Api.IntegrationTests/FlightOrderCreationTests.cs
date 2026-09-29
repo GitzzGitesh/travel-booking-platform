@@ -237,6 +237,15 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
     private async Task<TravelBooking.BuildingBlocks.Result<CheckoutResult, CheckoutFailure>> Checkout(Guid orderId, string token, string? customer = null)
     {
         using var scope = api.Services.CreateScope();
+
+        // The owner gives the one adult traveller and the contact first (Q9): checkout refuses payment without them.
+        // Refused, and harmless, once a payment attempt is live or for another customer's order.
+        await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Customers.Application.SaveOrderTravellersHandler>().HandleAsync(
+            new TravelBooking.Modules.Customers.Application.SaveOrderTravellers(orderId, _customer, "ada@example.com", "+447700900123",
+                [new TravelBooking.Modules.Customers.Domain.TravellerDetails(
+                    TravelBooking.Modules.Customers.Domain.PassengerKind.Adult, "Ada", "Lovelace", new DateOnly(1990, 12, 10), TravelBooking.Modules.Customers.Domain.TravellerGender.Female)]),
+            TestContext.Current.CancellationToken);
+
         return await scope.ServiceProvider.GetRequiredService<AuthorizeCheckoutHandler>().HandleAsync(
             new AuthorizeCheckout(orderId, customer ?? _customer, $"pay-{Guid.NewGuid():N}", token, "test-trace"), TestContext.Current.CancellationToken);
     }

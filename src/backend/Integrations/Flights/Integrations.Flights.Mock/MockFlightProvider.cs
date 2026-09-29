@@ -184,6 +184,7 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
             MockRevalidationScenarios.OfferExpiredDestination => RevalidationFailure(ProviderErrorKind.OfferExpired, "Mock offer expired (scenario)."),
             MockRevalidationScenarios.SoldOutDestination => RevalidationFailure(ProviderErrorKind.SoldOut, "Mock offer sold out (scenario)."),
             MockRevalidationScenarios.PriceChangedDestination => Result<FlightOffer, ProviderError>.Success(Repriced(current, MockRevalidationScenarios.PriceChangeFactor)),
+            MockRevalidationScenarios.DocumentsRequiredDestination => Result<FlightOffer, ProviderError>.Success(current with { DocumentsRequired = true }),
             _ => Result<FlightOffer, ProviderError>.Success(current),
         };
     }

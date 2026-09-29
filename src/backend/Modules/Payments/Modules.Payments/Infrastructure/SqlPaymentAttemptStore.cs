@@ -71,6 +71,20 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
     public Task<int> CountForCustomerSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken) =>
         db.PaymentAttempts.CountAsync(a => a.CustomerId == customerId && a.CreatedAt >= since, cancellationToken);
 
+    public void RecordLimitTrip(AttemptLimitTrip trip) => db.Set<AttemptLimitTrip>().Add(trip);
+
+    public Task<int> CountLimitTripsSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken) =>
+        db.Set<AttemptLimitTrip>().CountAsync(t => t.CustomerId == customerId && t.At >= since, cancellationToken);
+
+    public async Task<IReadOnlyList<CustomerTrips>> FindCustomersToReviewAsync(DateTimeOffset since, int minimumTrips, CancellationToken cancellationToken) =>
+        await db.Set<AttemptLimitTrip>().AsNoTracking()
+            .Where(t => t.At >= since)
+            .GroupBy(t => t.CustomerId)
+            .Where(g => g.Count() >= minimumTrips)
+            .OrderByDescending(g => g.Count())
+            .Select(g => new CustomerTrips(g.Key, g.Count()))
+            .ToListAsync(cancellationToken);
+
     public Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken) =>
         db.Set<InboxMessage>().AnyAsync(m => m.MessageId == messageId && m.Handler == handler, cancellationToken);
 

@@ -25,6 +25,9 @@ public static class MockRevalidationScenarios
     /// <summary>F-03: revalidation reports the offer sold out.</summary>
     public const string SoldOutDestination = "ZSO";
 
+    /// <summary>Revalidation reports that the supplier requires travel documents for the offer (Q9).</summary>
+    public const string DocumentsRequiredDestination = "ZDR";
+
     public const decimal PriceChangeFactor = 1.15m;
 }
 

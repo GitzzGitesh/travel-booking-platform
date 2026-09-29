@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Modules.Orders.Application;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Endpoints;
 using TravelBooking.Modules.Orders.Infrastructure;
 
@@ -24,6 +25,7 @@ public static class OrdersModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<CreateFlightOrderHandler>();
         services.AddScoped<AuthorizeCheckoutHandler>();
+        services.AddScoped<IOrderTravellerNeeds, OrderTravellerNeedsQuery>();
 
         // The module's own schema. The connection string is resolved on first use; migrations are never applied at
         // startup (database rules).
@@ -43,7 +45,8 @@ public static class OrdersModule
     /// <summary>The customer's order endpoints: every one requires a signed-in customer and acts on their own orders only.</summary>
     public static IEndpointRouteBuilder MapOrdersEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/orders").WithTags("Orders").RequireAuthorization(CustomerIdentity.Policy);
+        var group = endpoints.MapGroup("/orders").WithTags("Orders").RequireAuthorization(CustomerIdentity.Policy)
+            .RequireCustomerWriteLimit(); // per customer (Q10); per address too, from the /api/v1 group
 
         group.MapPost("/", OrderEndpoints.Create)
             .WithName("CreateFlightOrder")

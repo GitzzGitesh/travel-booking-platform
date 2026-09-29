@@ -214,6 +214,22 @@ public sealed class SelectedOfferStateTests
     internal void Only_expired_or_sold_out_make_an_offer_unavailable(SelectedOfferStatus reason) =>
         Should.Throw<ArgumentOutOfRangeException>(() => NewSelection().MarkUnavailable(reason));
 
+    [Fact]
+    public void The_last_travel_date_is_the_last_arrival_in_the_itinerary_even_across_the_date_line()
+    {
+        // SYD-AKL arrives on the 11th (local), AKL-HNL crosses the date line and arrives on the 10th (local).
+        var offer = Current(270m) with
+        {
+            Slices = [new FlightSlice([
+                new FlightSegment("ZZ", "ZZ1", new AirportCode("SYD"), new AirportCode("AKL"), new DateTime(2027, 10, 11, 1, 0, 0), new DateTime(2027, 10, 11, 6, 0, 0)),
+                new FlightSegment("ZZ", "ZZ2", new AirportCode("AKL"), new AirportCode("HNL"), new DateTime(2027, 10, 11, 8, 0, 0), new DateTime(2027, 10, 10, 22, 0, 0))])],
+        };
+
+        var selection = SelectedOffer.Select(Guid.NewGuid(), Guid.NewGuid(), Criteria(), offer, Now.AddMinutes(-5), Customer);
+
+        selection.LastTravelDate.ShouldBe(new DateOnly(2027, 10, 10));
+    }
+
     internal static Money Xts(decimal amount) => new(amount, new CurrencyCode("XTS"));
 
     /// <summary>The signed-in customer who owns <see cref="NewSelection"/>.</summary>
@@ -427,7 +443,7 @@ public sealed class RevalidateSelectedOfferHandlerTests
         }
         else
         {
-            result.Value.ShouldBe(new BookableFlightSelection(offer.Id, SelectedOfferStateTests.Selected, SelectedOfferStateTests.Now.AddMinutes(40), null, null));
+            result.Value.ShouldBe(new BookableFlightSelection(offer.Id, SelectedOfferStateTests.Selected, SelectedOfferStateTests.Now.AddMinutes(40), null, null, offer.Adults, offer.Children, offer.Infants, offer.DocumentsRequired, offer.LastTravelDate));
         }
     }
 

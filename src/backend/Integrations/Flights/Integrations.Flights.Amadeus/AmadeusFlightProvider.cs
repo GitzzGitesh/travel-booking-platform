@@ -73,7 +73,11 @@ internal sealed partial class AmadeusFlightProvider : IFlightProvider
             cancellationToken);
 
         return response.IsSuccess
-            ? Map(response.Value, body => OffersIn(JsonDocument.Parse(body).RootElement.GetProperty("data").GetProperty("flightOffers")).Single())
+            ? Map(response.Value, body =>
+            {
+                var data = JsonDocument.Parse(body).RootElement.GetProperty("data");
+                return OffersIn(data.GetProperty("flightOffers")).Single() with { DocumentsRequired = AmadeusMapping.DocumentsRequired(data) };
+            })
             : Result<FlightOffer, ProviderError>.Failure(response.Error);
     }
 

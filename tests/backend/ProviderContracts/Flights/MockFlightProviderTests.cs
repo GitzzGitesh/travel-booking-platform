@@ -101,6 +101,20 @@ public sealed class MockFlightProviderTests : FlightProviderSearchContract
     }
 
     [Fact]
+    public async Task The_documents_required_destination_revalidates_unchanged_but_requiring_documents()
+    {
+        var offer = await SearchTo(MockRevalidationScenarios.DocumentsRequiredDestination);
+        var ordinary = await SearchTo("JFK");
+
+        var revalidated = (await Provider.RevalidateAsync(offer.Reference, TestContext.Current.CancellationToken)).Value;
+
+        offer.DocumentsRequired.ShouldBeFalse(); // stated at revalidation, as suppliers do
+        revalidated.DocumentsRequired.ShouldBeTrue();
+        revalidated.TotalPrice.ShouldBe(offer.TotalPrice);
+        (await Provider.RevalidateAsync(ordinary.Reference, TestContext.Current.CancellationToken)).Value.DocumentsRequired.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task The_mock_states_every_fare_fact_and_one_codeshare_leg()
     {
         var offers = await SearchOffers(OneWay());

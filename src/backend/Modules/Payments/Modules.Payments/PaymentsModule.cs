@@ -29,7 +29,7 @@ public static class PaymentsModule
         services.AddScoped<PaymentOperations>();
         services.AddOptions<PaymentAttemptLimits>()
             .Bind(configuration.GetSection(PaymentAttemptLimits.SectionName))
-            .Validate(options => options.MaxAttemptsPerOrder > 0 && options.MaxAttemptsPerCustomerPerDay > 0, "Payments:AttemptLimits values must be positive.")
+            .Validate(options => options.MaxAttemptsPerOrder > 0 && options.MaxAttemptsPerCustomerPerDay > 0 && options.AlertAfterTrips > 0, "Payments:AttemptLimits values must be positive.")
             .ValidateOnStart();
         services.AddOptions<PaymentReconciliationOptions>()
             .Bind(configuration.GetSection(PaymentReconciliationOptions.SectionName))
@@ -50,6 +50,7 @@ public static class PaymentsModule
 
         // The way out of ManualReview (an operations action; its admin endpoint comes with staff identity).
         services.AddScoped<ResolvePaymentReviewHandler>();
+        services.AddScoped<PaymentAttemptReviewList>();
         services.AddScoped<ReceivePaymentNotificationHandler>();
 
         // Checked at startup in both hosts: one provider, and only a production-ready one outside Development and Staging.

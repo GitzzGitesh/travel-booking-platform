@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Time.Testing;
 using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Background;
+using TravelBooking.Modules.Customers.Contracts;
 using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Contracts;
@@ -19,6 +20,7 @@ public sealed class AuthorizeCheckoutHandlerTests
     private readonly FakeStore _store = new();
     private readonly StubSelections _selections = new();
     private readonly StubPayments _payments = new();
+    private readonly StubTravellers _travellers = new();
     private readonly Order _order = OrderTests.NewOrder();
 
     public AuthorizeCheckoutHandlerTests() => _store.Orders.Add(_order);
@@ -249,7 +251,7 @@ public sealed class AuthorizeCheckoutHandlerTests
     [InlineData("cust-1", "pay-1", "")]
     public async Task Invalid_requests_are_refused(string customer, string key, string token)
     {
-        var result = await new AuthorizeCheckoutHandler(_store, _selections, _payments, _clock)
+        var result = await new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, _clock)
             .HandleAsync(new AuthorizeCheckout(_order.Id, customer, key, token, "trace-1"), TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<CheckoutFailure.InvalidRequest>();
@@ -266,12 +268,112 @@ public sealed class AuthorizeCheckoutHandlerTests
     }
 
     private Task<Result<CheckoutResult, CheckoutFailure>> Handle(string customer = "cust-1", string key = "pay-1") =>
-        new AuthorizeCheckoutHandler(_store, _selections, _payments, _clock)
+        new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, _clock)
             .HandleAsync(new AuthorizeCheckout(_order.Id, customer, key, "pm_test", "trace-1"), TestContext.Current.CancellationToken);
 
     private Result<BookableFlightSelection, FlightSelectionUnavailable> Bookable(Money? price = null, DateTimeOffset? expiresAt = null, Guid? quote = null) =>
         Result<BookableFlightSelection, FlightSelectionUnavailable>.Success(new BookableFlightSelection(
             _order.Items[0].SelectedOfferId, price ?? OrderTests.Price, expiresAt ?? OrderTests.Now.AddMinutes(30), quote, quote is null ? null : OrderTests.Now));
+
+    [Fact]
+    public async Task No_payment_until_the_travellers_and_contact_are_complete()
+    {
+        _travellers.Readiness = new OrderTravellersReadiness(1, 0, 0, ContactProvided: false, 0);
+
+        (await Handle()).Error.ShouldBe(new CheckoutFailure.TravellersIncomplete(DocumentsRequired: false));
+
+        _payments.Requests.ShouldBeEmpty();
+        _order.Status.ShouldBe(OrderStatus.AwaitingPayment);
+    }
+
+    [Fact]
+    public async Task Documents_the_supplier_now_requires_are_recorded_and_needed_before_payment()
+    {
+        _selections.Next = Bookable() is { IsSuccess: true } bookable
+            ? Result<BookableFlightSelection, FlightSelectionUnavailable>.Success(bookable.Value with { DocumentsRequired = true })
+            : throw new InvalidOperationException();
+
+        var result = await Handle();
+
+        result.Error.ShouldBe(new CheckoutFailure.TravellersIncomplete(DocumentsRequired: true));
+        _order.Items[0].TravellerNeeds!.DocumentsRequired.ShouldBeTrue(); // saved, so the customer is asked for them
+        _order.Timeline.ShouldContain(e => e.Reason == "The supplier now requires travel documents");
+        _payments.Requests.ShouldBeEmpty();
+
+        _travellers.Readiness = _travellers.Readiness with { DocumentsProvided = 1 };
+        (await Handle(key: "pay-2")).Value.Status.ShouldBe(CheckoutStatus.BookingStarted);
+    }
+
+    [Fact]
+    public async Task An_order_without_recorded_traveller_needs_is_never_paid()
+    {
+        _store.Orders.Clear();
+        var legacy = Order.CreateForFlight("cust-1", "key-1", Guid.NewGuid(), OrderTests.Price, OrderTests.Now.AddMinutes(30), null, new TransitionContext(OrderTests.Now, "customer"));
+        _store.Orders.Add(legacy);
+
+        var result = await new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, _clock)
+            .HandleAsync(new AuthorizeCheckout(legacy.Id, "cust-1", "pay-1", "pm_test", "trace-1"), TestContext.Current.CancellationToken);
+
+        result.Error.ShouldBeOfType<CheckoutFailure.TravellersIncomplete>();
+        _payments.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Travellers_changed_while_the_payment_was_authorized_stop_the_booking_and_release_the_hold()
+    {
+        _travellers.Later = new OrderTravellersReadiness(1, 0, 0, ContactProvided: false, 0); // edited in between
+
+        var result = await Handle();
+
+        result.Error.ShouldBe(new CheckoutFailure.AuthorizedButNotBookable(_payments.PaymentId));
+        _order.Status.ShouldBe(OrderStatus.AwaitingPayment);
+        _order.PaymentAuthorizationId.ShouldBeNull();
+        _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>();
+    }
+
+    [Fact]
+    public async Task A_resumed_payment_is_booked_on_only_with_complete_travellers()
+    {
+        _payments.Status = OrderPaymentStatus.ActionRequired;
+        await Handle(); // a challenge is open
+        _payments.Status = OrderPaymentStatus.Authorized;
+        _payments.Resumable = true;
+        _travellers.Readiness = new OrderTravellersReadiness(0, 0, 0, ContactProvided: false, 0);
+
+        var resumed = await Handle(); // the same key, after the challenge: no second revalidation or check before it
+
+        resumed.Error.ShouldBe(new CheckoutFailure.AuthorizedButNotBookable(_payments.PaymentId));
+        _order.PaymentAuthorizationId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_resumed_payment_on_an_order_without_recorded_traveller_needs_is_never_booked_on()
+    {
+        _store.Orders.Clear();
+        var legacy = Order.CreateForFlight("cust-1", "key-1", Guid.NewGuid(), OrderTests.Price, OrderTests.Now.AddMinutes(30), null, new TransitionContext(OrderTests.Now, "customer"));
+        _store.Orders.Add(legacy);
+        _payments.Resumable = true;
+
+        var result = await new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, _clock)
+            .HandleAsync(new AuthorizeCheckout(legacy.Id, "cust-1", "pay-1", "pm_test", "trace-1"), TestContext.Current.CancellationToken);
+
+        result.Error.ShouldBe(new CheckoutFailure.AuthorizedButNotBookable(_payments.PaymentId));
+        legacy.PaymentAuthorizationId.ShouldBeNull();
+    }
+
+    private sealed class StubTravellers : IOrderTravellers
+    {
+        /// <summary>Complete for one adult by default.</summary>
+        public OrderTravellersReadiness Readiness { get; set; } = new(1, 0, 0, ContactProvided: true, 0);
+
+        /// <summary>What later checks see, when the travellers change after the first check.</summary>
+        public OrderTravellersReadiness? Later { get; set; }
+
+        private int _checks;
+
+        public Task<OrderTravellersReadiness> GetReadinessAsync(Guid orderId, string customerId, CancellationToken cancellationToken) =>
+            Task.FromResult(_checks++ > 0 && Later is { } later ? later : Readiness);
+    }
 
     private sealed class StubSelections : IFlightSelections
     {

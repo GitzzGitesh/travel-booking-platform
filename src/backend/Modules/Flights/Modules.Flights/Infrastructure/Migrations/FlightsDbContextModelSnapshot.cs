@@ -55,6 +55,9 @@ namespace TravelBooking.Modules.Flights.Infrastructure.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(64)");
 
+                    b.Property<bool>("DocumentsRequired")
+                        .HasColumnType("bit");
+
                     b.Property<int>("Infants")
                         .HasColumnType("int");
 

@@ -34,6 +34,15 @@ internal enum OrderStatus
 /// <summary>Who changed what, and when: recorded on every transition, with the request's correlation id.</summary>
 internal sealed record TransitionContext(DateTimeOffset At, string Actor, string? CorrelationId = null);
 
+/// <summary>
+/// What the item needs from its travellers (Q9), snapshotted from Flights: the passenger mix, whether the supplier
+/// requires travel documents, and the last travel date that dates their personal data's retention.
+/// </summary>
+internal sealed record TravellerNeeds(int Adults, int Children, int Infants, bool DocumentsRequired, DateOnly LastTravelDate)
+{
+    public bool IsKnown => Adults > 0;
+}
+
 /// <summary>The customer's consent to a changed price (F-01), snapshotted from Flights when the order is created.</summary>
 internal sealed record PriceConsent(Guid AcceptedPriceQuoteId, DateTimeOffset AcceptedAt);
 
@@ -114,7 +123,8 @@ internal sealed class Order
     /// </summary>
     public static Order CreateForFlight(
         string customerId,
-        string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context)
+        string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context,
+        TravellerNeeds? needs = null)
     {
         var order = new Order
         {
@@ -125,6 +135,11 @@ internal sealed class Order
             UpdatedAt = context.At,
         };
         var item = new FlightOrderItem(Guid.NewGuid(), selectedOfferId, agreedPrice, offerExpiresAt, consent);
+        if (needs is not null)
+        {
+            item.SetTravellerNeeds(needs);
+        }
+
         order._items.Add(item);
         var reason = consent is null
             ? "Order created from a confirmed flight selection"
@@ -148,7 +163,7 @@ internal sealed class Order
     /// without a newly accepted quote is refused. Only while the item awaits payment; a price change is on the timeline.
     /// </summary>
     public Result<FlightOrderItemStatus, OrderTransitionError> RefreshOffer(
-        Guid itemId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context)
+        Guid itemId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context, bool? documentsRequired = null)
     {
         if (Find(itemId) is not { } item)
         {
@@ -158,6 +173,13 @@ internal sealed class Order
         if (item.Status is not FlightOrderItemStatus.AwaitingPayment)
         {
             return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, FlightOrderItemStatus.AwaitingPayment));
+        }
+
+        // The supplier may state (or drop) a document requirement at a later revalidation: the latest one applies (Q9).
+        if (documentsRequired is { } required && item.TravellerNeeds is { } needs && needs.DocumentsRequired != required)
+        {
+            item.SetTravellerNeeds(needs with { DocumentsRequired = required });
+            Record(item, item.Status, required ? "The supplier now requires travel documents" : "The supplier no longer requires travel documents", context, providerReference: null);
         }
 
         var repriced = agreedPrice != item.AgreedPrice;
@@ -418,6 +440,11 @@ internal sealed class FlightOrderItem
 
     /// <summary>The supplier's booking locator (PNR or order id), once confirmed.</summary>
     public string? SupplierLocator { get; private set; }
+
+    /// <summary>What travellers the item needs (Q9); null for items created before it was recorded.</summary>
+    public TravellerNeeds? TravellerNeeds { get; private set; }
+
+    internal void SetTravellerNeeds(TravellerNeeds needs) => TravellerNeeds = needs;
 
     internal void MoveTo(FlightOrderItemStatus status) => Status = status;
 

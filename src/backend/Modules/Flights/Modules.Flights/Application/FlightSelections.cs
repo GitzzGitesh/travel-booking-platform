@@ -61,6 +61,7 @@ internal sealed class FlightSelections(ISelectedOfferStore store, RevalidateSele
         return unavailable is { } reason
             ? Result<BookableFlightSelection, FlightSelectionUnavailable>.Failure(reason)
             : Result<BookableFlightSelection, FlightSelectionUnavailable>.Success(new BookableFlightSelection(
-                offer!.Id, offer.AgreedPrice, offer.OfferExpiresAt, offer.AcceptedPriceQuoteId, offer.PriceAcceptedAt));
+                offer!.Id, offer.AgreedPrice, offer.OfferExpiresAt, offer.AcceptedPriceQuoteId, offer.PriceAcceptedAt,
+                offer.Adults, offer.Children, offer.Infants, offer.DocumentsRequired, offer.LastTravelDate));
     }
 }
