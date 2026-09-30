@@ -1,6 +1,6 @@
 # 0021. Booking orchestration: synchronous supplier booking, reconciliation and capture
 
-- **Status:** Proposed (2026-09-29)
+- **Status:** Accepted (2026-09-30) by the project owner, as written
 - **Date:** 2026-09-29
 - **Deciders:** Project owner
 - **Related:** [0005](0005-order-aggregate-and-booking-orchestration.md), [0007](0007-async-processing-worker-and-outbox.md), [0015](0015-synchronous-cross-module-commands-for-checkout.md) (extends its list of commands), [0019](0019-amadeus-first-production-flight-supplier.md), [0020](0020-traveller-personal-data-store-and-retention.md), `docs/architecture/booking-lifecycle.md`, `docs/architecture/payment-lifecycle.md`
