@@ -33,6 +33,13 @@ internal interface IOrderStore
 
     /// <summary>Orders with an item still awaiting payment whose offer expired at or before <paramref name="now"/>, oldest first.</summary>
     Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Orders with a booking to look up now: an item PendingConfirmation, or one still Booking since before
+    /// <paramref name="startedBefore"/> (interrupted), whose next lookup (backoff) is due at <paramref name="now"/>; the
+    /// most overdue first, so one supplier outage never starves newer bookings.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken);
 }
 
 /// <summary><paramref name="CustomerId"/> is the authenticated customer (Q8); the actor recorded on the timeline.</summary>
@@ -150,7 +157,7 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
     /// <summary>The timeline actor for a customer's own action.</summary>
     internal static string Actor(string customerId) => $"customer:{customerId}";
 
-    private static bool IsValidKey(string key) =>
+    internal static bool IsValidKey(string? key) =>
         key is { Length: > 0 and <= MaxIdempotencyKeyLength } && key.All(c => c is >= '!' and <= '~');
 
     private static Result<CreatedOrder, CreateFlightOrderFailure> Failure(CreateFlightOrderFailure failure) =>

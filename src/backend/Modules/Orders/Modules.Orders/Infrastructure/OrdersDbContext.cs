@@ -55,6 +55,8 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         item.Property(i => i.Status).HasConversion<string>().HasMaxLength(30);
         item.Property(i => i.ProviderId).HasMaxLength(50);
         item.Property(i => i.SupplierLocator).HasMaxLength(100);
+        item.Property(i => i.Ticketing).HasConversion<string>().HasMaxLength(10);
+        item.HasIndex(i => new { i.Status, i.NextBookingLookupAt }); // the booking reconciliation's work list
 
         // What the item needs from its travellers (Q9): optional, since items created before it have none.
         item.OwnsOne(i => i.TravellerNeeds, needs =>

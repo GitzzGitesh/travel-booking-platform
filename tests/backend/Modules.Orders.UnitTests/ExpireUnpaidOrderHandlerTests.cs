@@ -171,6 +171,9 @@ public sealed class ExpireUnpaidOrderHandlerTests
         public void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
             where TEvent : IIntegrationEvent => Published.Add(integrationEvent);
 
+        public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 

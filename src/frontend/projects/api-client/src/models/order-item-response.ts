@@ -5,10 +5,12 @@ import { OrderAmountResponse } from '../models/order-amount-response';
 import { TravellersNeededResponse } from '../models/travellers-needed-response';
 export interface OrderItemResponse {
   agreedPrice: OrderAmountResponse;
+  bookingReference: (string | null);
   itemId: string;
   offerExpiresAt: string;
   priceChangeAccepted: boolean;
   selectedOfferId: string;
   status: string;
+  ticketing: (string | null);
   travellers: (null | TravellersNeededResponse);
 }

@@ -195,6 +195,9 @@ public sealed class CreateFlightOrderHandlerTests
         public void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
             where TEvent : IIntegrationEvent => throw new NotSupportedException("Order creation publishes nothing.");
 
+        public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 

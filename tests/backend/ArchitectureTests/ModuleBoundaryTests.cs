@@ -91,6 +91,23 @@ public sealed class ModuleBoundaryTests
             .Because("Payments relies on its caller for the order-ownership check")
             .Check(_architecture);
 
+    // Flights books for the customer id it is given, and only Orders books after authorizing the payment for the customer's
+    // own order (ADR 0021; ADR 0015, condition 5).
+    [Fact]
+    public void Only_orders_books_flights() =>
+        Types().That().DoNotResideInNamespaceMatching(@"^TravelBooking\.Modules\.(Orders|Flights)(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().HaveFullName("TravelBooking.Modules.Flights.Contracts.IFlightBookings"))
+            .Because("a supplier booking follows an authorized payment for the customer's own order (authorize → book → capture)")
+            .Check(_architecture);
+
+    // The travellers' personal data (and decrypted documents) is released only for the supplier booking (ADR 0020, 0021).
+    [Fact]
+    public void Only_orders_reads_travellers_for_booking() =>
+        Types().That().DoNotResideInNamespaceMatching(@"^TravelBooking\.Modules\.(Orders|Customers)(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().HaveFullName("TravelBooking.Modules.Customers.Contracts.IOrderTravellers"))
+            .Because("travellers' personal data leaves the Customers module only for the supplier booking")
+            .Check(_architecture);
+
     // BuildingBlocks carries EF Core and ASP.NET Core for the outbox, inbox and leases (ADR 0007): keep them out of the
     // supplier adapters and the module Contracts that reference it (architecture review, background batch).
     [Fact]

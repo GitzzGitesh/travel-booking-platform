@@ -43,6 +43,7 @@ public static class FlightsModule
 
         // The module's public surface for other modules (Contracts): Orders read confirmed selections through it.
         services.AddScoped<Contracts.IFlightSelections, FlightSelections>();
+        services.AddScoped<Contracts.IFlightBookings, FlightBookings>();
 
         // Search results are held in HybridCache (ADR 0011: in-memory L1; Redis L2 later is configuration only).
         services.AddHybridCache(options => options.MaximumPayloadBytes = FlightSearchCache.MaximumPayloadBytes);

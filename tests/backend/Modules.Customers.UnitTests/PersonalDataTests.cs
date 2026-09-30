@@ -176,7 +176,7 @@ public sealed class PersonalDataTests
         _store.Documents.Single().IsShredded.ShouldBeTrue();
         _store.Sets.Single().Travellers[0].GivenNames.ShouldBe("Ada"); // personal data still kept
         _store.Sets.Single().Travellers[0].DocumentId.ShouldBeNull(); // no longer provided
-        (await new OrderTravellersReadinessQuery(_store).GetReadinessAsync(_orderId, "cust-1", Ct)).DocumentsProvided.ShouldBe(0);
+        (await new OrderTravellersReadinessQuery(_store, new TravelDocumentReader(_store, Protector(), _clock)).GetReadinessAsync(_orderId, "cust-1", Ct)).DocumentsProvided.ShouldBe(0);
 
         _clock.SetUtcNow(new DateTimeOffset(_lastTravel.AddMonths(25).AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
         (await purger.PurgeAsync(_orderId, Ct)).ShouldBeTrue();

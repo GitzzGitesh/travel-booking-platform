@@ -789,6 +789,134 @@
         }
       }
     },
+    "/api/v1/orders/{orderId}/checkout": {
+      "post": {
+        "tags": [
+          "Orders"
+        ],
+        "operationId": "CheckoutOrder",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orders/{orderId}": {
       "get": {
         "tags": [
@@ -910,6 +1038,60 @@
           "Business",
           "First"
         ]
+      },
+      "CheckoutRequest": {
+        "required": [
+          "paymentMethodToken"
+        ],
+        "type": "object",
+        "properties": {
+          "paymentMethodToken": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CheckoutResponse": {
+        "required": [
+          "orderId",
+          "outcome",
+          "payment",
+          "customerAction",
+          "order"
+        ],
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "payment": {
+            "type": "string"
+          },
+          "customerAction": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "order": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrderResponse"
+              }
+            ]
+          }
+        }
       },
       "ConfirmedFlightOfferResponse": {
         "required": [
@@ -1371,6 +1553,8 @@
           "agreedPrice",
           "offerExpiresAt",
           "priceChangeAccepted",
+          "bookingReference",
+          "ticketing",
           "travellers"
         ],
         "type": "object",
@@ -1395,6 +1579,18 @@
           },
           "priceChangeAccepted": {
             "type": "boolean"
+          },
+          "bookingReference": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ticketing": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "travellers": {
             "oneOf": [

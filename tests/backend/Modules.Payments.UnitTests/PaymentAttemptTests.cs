@@ -244,6 +244,67 @@ public sealed class PaymentAttemptTests
         PaymentAttempt.LiveStatuses.ShouldNotContain(PaymentAttemptStatus.Voided);
     }
 
+    private static readonly Money _held = new(270m, new CurrencyCode("XTS"));
+
+    [Fact]
+    public void A_capture_is_requested_once_for_at_most_the_held_amount_in_its_currency()
+    {
+        var attempt = Authorized();
+
+        attempt.RequestCapture(_held with { Amount = 0m }, At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
+        attempt.RequestCapture(_held with { Amount = 270.01m }, At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
+        attempt.RequestCapture(new Money(270m, new CurrencyCode("EUR")), At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
+        attempt.RequestCapture(_held with { Amount = 200m }, At(_now)).IsSuccess.ShouldBeTrue(); // partial: the confirmed items
+        attempt.RequestCapture(_held with { Amount = 200m }, At(_now)).IsSuccess.ShouldBeTrue(); // the same again: a no-op
+        attempt.RequestCapture(_held, At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal); // another amount
+
+        attempt.CaptureAmount.ShouldBe(_held with { Amount = 200m });
+        attempt.Events.Count(e => e.Reason.StartsWith("Capture requested", StringComparison.Ordinal)).ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(PaymentAttemptStatus.Declined)]
+    [InlineData(PaymentAttemptStatus.ManualReview)]
+    [InlineData(PaymentAttemptStatus.ActionRequired)]
+    internal void Only_an_authorized_payment_can_be_asked_to_capture(PaymentAttemptStatus status)
+    {
+        var attempt = New();
+        attempt.Resolve(status, "test", At(_now), "mockpay", "pay_1");
+
+        attempt.RequestCapture(_held, At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
+    }
+
+    [Fact]
+    public void Capturing_moves_only_from_a_requested_authorized_hold_and_ends_captured_unknown_or_in_review()
+    {
+        var attempt = Authorized();
+        attempt.BeginCapture(At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal); // not requested
+        attempt.ResolveCapture(PaymentAttemptStatus.Captured, "x", At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal); // not capturing
+
+        attempt.RequestCapture(_held, At(_now));
+        attempt.BeginCapture(At(_now)).Value.ShouldBe(PaymentAttemptStatus.Capturing);
+        attempt.BeginCapture(At(_now)).Value.ShouldBe(PaymentAttemptStatus.Capturing); // a no-op
+        attempt.ResolveCapture(PaymentAttemptStatus.Voided, "x", At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
+        attempt.ResolveCapture(PaymentAttemptStatus.CaptureUnknown, "timeout", At(_now)).Value.ShouldBe(PaymentAttemptStatus.CaptureUnknown);
+        attempt.ResolveCapture(PaymentAttemptStatus.Captured, "found", At(_now)).Value.ShouldBe(PaymentAttemptStatus.Captured);
+
+        attempt.BeginCapture(At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.AlreadyFinal);
+        attempt.ResolveCapture(PaymentAttemptStatus.Captured, "again", At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.AlreadyFinal);
+        attempt.BeginVoid(At(_now)).IsSuccess.ShouldBeFalse(); // a captured payment is never voided
+    }
+
+    [Fact]
+    public void A_capture_and_a_release_exclude_each_other()
+    {
+        var released = Authorized();
+        released.RequestRelease("not used", At(_now)).ShouldBeTrue();
+        released.RequestCapture(_held, At(_now)).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
+
+        var charged = Authorized();
+        charged.RequestCapture(_held, At(_now));
+        charged.RequestRelease("late", At(_now)).ShouldBeFalse();
+    }
+
     private static PaymentAttempt Authorized()
     {
         var attempt = New();

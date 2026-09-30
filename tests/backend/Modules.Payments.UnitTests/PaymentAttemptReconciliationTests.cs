@@ -320,6 +320,190 @@ public sealed class PaymentAttemptReconciliationTests
         (await Handler().FindLiveAsync(Guid.NewGuid(), Ct)).ShouldBeNull();
     }
 
+    // ---------- Capture after a confirmed booking (ADR 0005; F-23, F-24, F-25) ----------
+
+    [Fact]
+    public async Task A_confirmed_booking_is_charged_once_with_the_attempts_capture_key()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = details => Ok(Snapshot(details.Reference, PaymentState.Captured) with { Captured = details.Amount });
+
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Captured);
+        var capture = _provider.Captures.ShouldHaveSingleItem();
+        (capture.Key.Value, capture.Amount).ShouldBe(($"{attempt.Reference}:capture", _total));
+        attempt.Events.Select(e => e.ToStatus).TakeLast(3).ShouldBe(["Authorized", "Capturing", "Captured"]);
+    }
+
+    [Fact]
+    public async Task Nothing_is_captured_without_the_orders_request()
+    {
+        var attempt = await Attempt(Authorized());
+
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        _provider.Captures.ShouldBeEmpty();
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Authorized);
+    }
+
+    [Fact]
+    public async Task A_capture_that_timed_out_is_looked_up_and_sent_again_with_the_same_key_only_while_still_held()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        attempt.Status.ShouldBe(PaymentAttemptStatus.CaptureUnknown);
+
+        _provider.OnLookup = reference => Found(reference, PaymentState.Authorized); // not charged yet
+        _provider.OnCapture = details => Ok(Snapshot(details.Reference, PaymentState.Captured) with { Captured = details.Amount });
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Captured);
+        _provider.Captures.Select(c => c.Key.Value).Distinct().ShouldHaveSingleItem(); // the same key both times
+    }
+
+    [Fact]
+    public async Task A_capture_found_done_is_recorded_without_charging_again()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        _provider.OnLookup = reference => Found(reference, PaymentState.Captured);
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Captured);
+        _provider.Captures.Count.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(PaymentState.Expired)] // F-24: the hold lapsed before the charge
+    [InlineData(PaymentState.Canceled)]
+    internal async Task F23_a_booked_order_that_cannot_be_charged_goes_to_a_person(PaymentState found)
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        _provider.OnLookup = reference => Found(reference, found);
+
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.ManualReview);
+        _provider.Voids.ShouldBeEmpty(); // never released: the booking exists
+    }
+
+    [Fact]
+    public async Task A_refused_capture_goes_to_a_person_and_is_not_repeated()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.InvalidRequest, "refused")); // a definitive refusal
+
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.ManualReview);
+        _provider.Captures.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_capture_request_is_recorded_once_per_event_and_never_for_more_than_is_held_or_a_released_hold()
+    {
+        var attempt = await Attempt(Authorized());
+        var request = Capture(attempt, _total with { Amount = 300m });
+        await CaptureHandler().HandleAsync(request, Ct);
+        attempt.CaptureRequestedAt.ShouldBeNull(); // more than held: never
+
+        var released = await Attempt(Authorized(), Guid.NewGuid());
+        await RequestRelease(released);
+        await RequestCapture(released, _total);
+        released.CaptureRequestedAt.ShouldBeNull(); // a hold being released is never charged
+
+        var ok = Capture(attempt, _total);
+        await CaptureHandler().HandleAsync(ok, Ct);
+        await CaptureHandler().HandleAsync(ok, Ct);
+        attempt.Events.Count(e => e.Reason.StartsWith("Capture requested", StringComparison.Ordinal)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_hold_with_a_capture_requested_is_never_released()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+
+        attempt.RequestRelease("late release", new PaymentChange(_now, "test", null)).ShouldBeFalse();
+        attempt.ReleaseRequestedAt.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(false)] // a notification while the capture's outcome is unknown
+    [InlineData(true)] // a notification while the capture is in flight (Capturing saved, provider not answered)
+    public async Task B1_a_notification_during_a_capture_never_voids_the_hold_and_resumes_the_capture(bool interrupted)
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        if (interrupted)
+        {
+            attempt.BeginCapture(new PaymentChange(_now, "test", null));
+        }
+        else
+        {
+            _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+            await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        }
+
+        _provider.OnLookup = reference => Found(reference, PaymentState.Authorized); // still only held at the provider
+        _provider.OnCapture = details => Ok(Snapshot(details.Reference, PaymentState.Captured) with { Captured = details.Amount });
+        await Reconciler().ReconcileNotifiedAsync(attempt.Id, null, Ct);
+
+        _provider.Voids.ShouldBeEmpty();
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Captured);
+    }
+
+    [Fact]
+    public async Task A_notification_about_a_captured_payment_changes_nothing()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = details => Ok(Snapshot(details.Reference, PaymentState.Captured) with { Captured = details.Amount });
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        var events = attempt.Events.Count;
+
+        await Reconciler().ReconcileNotifiedAsync(attempt.Id, null, Ct);
+
+        (attempt.Events.Count, _provider.Voids.Count, _provider.Captures.Count).ShouldBe((events, 0, 1));
+    }
+
+    [Fact]
+    public async Task A_capture_that_stays_unknown_goes_to_a_person_before_the_hold_can_lapse()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        _provider.OnLookupError = new ProviderError(ProviderErrorKind.Unavailable, "down");
+
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        attempt.Status.ShouldBe(PaymentAttemptStatus.CaptureUnknown);
+        _clock.Advance(TimeSpan.FromHours(25));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.ManualReview);
+        _provider.Voids.ShouldBeEmpty();
+    }
+
+    private Task RequestCapture(PaymentAttempt attempt, Money amount) => CaptureHandler().HandleAsync(Capture(attempt, amount), Ct);
+
+    private static OrderPaymentCaptureRequested Capture(PaymentAttempt attempt, Money amount) => new(Guid.NewGuid(), _now, attempt.OrderId, attempt.Id, amount, "trace-7");
+
+    private OrderPaymentCaptureRequestedHandler CaptureHandler() => new(_store, _clock, NullLogger<OrderPaymentCaptureRequestedHandler>.Instance);
+
     private async Task<PaymentAttempt> Attempt(Func<AuthorizationDetails, Result<PaymentSnapshot, ProviderError>> authorize, Guid? orderId = null)
     {
         _provider.OnAuthorize = authorize;

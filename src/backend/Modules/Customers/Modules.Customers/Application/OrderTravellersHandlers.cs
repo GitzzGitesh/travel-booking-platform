@@ -174,9 +174,14 @@ internal sealed class OrderTravellersQuery(IPersonalDataStore store)
         await store.FindSetAsync(orderId, cancellationToken) is { AnonymisedAt: null } set && set.CustomerId == customerId ? set : null;
 }
 
-/// <summary><see cref="IOrderTravellers"/>: counts and flags only, for the order's owner.</summary>
-internal sealed class OrderTravellersReadinessQuery(IPersonalDataStore store) : IOrderTravellers
+/// <summary>
+/// <see cref="IOrderTravellers"/>: counts and flags only, for the order's owner; and the travellers themselves for the
+/// supplier booking, with each document read audited by <see cref="TravelDocumentReader"/>.
+/// </summary>
+internal sealed class OrderTravellersReadinessQuery(IPersonalDataStore store, TravelDocumentReader documents) : IOrderTravellers
 {
+    public const string BookingActor = "system:flight-booking";
+
     private static readonly OrderTravellersReadiness _nothing = new(0, 0, 0, false, 0);
 
     public async Task<OrderTravellersReadiness> GetReadinessAsync(Guid orderId, string customerId, CancellationToken cancellationToken)
@@ -193,6 +198,48 @@ internal sealed class OrderTravellersReadinessQuery(IPersonalDataStore store) : 
             complete.Count(t => t.Kind == PassengerKind.Infant),
             set.ContactEmail is not null && set.ContactPhone is not null,
             complete.Count(t => t.DocumentId is not null));
+    }
+
+    public async Task<BookingTravellers?> GetForBookingAsync(Guid orderId, string customerId, string? correlationId, CancellationToken cancellationToken)
+    {
+        if (await store.FindSetAsync(orderId, cancellationToken) is not { AnonymisedAt: null, ContactEmail: { } email, ContactPhone: { } phone } set
+            || set.CustomerId != customerId || set.Travellers.Count == 0)
+        {
+            return null;
+        }
+
+        var travellers = new List<BookingTraveller>();
+        foreach (var traveller in set.Travellers.OrderBy(t => t.Position))
+        {
+            if (traveller.Details is not { } details)
+            {
+                return null;
+            }
+
+            BookingTravelDocument? document = null;
+            if (traveller.DocumentId is not null)
+            {
+                var read = await documents.ReadAsync(orderId, traveller.Position, BookingActor, correlationId, cancellationToken);
+                if (!read.IsSuccess)
+                {
+                    return null; // a document the supplier needs cannot be read: nothing is sent
+                }
+
+                var d = read.Value;
+                document = new BookingTravelDocument(
+                    d.Type is TravelDocumentType.IdentityCard ? TravelDocumentKind.IdentityCard : TravelDocumentKind.Passport, d.Number, d.IssuingCountry, d.Nationality, d.ExpiryDate);
+            }
+
+            travellers.Add(new BookingTraveller(
+                details.Kind switch { PassengerKind.Child => TravellerType.Child, PassengerKind.Infant => TravellerType.Infant, _ => TravellerType.Adult },
+                details.GivenNames,
+                details.Surname,
+                details.DateOfBirth,
+                details.Gender is TravellerGender.Male ? TravellerGenderType.Male : TravellerGenderType.Female,
+                document));
+        }
+
+        return new BookingTravellers(email, phone, travellers);
     }
 }
 

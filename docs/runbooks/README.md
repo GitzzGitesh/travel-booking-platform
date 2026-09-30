@@ -9,8 +9,8 @@ Step-by-step procedures for operational situations. A runbook is written **in th
 | `payment-hold-release.md` (written) | Phase 3 (background money safety) | Hold not released / release request given up |
 | `stripe-test-mode.md` (written) | ADR 0006 groundwork | Verifying the Stripe adapter in test mode, or running locally against Stripe |
 | `personal-data-retention.md` (written) | Q9/Q10 batch (ADR 0020) | Purge stopped, documents unavailable, `PaymentAttemptLimitRepeated`; document key setup and rotation, legal hold |
-| `booking-pending-confirmation.md` | Phase 3 (first vertical slice) | Booking stuck in `PendingConfirmation` |
-| `payment-captured-booking-failed.md` | Phase 3 | Capture failure / payment–booking mismatch |
+| `booking-pending-confirmation.md` (written) | Booking orchestration (ADR 0021) | `BookingUnresolved`, `BookingMismatch`, `BookingFoundAfterFailure` |
+| `payment-captured-booking-failed.md` (written) | Booking orchestration (ADR 0021) | `PaymentCaptureFailed`, `PaymentCaptureNotPossible` |
 | `provider-outage.md` | Phase 2/3 | Supplier degraded / circuit open |
 | `webhook-backlog.md` | Phase 5 (Stripe) | Inbox lag |
 | `refund-failed.md` | Refund phase | Refund `Failed` |

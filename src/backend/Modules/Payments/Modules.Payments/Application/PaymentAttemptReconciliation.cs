@@ -12,7 +12,9 @@ namespace TravelBooking.Modules.Payments.Application;
 /// Brings one attempt up to date in the background (payment-lifecycle.md): an open attempt is looked up by our
 /// reference, never authorized again; a hold Orders will not use is released with one void, keyed by the attempt so it
 /// never releases twice; a void whose outcome is unknown, or that a crash interrupted, is looked up and repeated with the
-/// same key only while the payment is still held. Nothing is ever captured here.
+/// same key only while the payment is still held. A capture Orders requested for its confirmed bookings is made once,
+/// keyed by the attempt; one whose outcome is unknown is looked up, and repeated with the same key only while the hold is
+/// still there (the provider guarantees idempotency by key). Nothing is captured without Orders' request.
 /// </summary>
 internal sealed partial class PaymentAttemptReconciler(
     IPaymentAttemptStore store,
@@ -22,6 +24,9 @@ internal sealed partial class PaymentAttemptReconciler(
     ILogger<PaymentAttemptReconciler> logger)
 {
     public const string Actor = "system:payment-reconciliation";
+
+    /// <summary>A capture whose outcome still cannot be looked up after this goes to a person, well before a hold lapses (about 7 days).</summary>
+    internal static readonly TimeSpan CaptureUnresolvedAfter = TimeSpan.FromHours(24);
 
     /// <summary>Brings the attempt up to date; says what it did (for notification records and logs).</summary>
     public async Task<string> ReconcileAsync(Guid attemptId, CancellationToken cancellationToken)
@@ -45,6 +50,18 @@ internal sealed partial class PaymentAttemptReconciler(
             return $"{outcome}; void resumed";
         }
 
+        if (attempt.IsCaptureInProgress)
+        {
+            await ResumeCaptureAsync(attempt, cancellationToken);
+            return $"{outcome}; capture resumed";
+        }
+
+        if (attempt.CaptureRequestedAt is not null && attempt.Status is PaymentAttemptStatus.Authorized)
+        {
+            await CaptureAsync(attempt, cancellationToken);
+            return $"{outcome}; captured";
+        }
+
         if (attempt.ReleaseRequestedAt is not null && attempt.Status is PaymentAttemptStatus.Authorized or PaymentAttemptStatus.ActionRequired)
         {
             await VoidAsync(attempt, cancellationToken);
@@ -66,6 +83,15 @@ internal sealed partial class PaymentAttemptReconciler(
         if (await store.FindAsync(attemptId, cancellationToken) is not { } attempt)
         {
             return "No such attempt";
+        }
+
+        // A confirmed booking is being (or was) charged: its hold is expected, never a stray one to void. The capture is
+        // resumed as usual; a captured attempt needs nothing.
+        if (attempt.CaptureRequestedAt is not null)
+        {
+            return attempt.Status is PaymentAttemptStatus.Captured
+                ? "Captured; nothing to do"
+                : await ReconcileAsync(attempt.Id, cancellationToken);
         }
 
         if (!attempt.IsAuthorizationSettled || PaymentAttempt.LiveStatuses.Contains(attempt.Status))
@@ -102,6 +128,69 @@ internal sealed partial class PaymentAttemptReconciler(
         }
 
         return $"Hold found on a {attempt.Status} attempt and {result}";
+    }
+
+    private async Task CaptureAsync(PaymentAttempt attempt, CancellationToken cancellationToken)
+    {
+        // Saved as Capturing before the provider is asked: a crash leaves a capture to look up, never a forgotten one.
+        if (!attempt.BeginCapture(Change()).IsSuccess || !await store.TrySaveAsync(cancellationToken))
+        {
+            return; // changed concurrently: the next run looks again
+        }
+
+        await SendCaptureAsync(attempt, cancellationToken);
+    }
+
+    /// <summary>A capture that was interrupted or whose outcome is unknown: look it up; repeat it (same key) only while still held.</summary>
+    private async Task ResumeCaptureAsync(PaymentAttempt attempt, CancellationToken cancellationToken)
+    {
+        switch (await operations.ReconcileAsync(new PaymentReference(attempt.Reference), attempt.KnownProviderPayment(), cancellationToken))
+        {
+            case PaymentOutcome.Captured captured when captured.Payment.Captured == attempt.CaptureAmount:
+                await ResolveCaptureAsync(attempt, PaymentAttemptStatus.Captured, "Found captured at the provider", cancellationToken);
+                break;
+            case PaymentOutcome.Authorized:
+                await SendCaptureAsync(attempt, cancellationToken); // still only held: the same key never charges twice
+                break;
+            case PaymentOutcome.Unknown or PaymentOutcome.Rejected when timeProvider.GetUtcNow() - attempt.CaptureRequestedAt >= CaptureUnresolvedAfter:
+                await ResolveCaptureAsync(attempt, PaymentAttemptStatus.ManualReview, "Capture still unknown after its limit; the hold must not lapse unnoticed", cancellationToken);
+                break;
+            case PaymentOutcome.Unknown or PaymentOutcome.Rejected:
+                break; // the lookup itself failed: try again next run
+            case var other:
+                // Lapsed (F-24), voided, another amount, or not found: the booking exists but the charge is not as agreed.
+                await ResolveCaptureAsync(attempt, PaymentAttemptStatus.ManualReview, $"While charging, the provider reported {other.GetType().Name}", cancellationToken);
+                break;
+        }
+    }
+
+    private async Task SendCaptureAsync(PaymentAttempt attempt, CancellationToken cancellationToken)
+    {
+        var details = new CaptureDetails(
+            new PaymentReference(attempt.Reference), new ProviderPaymentRef(attempt.ProviderId!, attempt.ProviderPaymentId!), new OperationKey(attempt.CaptureKey), attempt.CaptureAmount!.Value);
+        var (status, reason) = await operations.CaptureAsync(details, cancellationToken) switch
+        {
+            PaymentOutcome.Captured => (PaymentAttemptStatus.Captured, "Charged for the confirmed bookings (captured)"),
+            PaymentOutcome.Unknown unknown => (PaymentAttemptStatus.CaptureUnknown, $"Capture outcome unknown ({unknown.Cause}); to be looked up"),
+            PaymentOutcome.Rejected rejected => (PaymentAttemptStatus.ManualReview, $"Capture refused ({rejected.Reason})"),
+            var other => (PaymentAttemptStatus.ManualReview, $"While charging, the provider reported {other.GetType().Name}"),
+        };
+        await ResolveCaptureAsync(attempt, status, reason, cancellationToken);
+    }
+
+    private async Task ResolveCaptureAsync(PaymentAttempt attempt, PaymentAttemptStatus status, string reason, CancellationToken cancellationToken)
+    {
+        if (status is PaymentAttemptStatus.ManualReview)
+        {
+            // F-23 / F-24: the booking is confirmed but not paid for. Never cancelled automatically: a person decides.
+            LogCaptureFailed(logger, attempt.Id, attempt.OrderId, reason);
+        }
+
+        // A lost save is harmless: the attempt stays capturing, and the next run looks the capture up.
+        if (attempt.ResolveCapture(status, reason, Change()).IsSuccess)
+        {
+            await store.TrySaveAsync(cancellationToken);
+        }
     }
 
     private async Task VoidAsync(PaymentAttempt attempt, CancellationToken cancellationToken)
@@ -178,6 +267,9 @@ internal sealed partial class PaymentAttemptReconciler(
 
     private PaymentChange Change() => new(timeProvider.GetUtcNow(), Actor, null);
 
+    [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentCaptureFailed", Message = "Alert: payment attempt {AttemptId} for order {OrderId} could not be charged for its confirmed booking ({Reason}); manual review")]
+    private static partial void LogCaptureFailed(ILogger logger, Guid attemptId, Guid orderId, string reason);
+
     [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentHoldNotReleasable", Message = "Alert: payment attempt {AttemptId} ({Status}) is to be released but cannot be voided; manual action needed")]
     private static partial void LogCannotRelease(ILogger logger, Guid attemptId, string status);
 
@@ -225,6 +317,50 @@ internal sealed partial class ReconcilePaymentAttemptsJob(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Reconciling payment attempt {AttemptId} failed ({Error}); it stays on the work list")]
     private static partial void LogFailed(ILogger logger, Guid attemptId, string error);
+}
+
+/// <summary>
+/// Records Orders' request to charge its confirmed bookings (ADR 0007 inbox: once per event), for the reconciliation job
+/// to capture. A request the attempt cannot take (not authorized, a release requested, more than held) is never
+/// captured: it is recorded on the attempt's history and alerted for a person.
+/// </summary>
+internal sealed partial class OrderPaymentCaptureRequestedHandler(IPaymentAttemptStore store, TimeProvider timeProvider, ILogger<OrderPaymentCaptureRequestedHandler> logger)
+    : IIntegrationEventHandler<OrderPaymentCaptureRequested>
+{
+    public const string Name = "payments.order-payment-capture-requested";
+    public const string Actor = "system:orders";
+
+    public async Task HandleAsync(OrderPaymentCaptureRequested integrationEvent, CancellationToken cancellationToken)
+    {
+        if (await store.HasConsumedAsync(integrationEvent.EventId, Name, cancellationToken))
+        {
+            return;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var change = new PaymentChange(now, Actor, integrationEvent.CorrelationId);
+        if (await store.FindAsync(integrationEvent.PaymentId, cancellationToken) is { } attempt && attempt.OrderId == integrationEvent.OrderId)
+        {
+            if (!attempt.RequestCapture(integrationEvent.Amount, change).IsSuccess)
+            {
+                attempt.RecordFinding($"Capture of {integrationEvent.Amount.Amount} {integrationEvent.Amount.Currency.Value} requested but not possible ({attempt.Status})", change, null);
+                LogCannotCapture(logger, attempt.Id, attempt.OrderId, attempt.Status.ToString());
+            }
+        }
+        else
+        {
+            LogCannotCapture(logger, integrationEvent.PaymentId, integrationEvent.OrderId, "not found");
+        }
+
+        store.MarkConsumed(integrationEvent.EventId, Name, now);
+        if (!await store.TrySaveAsync(cancellationToken) && !await store.HasConsumedAsync(integrationEvent.EventId, Name, cancellationToken))
+        {
+            throw new InvalidOperationException($"Payment attempt {integrationEvent.PaymentId} changed concurrently.");
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentCaptureNotPossible", Message = "Alert: order {OrderId} asked to charge payment attempt {AttemptId}, which cannot be captured ({Status}); manual action needed")]
+    private static partial void LogCannotCapture(ILogger logger, Guid attemptId, Guid orderId, string status);
 }
 
 /// <summary>

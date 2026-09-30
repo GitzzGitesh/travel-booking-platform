@@ -30,14 +30,17 @@
   - an unfinished challenge → `Canceled`;
   - a timed-out void → `VoidUnknown`, looked up, then voided again with the same key (`{attempt}:void`) only while still held;
   - a refused void, or an unexpected lookup → `ManualReview`.
-  - Voiding and VoidUnknown count as live, so no new attempt starts while a hold may exist. Nothing is captured.
+  - Voiding and VoidUnknown count as live, so no new attempt starts while a hold may exist.
   - The mock keeps payments in memory per process, so a separately started Worker cannot see the Api's mock payments.
+- **Capture after a confirmed booking (ADR 0021):** Orders publishes `OrderPaymentCaptureRequested` (the confirmed items' total) in the same save as the confirmation. Payments records it once (inbox, `CaptureRequestedAt`); only an Authorized attempt with no release requested, for at most the held amount, can take it, and anything else is recorded and alerted (`PaymentCaptureNotPossible`). The reconciliation job then captures:
+  - `Capturing` (saved first) → `Captured`, with one key, `{attempt}:capture`;
+  - a timed-out capture → `CaptureUnknown`, looked up, and repeated with the same key only while the payment is still only held;
+  - a refused capture, a lapsed or voided hold, or another amount → `ManualReview` with the `PaymentCaptureFailed` alert (F-23, F-24). The booking is not cancelled automatically.
+  - A hold with a capture requested is never released, not even on a provider notification: that resumes the capture instead. Nothing is captured without Orders' request.
+  - The capture key starts a new generation after each manual review (`{attempt}:capture-{n}`). A capture still unknown after 24 hours goes to `ManualReview`.
 - **Built since (ADR 0006, Proposed):** provider notifications (webhooks, below) and a Stripe adapter mapped from documentation. It is not production-ready and is refused outside Development and Staging.
-- **Not yet built, and gates for exposing checkout:**
-  - capture on the attempt;
-  - an audited operator way out of ManualReview;
-  - a cap on attempts per order and customer, with generic declines to clients (card testing; a fraud-policy question, Q10);
-  - any customer payment endpoint.
+- **Built since:** capture (above), the attempt limits and generic declines (Q10), `ResolvePaymentReviewHandler` (no endpoint yet), and the customer checkout endpoint (`POST /api/v1/orders/{id}/checkout`, ADR 0021).
+- **Not yet built:** the operator endpoints for manual review (with staff identity), refunds and cancellations.
 
   The not-found consistency window (`Payments:Reconciliation:NotFoundConclusiveAfter`) must be at least the provider's declared minimum, which startup enforces: 1 hour for Stripe's search. If it is too short, a later attempt could hold funds twice.
 

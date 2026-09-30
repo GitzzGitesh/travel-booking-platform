@@ -26,6 +26,15 @@ internal enum PaymentAttemptStatus
     Voiding,
     VoidUnknown,
     Voided,
+
+    /// <summary>Orders' confirmed booking is being charged: saved before the provider is asked (ADR 0005: capture after booking).</summary>
+    Capturing,
+
+    /// <summary>The capture's outcome is unknown: looked up, and repeated with the same key only while the hold is still there.</summary>
+    CaptureUnknown,
+
+    /// <summary>Charged: the money is taken (for the confirmed bookings only).</summary>
+    Captured,
 }
 
 internal enum PaymentAttemptTransitionError
@@ -78,6 +87,23 @@ internal sealed class PaymentAttempt
     public DateTimeOffset? ReleaseRequestedAt { get; private set; }
 
     public string? ReleaseReason { get; private set; }
+
+    /// <summary>When Orders asked for the charge, after its bookings were confirmed; the amount is what they cost (never more than held).</summary>
+    public DateTimeOffset? CaptureRequestedAt { get; private set; }
+
+    /// <summary>The amount to charge, in the held amount's currency (a capture never changes currency).</summary>
+    public decimal? CaptureAmountValue { get; private set; }
+
+    public Money? CaptureAmount => CaptureAmountValue is { } value ? new Money(value, Amount.Currency) : null;
+
+    /// <summary>
+    /// Our idempotency key for the one capture of this attempt: repeating it never charges twice. Like the void key, a new
+    /// generation starts after each manual review, so a capture refused before the review is not replayed from the
+    /// provider's idempotency cache (a capture is still at most once: the provider captures a payment only once).
+    /// </summary>
+    public string CaptureKey => VoidGeneration == 0 ? $"{Reference}:capture" : $"{Reference}:capture-{VoidGeneration}";
+
+    public bool IsCaptureInProgress => Status is PaymentAttemptStatus.Capturing or PaymentAttemptStatus.CaptureUnknown;
 
     public DateTimeOffset CreatedAt { get; private set; }
 
@@ -177,6 +203,11 @@ internal sealed class PaymentAttempt
             return true;
         }
 
+        if (CaptureRequestedAt is not null)
+        {
+            return false; // a confirmed booking is charged, never released
+        }
+
         if (!LiveStatuses.Contains(Status))
         {
             return false;
@@ -186,6 +217,62 @@ internal sealed class PaymentAttempt
         ReleaseReason = reason.Length <= MaxReleaseReasonLength ? reason : reason[..MaxReleaseReasonLength];
         Record(Status, $"Release requested: {ReleaseReason}", change, null);
         return true;
+    }
+
+    /// <summary>
+    /// Orders confirmed its bookings and asks for the charge (ADR 0005: capture only after a confirmed booking). Recorded
+    /// (no status change) and acted on by reconciliation. Only for an Authorized attempt with no release requested, for
+    /// at most the amount held, in its currency. Idempotent for the same amount; another amount is refused.
+    /// </summary>
+    public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> RequestCapture(Money amount, PaymentChange change)
+    {
+        if (CaptureRequestedAt is not null)
+        {
+            return CaptureAmount == amount ? Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status) : Failure(PaymentAttemptTransitionError.Illegal);
+        }
+
+        if (Status is not PaymentAttemptStatus.Authorized || ReleaseRequestedAt is not null
+            || amount.Currency != Amount.Currency || amount.Amount <= 0 || amount.Amount > Amount.Amount || ProviderPaymentId is null)
+        {
+            return Failure(PaymentAttemptTransitionError.Illegal);
+        }
+
+        CaptureRequestedAt = change.At;
+        CaptureAmountValue = amount.Amount;
+        Record(Status, $"Capture requested: {amount.Amount} {amount.Currency.Value} for the confirmed bookings", change, null);
+        return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status);
+    }
+
+    /// <summary>Starts the requested capture: saved as Capturing before the provider is asked. A capture already in progress is a no-op.</summary>
+    public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> BeginCapture(PaymentChange change)
+    {
+        if (Status is PaymentAttemptStatus.Capturing)
+        {
+            return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status);
+        }
+
+        if (Status is not (PaymentAttemptStatus.Authorized or PaymentAttemptStatus.CaptureUnknown) || CaptureRequestedAt is null || ProviderPaymentId is null)
+        {
+            return Failure(Status is PaymentAttemptStatus.Captured ? PaymentAttemptTransitionError.AlreadyFinal : PaymentAttemptTransitionError.Illegal);
+        }
+
+        return MoveTo(PaymentAttemptStatus.Capturing, "Charging the confirmed bookings (capture)", change, ProviderPaymentId);
+    }
+
+    /// <summary>Records the capture's outcome: Captured, CaptureUnknown (to look up), or ManualReview (refused, or not as expected).</summary>
+    public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> ResolveCapture(PaymentAttemptStatus to, string reason, PaymentChange change)
+    {
+        if (!IsCaptureInProgress)
+        {
+            return Failure(Status is PaymentAttemptStatus.Captured ? PaymentAttemptTransitionError.AlreadyFinal : PaymentAttemptTransitionError.Illegal);
+        }
+
+        if (to is not (PaymentAttemptStatus.Captured or PaymentAttemptStatus.CaptureUnknown or PaymentAttemptStatus.ManualReview))
+        {
+            return Failure(PaymentAttemptTransitionError.Illegal);
+        }
+
+        return MoveTo(to, reason, change, ProviderPaymentId);
     }
 
     /// <summary>
