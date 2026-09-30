@@ -14,7 +14,7 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
     private static readonly PaymentAttemptStatus[] _lookupStatuses =
     [
         PaymentAttemptStatus.Authorizing, PaymentAttemptStatus.AuthorizationUnknown, PaymentAttemptStatus.ActionRequired,
-        PaymentAttemptStatus.Voiding, PaymentAttemptStatus.VoidUnknown,
+        PaymentAttemptStatus.Voiding, PaymentAttemptStatus.VoidUnknown, PaymentAttemptStatus.Capturing, PaymentAttemptStatus.CaptureUnknown,
     ];
 
     public Task<PaymentAttempt?> FindAsync(Guid attemptId, CancellationToken cancellationToken) =>
@@ -59,7 +59,7 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
     public async Task<IReadOnlyList<Guid>> FindReconcilableAsync(DateTimeOffset settledBefore, int limit, CancellationToken cancellationToken) =>
         await db.PaymentAttempts.AsNoTracking()
             .Where(a => (_lookupStatuses.Contains(a.Status) && a.UpdatedAt <= settledBefore)
-                || (a.Status == PaymentAttemptStatus.Authorized && a.ReleaseRequestedAt != null))
+                || (a.Status == PaymentAttemptStatus.Authorized && (a.ReleaseRequestedAt != null || a.CaptureRequestedAt != null)))
             .OrderBy(a => a.UpdatedAt)
             .Select(a => a.Id)
             .Take(limit)

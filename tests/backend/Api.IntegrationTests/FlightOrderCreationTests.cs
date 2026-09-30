@@ -182,16 +182,18 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
     }
 
     [Fact]
-    public async Task Checkout_revalidates_authorizes_the_order_total_and_starts_the_booking()
+    public async Task Checkout_revalidates_authorizes_the_order_total_books_it_and_requests_the_charge()
     {
         var order = (await Create(NewKey(), (await ConfirmedSelection("JFK")).Id)).Value.Order;
 
         var result = (await Checkout(order.Id, MockPaymentMethods.Approved)).Value;
 
-        result.Status.ShouldBe(CheckoutStatus.BookingStarted);
+        result.Status.ShouldBe(CheckoutStatus.Booked);
         var stored = await Load(order.Id);
         stored.PaymentAuthorizationId.ShouldBe(result.PaymentId.ToString());
-        stored.Items[0].Status.ShouldBe(FlightOrderItemStatus.Booking);
+        (stored.Items[0].Status, stored.Items[0].Ticketing).ShouldBe((FlightOrderItemStatus.Confirmed, TicketingStatus.Issued));
+        stored.Items[0].SupplierLocator.ShouldNotBeNullOrEmpty();
+        stored.PaymentSettlementRequestedAt.ShouldNotBeNull();
         stored.Timeline[^1].ProviderReference.ShouldBe(result.PaymentId.ToString());
         var payment = await LoadPayment(result.PaymentId!.Value);
         (payment.OrderId, payment.Amount, payment.CustomerId).ShouldBe((order.Id, order.Total, _customer));
@@ -205,7 +207,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
         var result = (await Checkout(order.Id, MockPaymentMethods.Approved)).Value;
 
-        result.Status.ShouldBe(CheckoutStatus.BookingStarted);
+        result.Status.ShouldBe(CheckoutStatus.Booked);
         (await LoadPayment(result.PaymentId!.Value)).Amount.ShouldBe(selection.AgreedPrice);
     }
 
@@ -219,7 +221,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         var paid = (await Checkout(order.Id, MockPaymentMethods.Approved)).Value;
 
         declined.Status.ShouldBe(CheckoutStatus.Declined);
-        paid.Status.ShouldBe(CheckoutStatus.BookingStarted);
+        paid.Status.ShouldBe(CheckoutStatus.Booked);
         paid.PaymentId.ShouldNotBe(declined.PaymentId);
     }
 

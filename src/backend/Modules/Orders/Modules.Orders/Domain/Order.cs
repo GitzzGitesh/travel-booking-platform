@@ -19,6 +19,23 @@ internal enum FlightOrderItemStatus
     Failed,
 }
 
+/// <summary>Whether the supplier has issued the tickets for a confirmed item.</summary>
+internal enum TicketingStatus
+{
+    Pending,
+    Issued,
+}
+
+/// <summary>What the order's payment is to become once its bookings are settled (ADR 0005: authorize → book → capture).</summary>
+internal abstract record PaymentSettlement(Guid PaymentId)
+{
+    /// <summary>Charge the confirmed items' agreed prices (a partial capture releases the rest).</summary>
+    internal sealed record Capture(Guid PaymentId, Money Amount) : PaymentSettlement(PaymentId);
+
+    /// <summary>Nothing was booked: release the hold (invariant 4: only once the booking is known not to exist).</summary>
+    internal sealed record Release(Guid PaymentId) : PaymentSettlement(PaymentId);
+}
+
 /// <summary>Derived from the items, never stored or set directly (booking-lifecycle.md).</summary>
 internal enum OrderStatus
 {
@@ -107,6 +124,9 @@ internal sealed class Order
 
     /// <summary>The payment authorization for the whole order (ADR 0005: payments attach to the Order).</summary>
     public string? PaymentAuthorizationId { get; private set; }
+
+    /// <summary>When the charge (or, with nothing booked, the release) of the payment was requested: once per order.</summary>
+    public DateTimeOffset? PaymentSettlementRequestedAt { get; private set; }
 
     public IReadOnlyList<FlightOrderItem> Items => _items;
 
@@ -239,6 +259,7 @@ internal sealed class Order
         PaymentAuthorizationId = paymentAuthorizationId;
         foreach (var item in _items)
         {
+            item.StartBooking(context.At);
             Move(item, FlightOrderItemStatus.Booking, "Payment authorized; booking with the supplier", context, paymentAuthorizationId);
         }
 
@@ -283,7 +304,8 @@ internal sealed class Order
     }
 
     /// <summary>The supplier confirmed the booking at the agreed price, directly or found by reconciliation.</summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> Confirm(Guid itemId, string providerId, string supplierLocator, TransitionContext context)
+    public Result<FlightOrderItemStatus, OrderTransitionError> Confirm(
+        Guid itemId, string providerId, string supplierLocator, TransitionContext context, TicketingStatus ticketing = TicketingStatus.Pending)
     {
         if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(supplierLocator))
         {
@@ -300,7 +322,7 @@ internal sealed class Order
             FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.ManualReview);
         if (result.IsSuccess)
         {
-            Find(itemId)!.RecordSupplierBooking(providerId, supplierLocator);
+            Find(itemId)!.RecordSupplierBooking(providerId, supplierLocator, ticketing);
         }
 
         return result;
@@ -325,6 +347,55 @@ internal sealed class Order
     public Result<FlightOrderItemStatus, OrderTransitionError> RequireManualReview(Guid itemId, string reason, TransitionContext context) =>
         Transition(itemId, FlightOrderItemStatus.ManualReview, reason, context, providerReference: null,
             FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation);
+
+    /// <summary>
+    /// Once every item's booking is settled (none booking, pending or in review): the charge for the confirmed items, or,
+    /// with none confirmed, the release of the hold. Once per order (null again afterwards, or while anything is
+    /// unsettled). The caller publishes it in the same save, so it is never lost (F-25). Recorded on the timeline with the
+    /// payment as the provider reference. Capture only ever follows a confirmed booking (booking rules).
+    /// </summary>
+    public PaymentSettlement? SettlePayment(TransitionContext context)
+    {
+        if (PaymentAuthorizationId is null || PaymentSettlementRequestedAt is not null || !Guid.TryParse(PaymentAuthorizationId, out var paymentId)
+            || _items.Any(i => i.Status is FlightOrderItemStatus.Booking or FlightOrderItemStatus.PendingConfirmation or FlightOrderItemStatus.ManualReview))
+        {
+            return null;
+        }
+
+        PaymentSettlementRequestedAt = context.At;
+        var confirmed = _items.Where(i => i.Status is FlightOrderItemStatus.Confirmed).ToList();
+        if (confirmed.Count == 0)
+        {
+            foreach (var item in _items)
+            {
+                Record(item, item.Status, "Nothing was booked: the payment hold is to be released", context, PaymentAuthorizationId);
+            }
+
+            return new PaymentSettlement.Release(paymentId);
+        }
+
+        var amount = confirmed.Select(i => i.AgreedPrice).Aggregate((sum, price) => sum + price);
+        foreach (var item in confirmed)
+        {
+            Record(item, item.Status, $"Booking confirmed: {amount.Amount} {amount.Currency.Value} to be charged", context, PaymentAuthorizationId);
+        }
+
+        return new PaymentSettlement.Capture(paymentId, amount);
+    }
+
+    /// <summary>
+    /// Records that reconciliation looked the item's booking up without settling it, and when to look again (backoff): not
+    /// a status change, so no timeline entry.
+    /// </summary>
+    public void RecordBookingLookup(Guid itemId, DateTimeOffset at, DateTimeOffset nextLookupAt)
+    {
+        if (Find(itemId) is { } item)
+        {
+            item.RecordLookup(nextLookupAt);
+            UpdatedAt = at;
+            Revision++;
+        }
+    }
 
     public static bool IsValidCustomerId(string? customerId) =>
         !string.IsNullOrWhiteSpace(customerId) && customerId.Length <= MaxCustomerIdLength;
@@ -441,6 +512,15 @@ internal sealed class FlightOrderItem
     /// <summary>The supplier's booking locator (PNR or order id), once confirmed.</summary>
     public string? SupplierLocator { get; private set; }
 
+    /// <summary>Whether the supplier has issued the tickets, once confirmed.</summary>
+    public TicketingStatus? Ticketing { get; private set; }
+
+    /// <summary>
+    /// When the order moved to Booking: the supplier may have received the booking from then on, so it dates the
+    /// supplier's consistency window and the limit before a person must look (booking reconciliation).
+    /// </summary>
+    public DateTimeOffset? BookingStartedAt { get; private set; }
+
     /// <summary>What travellers the item needs (Q9); null for items created before it was recorded.</summary>
     public TravellerNeeds? TravellerNeeds { get; private set; }
 
@@ -459,10 +539,24 @@ internal sealed class FlightOrderItem
         }
     }
 
-    internal void RecordSupplierBooking(string providerId, string supplierLocator)
+    internal void RecordSupplierBooking(string providerId, string supplierLocator, TicketingStatus ticketing)
     {
         ProviderId = providerId;
         SupplierLocator = supplierLocator;
+        Ticketing = ticketing;
+    }
+
+    internal void StartBooking(DateTimeOffset at) => BookingStartedAt = at;
+
+    /// <summary>How many lookups did not settle the booking, and when reconciliation looks again.</summary>
+    public int BookingLookups { get; private set; }
+
+    public DateTimeOffset? NextBookingLookupAt { get; private set; }
+
+    internal void RecordLookup(DateTimeOffset nextLookupAt)
+    {
+        BookingLookups++;
+        NextBookingLookupAt = nextLookupAt;
     }
 }
 

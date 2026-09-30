@@ -23,8 +23,14 @@ internal sealed record AuthorizeCheckout(Guid OrderId, string CustomerId, string
 
 internal enum CheckoutStatus
 {
-    /// <summary>The total is held and the order moved to Booking: the supplier booking comes next.</summary>
-    BookingStarted,
+    /// <summary>The supplier confirmed the booking (every item, or some: partially confirmed); only those are charged.</summary>
+    Booked,
+
+    /// <summary>The booking's outcome is not known yet: it is looked up (never sent again). Poll the order (202).</summary>
+    BookingPending,
+
+    /// <summary>The supplier did not book: nothing is charged, and the payment hold is released.</summary>
+    BookingFailed,
 
     /// <summary>The customer must complete a challenge, then repeat the request with the same key.</summary>
     ActionRequired,
@@ -47,7 +53,8 @@ internal sealed record CheckoutResult(Guid OrderId, CheckoutStatus Status, Guid?
     /// <summary>What a customer may be told (generic declines): never why a card was refused, never a manual review.</summary>
     public CustomerPaymentState CustomerState => Status switch
     {
-        CheckoutStatus.BookingStarted => CustomerPaymentState.Accepted,
+        CheckoutStatus.Booked or CheckoutStatus.BookingPending => CustomerPaymentState.Accepted,
+        CheckoutStatus.BookingFailed => CustomerPaymentState.Released,
         CheckoutStatus.ActionRequired => CustomerPaymentState.ActionRequired,
         CheckoutStatus.Declined or CheckoutStatus.PaymentFailed => CustomerPaymentState.Declined,
         CheckoutStatus.PaymentPending => CustomerPaymentState.Pending,
@@ -69,8 +76,11 @@ internal sealed record CheckoutResult(Guid OrderId, CheckoutStatus Status, Guid?
 /// </summary>
 internal enum CustomerPaymentState
 {
-    /// <summary>The payment is held and the booking has started.</summary>
+    /// <summary>The payment is held for the booking (charged once the booking is confirmed).</summary>
     Accepted,
+
+    /// <summary>Nothing will be charged: the booking was not made and the hold is being released.</summary>
+    Released,
 
     /// <summary>Complete the challenge (e.g. 3-D Secure), then repeat the request with the same key.</summary>
     ActionRequired,
@@ -144,10 +154,12 @@ internal abstract record CheckoutFailure
 /// awaiting payment: first finish any attempt already made with this key (its hold must never become unreachable);
 /// otherwise revalidate every item with the supplier now, adopt the fresh terms (a new expiry; a price only with the
 /// customer's accepted quote), and authorize the server-side total through Payments.Contracts. Once authorized, move the
-/// order to Booking. Idempotent by the payment key; an unknown payment outcome is never booked on. The supplier booking
-/// itself needs the travellers (Q9) and comes later.
+/// order to Booking and book it with the supplier (<see cref="FlightBookingOrchestrator"/>): capture follows only a
+/// confirmed booking. Idempotent by the payment key; an unknown payment outcome is never booked on, and a booking is sent
+/// only by the request whose move to Booking was saved.
 /// </summary>
-internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelections selections, IOrderPayments payments, IOrderTravellers travellers, TimeProvider timeProvider)
+internal sealed class AuthorizeCheckoutHandler(
+    IOrderStore store, IFlightSelections selections, IOrderPayments payments, IOrderTravellers travellers, FlightBookingOrchestrator booking, TimeProvider timeProvider)
 {
     /// <summary>
     /// How long an offer must still be valid to start a payment: the authorization and the booking both need time, and
@@ -167,10 +179,10 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
             return Failure(new CheckoutFailure.NotFound());
         }
 
-        // Already authorized (a replay, or a second tab): the booking has started; never a second hold.
+        // Already authorized (a replay, or a second tab): the booking is under way or done; never a second hold or booking.
         if (order.PaymentAuthorizationId is { } authorization && Guid.TryParse(authorization, out var paymentId))
         {
-            return Success(new CheckoutResult(order.Id, CheckoutStatus.BookingStarted, paymentId));
+            return Success(Booking(order, paymentId));
         }
 
         if (order.Status is not OrderStatus.AwaitingPayment)
@@ -309,22 +321,42 @@ internal sealed class AuthorizeCheckoutHandler(IOrderStore store, IFlightSelecti
 
         if (await store.TrySaveAsync(cancellationToken))
         {
-            return Success(new CheckoutResult(order.Id, CheckoutStatus.BookingStarted, payment.PaymentId));
+            // This request moved the order to Booking, so it (and only it) books: authorize → book → capture. From here the
+            // request's abort token no longer applies: a customer closing the page must not cut the supplier write or the
+            // save of its outcome (the supplier calls have their own timeouts).
+            return Success(Booking(await booking.BookAsync(order, context, CancellationToken.None), payment.PaymentId));
         }
 
-        // Another request changed the order first. The payment is idempotent by key, so repeating this request converges.
+        // Another request changed the order first. The payment is idempotent by key, so repeating this request converges;
+        // the request that moved the order to Booking books it.
         var current = await store.FindOwnedAsync(order.Id, command.CustomerId, cancellationToken);
         return current?.PaymentAuthorizationId == reference
-            ? Success(new CheckoutResult(order.Id, CheckoutStatus.BookingStarted, payment.PaymentId))
+            ? Success(Booking(current, payment.PaymentId))
             : Failure(new CheckoutFailure.TryAgain());
     }
 
     private async Task<Result<CheckoutResult, CheckoutFailure>> Unused(Order order, Guid paymentId, string reason, TransitionContext context, CancellationToken cancellationToken)
     {
         PaymentHolds.RequestRelease(store, order, paymentId, reason, context);
-        await store.TrySaveAsync(cancellationToken); // a lost race leaves the note, and the request, to the next repeat
-        return Failure(new CheckoutFailure.AuthorizedButNotBookable(paymentId));
+        if (await store.TrySaveAsync(cancellationToken))
+        {
+            return Failure(new CheckoutFailure.AuthorizedButNotBookable(paymentId));
+        }
+
+        // Lost a race: another request with this key may have started booking on this very payment. Say what is true.
+        var current = await store.FindAsync(order.Id, cancellationToken);
+        return current?.PaymentAuthorizationId == paymentId.ToString()
+            ? Success(Booking(current, paymentId))
+            : Failure(new CheckoutFailure.TryAgain());
     }
+
+    /// <summary>Where the booking stands, for the customer: confirmed, still being settled, or not made.</summary>
+    private static CheckoutResult Booking(Order order, Guid paymentId) => new(order.Id, order.Status switch
+    {
+        OrderStatus.Confirmed or OrderStatus.PartiallyConfirmed => CheckoutStatus.Booked,
+        OrderStatus.Failed => CheckoutStatus.BookingFailed,
+        _ => CheckoutStatus.BookingPending,
+    }, paymentId);
 
     private TransitionContext Context(AuthorizeCheckout command) =>
         new(timeProvider.GetUtcNow(), CreateFlightOrderHandler.Actor(command.CustomerId), command.CorrelationId);

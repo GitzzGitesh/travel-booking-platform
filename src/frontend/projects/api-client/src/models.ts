@@ -5,6 +5,8 @@ export type { AcceptFlightOfferPriceRequest } from './models/accept-flight-offer
 export type { AirportResponse } from './models/airport-response';
 export type { BaggageAllowanceResponse } from './models/baggage-allowance-response';
 export type { CabinClass } from './models/cabin-class';
+export type { CheckoutRequest } from './models/checkout-request';
+export type { CheckoutResponse } from './models/checkout-response';
 export type { ConfirmedFlightOfferResponse } from './models/confirmed-flight-offer-response';
 export type { ContactRequest } from './models/contact-request';
 export type { ContactResponse } from './models/contact-response';

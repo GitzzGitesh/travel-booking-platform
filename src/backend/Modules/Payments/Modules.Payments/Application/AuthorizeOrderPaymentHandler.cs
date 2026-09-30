@@ -361,7 +361,7 @@ internal sealed partial class AuthorizeOrderPaymentHandler(
             {
                 // Being released (Orders said it will not use it): never booked on, and no challenge to complete.
                 PaymentAttemptStatus.Authorized or PaymentAttemptStatus.ActionRequired when attempt.ReleaseRequestedAt is not null => OrderPaymentStatus.Pending,
-                PaymentAttemptStatus.Authorized => OrderPaymentStatus.Authorized,
+                PaymentAttemptStatus.Authorized or PaymentAttemptStatus.Capturing or PaymentAttemptStatus.CaptureUnknown or PaymentAttemptStatus.Captured => OrderPaymentStatus.Authorized,
                 PaymentAttemptStatus.ActionRequired => OrderPaymentStatus.ActionRequired,
                 PaymentAttemptStatus.Declined => OrderPaymentStatus.Declined,
                 PaymentAttemptStatus.ManualReview => OrderPaymentStatus.ManualReview,

@@ -122,7 +122,9 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
             return Task.FromResult(BookingFailure(ProviderErrorKind.PriceChanged, "Mock offer price differs from the expected price."));
         }
 
-        var confirmation = new FlightBookingConfirmation(details.ClientReference, new ProviderBookingRef(ProviderId, Locator(details.ClientReference)), current.Value.TotalPrice);
+        // The mock tickets at once: a deterministic supplier with instant ticketing.
+        var confirmation = new FlightBookingConfirmation(
+            details.ClientReference, new ProviderBookingRef(ProviderId, Locator(details.ClientReference)), current.Value.TotalPrice, TicketingStatus.Issued);
         var scenario = details.Passengers.Select(p => p.FamilyName.ToUpperInvariant()).FirstOrDefault(MockBookingScenarios.All.Contains);
         var result = scenario switch
         {

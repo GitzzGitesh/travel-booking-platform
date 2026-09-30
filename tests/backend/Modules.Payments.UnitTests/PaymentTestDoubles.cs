@@ -96,8 +96,9 @@ internal sealed class FakeStore : IPaymentAttemptStore
     public Task<IReadOnlyList<Guid>> FindReconcilableAsync(DateTimeOffset settledBefore, int limit, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<Guid>>([.. Attempts
             .Where(a => (a.Status is PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.AuthorizationUnknown or PaymentAttemptStatus.ActionRequired
-                    or PaymentAttemptStatus.Voiding or PaymentAttemptStatus.VoidUnknown && a.UpdatedAt <= settledBefore)
-                || (a.Status == PaymentAttemptStatus.Authorized && a.ReleaseRequestedAt is not null))
+                    or PaymentAttemptStatus.Voiding or PaymentAttemptStatus.VoidUnknown or PaymentAttemptStatus.Capturing or PaymentAttemptStatus.CaptureUnknown
+                    && a.UpdatedAt <= settledBefore)
+                || (a.Status == PaymentAttemptStatus.Authorized && (a.ReleaseRequestedAt is not null || a.CaptureRequestedAt is not null)))
             .OrderBy(a => a.UpdatedAt)
             .Take(limit)
             .Select(a => a.Id)]);
@@ -125,6 +126,10 @@ internal sealed class ScriptedProvider : IPaymentProvider
 
     public List<VoidDetails> Voids { get; } = [];
 
+    public Func<CaptureDetails, Result<PaymentSnapshot, ProviderError>> OnCapture { get; set; } = _ => throw new InvalidOperationException("No capture expected.");
+
+    public List<CaptureDetails> Captures { get; } = [];
+
     public string Id => "stub";
 
     public Task<Result<PaymentSnapshot, ProviderError>> AuthorizeAsync(AuthorizationDetails details, CancellationToken cancellationToken)
@@ -147,7 +152,11 @@ internal sealed class ScriptedProvider : IPaymentProvider
         return Task.FromResult(OnVoid(details));
     }
 
-    public Task<Result<PaymentSnapshot, ProviderError>> CaptureAsync(CaptureDetails details, CancellationToken cancellationToken) => throw new NotSupportedException();
+    public Task<Result<PaymentSnapshot, ProviderError>> CaptureAsync(CaptureDetails details, CancellationToken cancellationToken)
+    {
+        Captures.Add(details);
+        return Task.FromResult(OnCapture(details));
+    }
 
     public Task<Result<PaymentRefund, ProviderError>> RefundAsync(RefundDetails details, CancellationToken cancellationToken) => throw new NotSupportedException();
 

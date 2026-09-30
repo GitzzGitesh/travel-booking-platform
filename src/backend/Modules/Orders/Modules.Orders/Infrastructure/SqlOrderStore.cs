@@ -52,6 +52,9 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
         }
         catch (DbUpdateConcurrencyException)
         {
+            // Forget this unit of work (its changes and outbox rows), so the next read sees the order as stored, not as
+            // this request had changed it.
+            db.ChangeTracker.Clear();
             return false;
         }
     }
@@ -73,6 +76,17 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             .Where(i => i.Status == FlightOrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= now)
             .GroupBy(i => EF.Property<Guid>(i, "OrderId"))
             .OrderBy(g => g.Min(i => i.OfferExpiresAt))
+            .Select(g => g.Key)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
+        await db.Set<FlightOrderItem>().AsNoTracking()
+            .Where(i => (i.Status == FlightOrderItemStatus.PendingConfirmation
+                    || (i.Status == FlightOrderItemStatus.Booking && (i.BookingStartedAt == null || i.BookingStartedAt <= startedBefore)))
+                && (i.NextBookingLookupAt == null || i.NextBookingLookupAt <= now))
+            .GroupBy(i => EF.Property<Guid>(i, "OrderId"))
+            .OrderBy(g => g.Min(i => i.NextBookingLookupAt ?? i.BookingStartedAt))
             .Select(g => g.Key)
             .Take(limit)
             .ToListAsync(cancellationToken);

@@ -11,6 +11,8 @@ export type { AcceptFlightOfferPriceRequest } from './models/accept-flight-offer
 export type { AirportResponse } from './models/airport-response';
 export type { BaggageAllowanceResponse } from './models/baggage-allowance-response';
 export type { CabinClass } from './models/cabin-class';
+export type { CheckoutRequest } from './models/checkout-request';
+export type { CheckoutResponse } from './models/checkout-response';
 export type { ConfirmedFlightOfferResponse } from './models/confirmed-flight-offer-response';
 export type { ContactRequest } from './models/contact-request';
 export type { ContactResponse } from './models/contact-response';
@@ -63,5 +65,7 @@ export type { GetCurrentCustomer$Params as GetCurrentCustomer$Params } from './f
 export { getCurrentCustomer as getCurrentCustomer } from './fn/customers/get-current-customer';
 export type { CreateFlightOrder$Params as CreateFlightOrder$Params } from './fn/orders/create-flight-order';
 export { createFlightOrder as createFlightOrder } from './fn/orders/create-flight-order';
+export type { CheckoutOrder$Params as CheckoutOrder$Params } from './fn/orders/checkout-order';
+export { checkoutOrder as checkoutOrder } from './fn/orders/checkout-order';
 export type { GetOrder$Params as GetOrder$Params } from './fn/orders/get-order';
 export { getOrder as getOrder } from './fn/orders/get-order';

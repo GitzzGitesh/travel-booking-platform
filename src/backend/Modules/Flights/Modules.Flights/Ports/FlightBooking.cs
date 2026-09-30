@@ -35,15 +35,48 @@ public enum PassengerType
     Infant,
 }
 
+public enum PassengerGender
+{
+    Female,
+    Male,
+}
+
+public enum TravelDocumentType
+{
+    Passport,
+    IdentityCard,
+}
+
+/// <summary>A travel document for a supplier that requires one (Q9). Sensitive personal data: <see cref="ToString"/> withholds it.</summary>
+public sealed record FlightPassengerDocument(TravelDocumentType Type, string Number, string IssuingCountry, string Nationality, DateOnly ExpiryDate)
+{
+    public override string ToString() => $"{Type} document";
+}
+
+/// <summary>The booker's contact for the supplier (Q9). Personal data: <see cref="ToString"/> withholds it.</summary>
+public sealed record FlightBookingContact(string Email, string Phone)
+{
+    public override string ToString() => "Booking contact";
+}
+
+/// <summary>Whether the supplier has issued the tickets for a booking.</summary>
+public enum TicketingStatus
+{
+    Pending,
+    Issued,
+}
+
 /// <summary>
 /// A named traveller for a booking. Names are personal data (security rules): <see cref="ToString"/> never includes
-/// them, so a passenger logged by mistake is redacted. Documents and contact details come with the traveller stories.
+/// them, so a passenger logged by mistake is redacted. Gender and a travel document are given when the core has them
+/// (Q9); an adapter whose supplier needs them refuses a passenger without them (InvalidRequest), before anything is booked.
 /// </summary>
 public sealed record FlightPassenger
 {
     public const int MaxNameLength = 60;
 
-    public FlightPassenger(PassengerType type, string givenName, string familyName, DateOnly? dateOfBirth = null)
+    public FlightPassenger(
+        PassengerType type, string givenName, string familyName, DateOnly? dateOfBirth = null, PassengerGender? gender = null, FlightPassengerDocument? document = null)
     {
         if (!Enum.IsDefined(type))
         {
@@ -54,6 +87,8 @@ public sealed record FlightPassenger
         GivenName = RequireName(givenName, nameof(givenName));
         FamilyName = RequireName(familyName, nameof(familyName));
         DateOfBirth = dateOfBirth;
+        Gender = gender;
+        Document = document;
     }
 
     public PassengerType Type { get; }
@@ -63,6 +98,10 @@ public sealed record FlightPassenger
     public string FamilyName { get; }
 
     public DateOnly? DateOfBirth { get; }
+
+    public PassengerGender? Gender { get; }
+
+    public FlightPassengerDocument? Document { get; }
 
     public override string ToString() => $"{Type} passenger";
 
@@ -80,13 +119,15 @@ public sealed record FlightBookingDetails(
     ClientReference ClientReference,
     ProviderOfferRef Offer,
     Money ExpectedTotalPrice,
-    IReadOnlyList<FlightPassenger> Passengers);
+    IReadOnlyList<FlightPassenger> Passengers,
+    FlightBookingContact? Contact = null);
 
 /// <summary>The supplier's own booking locator (a PNR or order id): opaque to the core, stored verbatim.</summary>
 public sealed record ProviderBookingRef(string ProviderId, string Value);
 
 /// <summary>A booking that exists at the supplier, found by booking or by looking it up with our reference.</summary>
-public sealed record FlightBookingConfirmation(ClientReference ClientReference, ProviderBookingRef Booking, Money TotalPrice);
+/// <param name="Ticketing">Whether the supplier has issued the tickets; Pending unless it says so.</param>
+public sealed record FlightBookingConfirmation(ClientReference ClientReference, ProviderBookingRef Booking, Money TotalPrice, TicketingStatus Ticketing = TicketingStatus.Pending);
 
 /// <summary>A lookup by our reference: <see cref="Booking"/> is null when the supplier has definitely no such booking.</summary>
 public sealed record FlightBookingLookup(FlightBookingConfirmation? Booking)

@@ -35,7 +35,13 @@ When the supplier write outcome is unknown (timeout or ambiguous 5xx), the API r
 3. It authorizes the server-side order total through `IOrderPayments`.
 4. Only an authorized payment of exactly the order's total moves the order to `Booking` (`StartBooking` with the payment attempt id). A decline, a challenge, an unknown outcome or a manual review leaves the order `AwaitingPayment`. An authorization the order will not book on (a different amount, or the offer expired meanwhile) is noted once on the timeline, with its reference, as a hold to release (`AuthorizedButNotBookable`); the release itself comes with the void step.
 
-The supplier booking itself needs the travellers (Q9) and comes next.
+5. **As built (booking orchestration, ADR 0021):** the request that saved the move to `Booking` books every item with its supplier through `IFlightBookings`, with the travellers read for this booking only, under the item id as our client reference.
+   - Booked → `Confirmed`, with the locator (PNR) and ticketing state.
+   - NotBooked → `Failed`.
+   - Unknown → `PendingConfirmation`.
+   - Mismatch → `ManualReview`.
+
+   Once no item is unsettled, the payment is charged for the confirmed items, or released if none is, through the outbox in the same save. `POST /api/v1/orders/{id}/checkout` (Idempotency-Key, the provider's payment token) answers 200 (Booked, BookingFailed, Declined, ActionRequired) or 202 (BookingPending, PaymentPending: poll `GET /orders/{id}`). A repeat of the same key returns where the booking stands, never a second hold or booking.
 
 ## Order item (booking) state machine
 
@@ -85,7 +91,7 @@ Notes:
 ## Background jobs (Worker)
 | Job | Trigger | Action |
 |---|---|---|
-| Reconcile pending bookings | Items in `PendingConfirmation` / `CancellationPending` | Query the supplier with backoff; transition; escalate to `ManualReview` after a limit (TBD) |
+| Reconcile pending bookings (`orders.reconcile-bookings`, built) | Items `PendingConfirmation`, or still `Booking` after `Orders:BookingReconciliation:LookupAfter` (5 min) | Look up by our reference, never book. Found: `Confirmed`, then the charge. Not found after `NotFoundConclusiveAfter` (15 min since booking started): `Failed`, then the release. Unknown after `ManualReviewAfter` (24 h): `ManualReview` and the `BookingUnresolved` alert. `CancellationPending` comes with cancellation |
 | Expire unpaid orders (`orders.expire-unpaid`, built) | An item `AwaitingPayment` whose offer expired | With no live payment attempt: `AwaitingPayment → Abandoned`. With an authorized hold or an unfinished challenge: a timeline note plus `OrderPaymentReleaseRequested` (once), and the order waits. With an unknown outcome, a void in progress or a manual review: it waits |
 | Reconcile payment attempts (`payments.reconcile-attempts`, built) | Open attempts; holds Orders will not use | Look up by our reference; void the hold once (see payment lifecycle) |
 | Orders outbox (`orders.outbox`, built) | Pending Orders integration events | Deliver to in-process handlers at least once, oldest first, with back-off; given up after 10 attempts (`FailedAt`, error log) |

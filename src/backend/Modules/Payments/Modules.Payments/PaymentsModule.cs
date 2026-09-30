@@ -86,6 +86,7 @@ public static class PaymentsModule
         services.AddScoped<PaymentAttemptReconciler>();
         services.AddBackgroundJob<ReconcilePaymentAttemptsJob, PaymentsDbContext>(ReconcilePaymentAttemptsJob.Name, TimeSpan.FromSeconds(30));
         services.AddIntegrationEventHandler<OrderPaymentReleaseRequested, OrderPaymentReleaseRequestedHandler>();
+        services.AddIntegrationEventHandler<OrderPaymentCaptureRequested, OrderPaymentCaptureRequestedHandler>();
         services.AddBackgroundJob<ProcessPaymentNotificationsJob, PaymentsDbContext>(ProcessPaymentNotificationsJob.Name, TimeSpan.FromSeconds(10));
         return services;
     }

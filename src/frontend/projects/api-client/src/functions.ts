@@ -19,5 +19,7 @@ export type { GetCurrentCustomer$Params as GetCurrentCustomer$Params } from './f
 export { getCurrentCustomer as getCurrentCustomer } from './fn/customers/get-current-customer';
 export type { CreateFlightOrder$Params as CreateFlightOrder$Params } from './fn/orders/create-flight-order';
 export { createFlightOrder as createFlightOrder } from './fn/orders/create-flight-order';
+export type { CheckoutOrder$Params as CheckoutOrder$Params } from './fn/orders/checkout-order';
+export { checkoutOrder as checkoutOrder } from './fn/orders/checkout-order';
 export type { GetOrder$Params as GetOrder$Params } from './fn/orders/get-order';
 export { getOrder as getOrder } from './fn/orders/get-order';

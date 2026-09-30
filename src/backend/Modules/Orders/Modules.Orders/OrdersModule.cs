@@ -16,7 +16,7 @@ namespace TravelBooking.Modules.Orders;
 
 /// <summary>
 /// The Orders module's entry point (ADR 0005). Its endpoints are the signed-in customer's own orders (ADR 0008; Q8:
-/// sign-in required). Checkout (payment) has no endpoint yet: see the preconditions in docs/progress.md.
+/// sign-in required), including checkout: authorize → book → capture (ADR 0005, ADR 0021).
 /// </summary>
 public static class OrdersModule
 {
@@ -25,6 +25,12 @@ public static class OrdersModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<CreateFlightOrderHandler>();
         services.AddScoped<AuthorizeCheckoutHandler>();
+        services.AddScoped<FlightBookingOrchestrator>();
+        services.AddOptions<BookingReconciliationOptions>()
+            .Bind(configuration.GetSection(BookingReconciliationOptions.SectionName))
+            .Validate(o => o.LookupAfter > TimeSpan.Zero && o.NotFoundConclusiveAfter >= o.LookupAfter && o.ManualReviewAfter > o.NotFoundConclusiveAfter,
+                "Orders:BookingReconciliation needs 0 < LookupAfter <= NotFoundConclusiveAfter < ManualReviewAfter.")
+            .ValidateOnStart();
         services.AddScoped<IOrderTravellerNeeds, OrderTravellerNeedsQuery>();
 
         // The module's own schema. The connection string is resolved on first use; migrations are never applied at
@@ -58,6 +64,17 @@ public static class OrdersModule
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapPost("/{orderId:guid}/checkout", OrderEndpoints.Checkout)
+            .WithName("CheckoutOrder")
+            .ProducesValidationProblem()
+            .Produces<CheckoutResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
         group.MapGet("/{orderId:guid}", OrderEndpoints.Get)
             .WithName("GetOrder")
             .ProducesProblem(StatusCodes.Status401Unauthorized);
@@ -65,12 +82,13 @@ public static class OrdersModule
     }
 
     /// <summary>
-    /// The Worker's Orders jobs (ADR 0007): dispatching the Orders outbox, and expiring orders whose offer lapsed before
-    /// payment. Never registered in the Api.
+    /// The Worker's Orders jobs (ADR 0007): dispatching the Orders outbox, expiring orders whose offer lapsed before
+    /// payment, and looking up bookings whose outcome is unknown. Never registered in the Api.
     /// </summary>
     public static IServiceCollection AddOrdersBackgroundJobs(this IServiceCollection services)
     {
         services.AddScoped<ExpireUnpaidOrderHandler>();
+        services.AddBackgroundJob<ReconcileBookingsJob, OrdersDbContext>(ReconcileBookingsJob.Name, TimeSpan.FromSeconds(30));
         services.AddOutboxDispatcher<OrdersDbContext>(OrdersOutboxJobName, TimeSpan.FromSeconds(5));
         services.AddBackgroundJob<ExpireUnpaidOrdersJob, OrdersDbContext>(ExpireUnpaidOrdersJob.Name, TimeSpan.FromMinutes(1));
         return services;

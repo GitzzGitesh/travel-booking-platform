@@ -50,6 +50,10 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         attempt.Property(a => a.ProviderId).HasMaxLength(50);
         attempt.Property(a => a.ProviderPaymentId).HasMaxLength(255);
         attempt.Property(a => a.ReleaseReason).HasMaxLength(PaymentAttempt.MaxReleaseReasonLength);
+        attempt.Property(a => a.CaptureAmountValue).HasColumnName("CaptureAmount").HasPrecision(19, 4);
+        attempt.Ignore(a => a.CaptureAmount);
+        attempt.Ignore(a => a.CaptureKey);
+        attempt.Ignore(a => a.IsCaptureInProgress);
 
         // The reconciliation job's work list.
         attempt.HasIndex(a => new { a.Status, a.UpdatedAt });
