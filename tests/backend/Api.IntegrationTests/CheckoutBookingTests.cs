@@ -61,7 +61,16 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         var responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Checkout(token, order, key)));
         using var replay = await Checkout(token, order, key);
 
-        responses.ShouldAllBe(r => r.StatusCode == HttpStatusCode.OK || r.StatusCode == HttpStatusCode.Accepted || r.StatusCode == HttpStatusCode.ServiceUnavailable);
+        // Each answer is the outcome, or "try again", or (a duplicate arriving while the first is still paying) 409
+        // payment-in-progress: never a second effect. Anything else is reported with its problem type.
+        foreach (var response in responses)
+        {
+            var answer = response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.ServiceUnavailable
+                ? $"{(int)response.StatusCode} {(await Problem(response)).Item2}"
+                : ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            answer.ShouldBeOneOf("200", "202", "503 try-again", "409 payment-in-progress");
+        }
+
         (await Read(replay)).GetProperty("outcome").GetString().ShouldBe("Booked");
         var stored = await LoadOrder(order);
         stored.Timeline.Count(e => e is { FromStatus: "Booking", ToStatus: "Confirmed" }).ShouldBe(1); // one booking transition
