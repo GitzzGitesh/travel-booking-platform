@@ -42,7 +42,16 @@ public static class PaymentsModule
         services.AddDbContext<PaymentsDbContext>(options => options.UseSqlServer(
             configuration.GetConnectionString(PaymentsDbContext.ConnectionStringName)
                 ?? throw new InvalidOperationException($"Connection string '{PaymentsDbContext.ConnectionStringName}' is not configured."),
-            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", PaymentsDbContext.Schema)));
+            sql =>
+            {
+                sql.MigrationsHistoryTable("__EFMigrationsHistory", PaymentsDbContext.Schema);
+
+                // Transient database errors (a deadlock victim under parallel same-key requests, a dropped connection) are
+                // retried, as in Orders and Flights. Only database statements are retried, never a payment provider call;
+                // a re-applied insert meets the attempt, inbox and trip unique constraints ("the same request won") and a
+                // re-applied update fails its rowversion check and is read again.
+                sql.EnableRetryOnFailure();
+            }));
         services.AddScoped<IPaymentAttemptStore, SqlPaymentAttemptStore>();
         services.AddScoped<AuthorizeOrderPaymentHandler>();
         services.AddScoped<IOrderPayments>(provider => provider.GetRequiredService<AuthorizeOrderPaymentHandler>());
