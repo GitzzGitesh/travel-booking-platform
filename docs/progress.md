@@ -1,8 +1,8 @@
 # Progress
 
-_Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
+_Last updated: 2026-10-01 (Phase 3 complete with mock providers; Phase 4: identity and admin foundation, in progress)_
 
-## Current phase: 3 — First vertical slice (flights), in progress
+## Current phase: 4 — Identity & admin foundation, in progress (Phase 3, the first vertical slice, is complete with mock providers: row 5 below)
 
 **Q1 answered 2026-09-25: we are merchant of record for flights (Option A).** **Q8 answered 2026-09-26: customers sign in before booking (no guest checkout).** **Q6 answered 2026-09-27: Amadeus is the first production flight supplier (ADR 0019), not yet credentialed or verified.** Hotels (Q1), markets (Q2), currencies and FX (Q5), retention (Q9), fraud (Q10), refund thresholds (Q11) and group or child-only bookings (Q13) stay open. **ADR 0005 was accepted for flights**, since its Q1 gate is now met. **ADR 0006 stays Proposed**: accepting it also fixes the payment provider (Stripe), which depends on Q2 and Q5.
 
@@ -85,6 +85,30 @@ _Last updated: 2026-09-26 (Phase 3: first vertical slice, in progress)_
   - A failed concurrent save now clears the Orders unit of work, so a retry reads the stored order, not this request's unsaved changes (and outbox rows).
   - The Payments database context now retries transient SQL errors, as Orders and Flights already did. Parallel same-key authorizations could make a read the deadlock victim (SQL error 1205), which surfaced as an error instead of a replay.
 - **Not done:** Amadeus booking (ADR 0019: its booking ADR, sandbox and supplier answers; checkout refuses its offers before payment); ticketing and fulfilment after confirmation (F-16); cancellation and refunds; operator endpoints for booking and payment review (staff identity); the F-24 re-authorize-or-cancel policy (business); the checkout UI; multi-item orders (F-17 end to end); the operator resolution of an item in manual review. It must settle the payment in the same save; until then, a held payment waits for a person and lapses after about 7 days (runbook); telling a traveller-read failure at booking that could pass on retry from a lasting one (today nothing is sent and the hold is released: safe, but the customer must pay again). Runbooks `booking-pending-confirmation.md` and `payment-captured-booking-failed.md` |
+| 6 | **Phase 4 start: staff access and first operations** (ADR 0022, Proposed) | **Done, without a staff tenant.**
+- **Access module:** new module `Modules.Access`, schema `access`, migration `InitialAccess`.
+  - The `Staff` JwtBearer scheme, configured by `Authentication:Staff`. Placeholders mean every staff token is refused.
+  - Tokens must show MFA (`amr` contains `mfa`). Reserved claims and app-only tokens are refused.
+  - A staff account maps to an internal staff id.
+  - Code-defined roles (Operations, Administrator) are bundles of permissions, granted by `Access:RoleAssignments` (nobody by default).
+  - `staff:{permission}` policies; a 403 is the `StaffAuthorizationDenied` security event.
+- **Audit log:** BuildingBlocks `AuditEntry`, in each module's own schema, saved with the action. Orders gets one (migration `AddOrdersAuditLog`).
+- **Admin routes** under `/api/admin/v1`: Development-gated, rate limited, and out of the customer OpenAPI document (group `admin-v1`).
+  - `GET /orders?itemStatus=ManualReview|PendingConfirmation|Booking&limit&cursor` and `GET /orders/{id}` (with the timeline), permission `orders.read`.
+  - `POST /orders/{id}/items/{itemId}/review-checks` (`bookings.review.resolve`): settled only by a supplier lookup, with the payment settled and the action audited in the same save. This closes the deferred operator path from row 5.
+- **Review fixes:**
+  - A mismatched booking is never failed by a later "not found" (it stays in review, never charged), and its policy is Q15.
+  - Failed lookups stay in review, and conflicted checks are audited.
+  - The repeat answer is 409 with the current status.
+  - The reason is limited to a ticket-reference pattern.
+  - Composite queue cursor, and the supplier-call rate limit on the check.
+  - Refused staff tokens are security events.
+  - The MFA signal is configurable (`amr` or a CA authentication context in `acrs`).
+  - Role grants are read live.
+  - `Modules.Access.Contracts` holds the permission catalog.
+  - The admin OpenAPI document is separate.
+- **Next:** payment review and legal hold endpoints, the review list (Q10), managed role grants with maker-checker, and the `admin-web` shell. The `admin-web` token pattern (BFF lean, ADR 0008) is still to be finalised.
+- **Blocked externally:** the staff tenant (Entra ID workforce) and its token claims (`amr`). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

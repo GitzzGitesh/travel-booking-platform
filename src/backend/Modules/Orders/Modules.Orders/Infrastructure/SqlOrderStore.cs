@@ -91,5 +91,16 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             .Take(limit)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Order>> FindWithItemStatusAsync(
+        FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
+        await db.Orders.AsNoTracking().Include(o => o.Items)
+            .Where(o => o.Items.Any(i => i.Status == status))
+            .Where(o => after == null || o.CreatedAt > after.Value.CreatedAt || (o.CreatedAt == after.Value.CreatedAt && o.Id.CompareTo(after.Value.Id) > 0))
+            .OrderBy(o => o.CreatedAt).ThenBy(o => o.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    public void Audit(BuildingBlocks.Audit.AuditEntry entry) => db.Set<BuildingBlocks.Audit.AuditEntry>().Add(entry);
+
     private IQueryable<Order> Load() => db.Orders.Include(o => o.Items).Include(o => o.Timeline).AsSplitQuery();
 }

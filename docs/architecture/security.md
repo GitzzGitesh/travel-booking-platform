@@ -8,7 +8,13 @@
 | Customers | Microsoft Entra External ID | Email/social sign-up, MFA optional (step-up for sensitive actions TBD), account recovery handled by the IdP |
 | Staff | Microsoft Entra ID (workforce) | SSO, **MFA mandatory**, Conditional Access, no local accounts |
 
-Tokens: the Api validates JWTs from both issuers with separate authentication schemes. Admin endpoints accept **only** the staff scheme. Frontend token handling (SPA vs BFF) is to be finalised in ADR 0008. The current lean is BFF-style cookies for `admin-web`.
+Tokens: the Api validates JWTs from both issuers with separate authentication schemes. Admin endpoints accept **only** the staff scheme. As built (ADR 0022):
+- Staff tokens must show MFA (`amr`) and map to an internal staff id in the Access module.
+- Admin routes (`/api/admin/v1`) require one `staff:{permission}` policy; roles are permission bundles granted by `Access:RoleAssignments`.
+- Staff actions are audited (`AuditEntries` in the acting module's schema, in the same save).
+- A 403 is the `StaffAuthorizationDenied` security event, and a refused staff token is `StaffTokenRefused`.
+- Audit entries hold the client address (personal data), kept for the security audit period (12 months, Q9).
+ Frontend token handling (SPA vs BFF) is to be finalised in ADR 0008. The current lean is BFF-style cookies for `admin-web`.
 
 ## Authorization
 - Permission-based: `orders.read`, `orders.read.pii`, `refunds.request`, `refunds.approve`, `pricing.markups.write`, `access.permissions.grant`, …

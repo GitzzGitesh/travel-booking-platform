@@ -63,4 +63,22 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
 
         anonymous.ShouldBeSubsetOf(_anonymousRoutes);
     }
+
+    // Admin routes (ADR 0022): only staff permission policies, never anonymous or customer access, and no staff policy
+    // outside the admin group.
+    [Fact]
+    public void Admin_routes_use_staff_permission_policies_only_and_staff_policies_stay_in_the_admin_group()
+    {
+        using var host = factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
+
+        var endpoints = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().ToList();
+        var admin = endpoints.Where(e => e.RoutePattern.RawText!.StartsWith("/api/admin/", StringComparison.Ordinal)).ToList();
+
+        admin.ShouldNotBeEmpty();
+        admin.ShouldAllBe(e => e.Metadata.GetMetadata<IAllowAnonymous>() == null
+            && e.Metadata.GetOrderedMetadata<IAuthorizeData>().Any()
+            && e.Metadata.GetOrderedMetadata<IAuthorizeData>().All(a => a.Policy != null && a.Policy.StartsWith("staff:")));
+        endpoints.Except(admin)
+            .ShouldAllBe(e => !e.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(a => a.Policy != null && a.Policy.StartsWith("staff:")));
+    }
 }

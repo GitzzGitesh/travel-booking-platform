@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.BuildingBlocks.Http;
+using TravelBooking.Modules.Access.Contracts;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Endpoints;
@@ -26,6 +27,7 @@ public static class OrdersModule
         services.AddScoped<CreateFlightOrderHandler>();
         services.AddScoped<AuthorizeCheckoutHandler>();
         services.AddScoped<FlightBookingOrchestrator>();
+        services.AddScoped<ResolveBookingReviewHandler>();
         services.AddOptions<BookingReconciliationOptions>()
             .Bind(configuration.GetSection(BookingReconciliationOptions.SectionName))
             .Validate(o => o.LookupAfter > TimeSpan.Zero && o.NotFoundConclusiveAfter >= o.LookupAfter && o.ManualReviewAfter > o.NotFoundConclusiveAfter,
@@ -78,6 +80,40 @@ public static class OrdersModule
         group.MapGet("/{orderId:guid}", OrderEndpoints.Get)
             .WithName("GetOrder")
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+        return endpoints;
+    }
+
+    /// <summary>
+    /// The staff endpoints for orders (ADR 0022), under the admin route group: each requires a staff member with MFA and
+    /// the named permission, never a customer token. Every change is audited in the same save.
+    /// </summary>
+    public static IEndpointRouteBuilder MapOrdersAdminEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/orders").WithTags("Orders (staff)");
+
+        group.MapGet("/", AdminOrderEndpoints.Queue)
+            .WithName("ListOrdersForOperations")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.OrdersRead))
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapGet("/{orderId:guid}", AdminOrderEndpoints.Get)
+            .WithName("GetOrderForOperations")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.OrdersRead))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPost("/{orderId:guid}/items/{itemId:guid}/review-checks", AdminOrderEndpoints.CheckReview)
+            .WithName("CheckBookingReview")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.BookingsReviewResolve))
+            .RequireRateLimiting(RateLimitPolicies.SupplierCalls) // every check is a (paid) supplier lookup
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
         return endpoints;
     }
 

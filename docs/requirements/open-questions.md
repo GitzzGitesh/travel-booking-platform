@@ -20,6 +20,7 @@ Business and requirement decisions that engineering cannot make alone. Add quest
 | Q13 | Are **group bookings (10+ passengers)** and **unaccompanied minors / child-only bookings** in scope? | The flight port limits a booking to 1–9 seated passengers with at least one adult (the usual GDS/NDC limit); both cases would need different flows | Before either flow is designed | Open. Out of scope until decided |
 | Q14 | **Contracting merchant entity** for payments: which company, in which country, holds the payment provider account (and settles in which currencies)? | Payment provider availability (Stripe is self-serve in the UK, EU, US and UAE; not in Tunisia; invite-only in India), settlement currencies, INR/TND eligibility, fees | Before a production payment account (ADR 0006, P1) | Open |
 | Q12 | **Customer support channels** (email, chat, phone) and tooling? | Notifications, admin features, integrations | Admin phase | Open |
+| Q15 | **A supplier booking not as agreed** (another price, passengers or flights than the customer agreed): accept it (and charge what?), have it changed or cancelled by the supplier desk, or cancel and refund? Who decides, and within what time (the payment hold lapses after about 7 days)? | Customer outcome, money held, supplier costs | Before a real supplier goes live (ADR 0021, 0022) | Open. Today such a booking stays in manual review, is never charged, and a staff check never confirms or fails it on its own |
 
 ## Answered
 

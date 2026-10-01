@@ -344,9 +344,17 @@ internal sealed class Order
     /// A person must decide: reconciliation is unresolved after its limit, or a booking exists but not as agreed
     /// (a supplier mismatch, found while booking or reconciling).
     /// </summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> RequireManualReview(Guid itemId, string reason, TransitionContext context) =>
-        Transition(itemId, FlightOrderItemStatus.ManualReview, reason, context, providerReference: null,
+    public Result<FlightOrderItemStatus, OrderTransitionError> RequireManualReview(Guid itemId, string reason, TransitionContext context, string? providerReference = null) =>
+        Transition(itemId, FlightOrderItemStatus.ManualReview, reason, context, providerReference,
             FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation);
+
+    /// <summary>
+    /// The item went to review because the supplier holds a booking that is not as agreed (recorded with its
+    /// <c>provider:locator</c>). Such an item is never failed by a later "not found": a booking was seen under our
+    /// reference, so its absence now proves nothing (a person decides).
+    /// </summary>
+    public bool HadSupplierMismatch(Guid itemId) =>
+        _timeline.Any(e => e.ItemId == itemId && e.ToStatus == nameof(FlightOrderItemStatus.ManualReview) && e.ProviderReference is not null);
 
     /// <summary>
     /// Once every item's booking is settled (none booking, pending or in review): the charge for the confirmed items, or,
@@ -394,6 +402,15 @@ internal sealed class Order
             item.RecordLookup(nextLookupAt);
             UpdatedAt = at;
             Revision++;
+        }
+    }
+
+    /// <summary>Records a check of an item in manual review that did not settle it (no status change).</summary>
+    public void NoteReviewCheck(Guid itemId, string reason, TransitionContext context)
+    {
+        if (Find(itemId) is { Status: FlightOrderItemStatus.ManualReview } item)
+        {
+            Record(item, item.Status, reason, context, providerReference: null);
         }
     }
 

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using TravelBooking.BuildingBlocks;
+using TravelBooking.BuildingBlocks.Audit;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Orders.Domain;
 
@@ -18,6 +19,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
     {
         modelBuilder.HasDefaultSchema(Schema);
         modelBuilder.AddOutbox().AddJobLeases(); // ADR 0007: events for other modules, and the Orders jobs' leases
+        modelBuilder.AddAuditLog(); // ADR 0022: staff actions on orders, saved with the action
 
         var order = modelBuilder.Entity<Order>();
         order.ToTable("Orders");

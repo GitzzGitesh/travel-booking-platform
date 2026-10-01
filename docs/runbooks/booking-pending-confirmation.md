@@ -20,7 +20,12 @@ All queries are read-only.
   - If it holds **none**, it must be failed, and the hold released.
   - If it holds a booking **not as agreed**, escalate to the supplier desk before anything else.
 
-  The operator endpoint for these decisions comes with staff identity (ADR 0008). Until then, escalate to engineering with the order id and what the supplier shows. Engineering applies it through the aggregate, together with the payment's settlement in the same save, never by editing rows. **Deadline:** the payment hold lapses about 7 days after authorization (`payments.PaymentAttempts.CreatedAt`). A confirmed booking must be charged before then.
+  **Check it with the supplier:** `POST /api/admin/v1/orders/{orderId}/items/{itemId}/review-checks` with a ticket reference as the reason. This needs the `bookings.review.resolve` permission. It looks the booking up by our reference and settles it only on what the supplier holds:
+  - found as agreed: Confirmed, then charged;
+  - absent after the consistency window: Failed, then released;
+  - anything else: it stays in review, with the check on the timeline.
+
+  The payment's settlement and the audit entry are saved with it. A booking that exists but not as agreed stays in review: escalate it to the supplier desk. **Deadline:** the payment hold lapses about 7 days after authorization (`payments.PaymentAttempts.CreatedAt`). A confirmed booking must be charged before then.
 - **`BookingFoundAfterFailure`:** the customer is booked, but the hold may already be released. Check `payments.PaymentAttempts`, and escalate to payments operations at once: re-authorize, or cancel the booking with the supplier within its free period.
 
 ## Do NOT
