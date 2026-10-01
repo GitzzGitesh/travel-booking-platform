@@ -34,6 +34,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<CustomersDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Access.Infrastructure.AccessDbContext>().Database.MigrateAsync();
     }
 
     public new async ValueTask DisposeAsync()
@@ -54,6 +55,11 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         builder.UseSetting("ConnectionStrings:Orders", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Payments", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Customers", _sql.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:Access", _sql.GetConnectionString());
+
+        // Staff roles for the admin tests: one operations account; any other staff account holds none (ADR 0022).
+        builder.UseSetting("Access:RoleAssignments:0:ObjectId", TestStaffTokens.Operations);
+        builder.UseSetting("Access:RoleAssignments:0:Roles:0", "Operations");
         // Many tests here pay as the same customer: the per-customer attempt limit is tested on its own (unit, and
         // OrderPaymentAuthorizationTests for the per-order limit), so it does not cap unrelated tests.
         builder.UseSetting("Payments:AttemptLimits:MaxAttemptsPerCustomerPerDay", "10000");
@@ -73,6 +79,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
 
             // Customer tokens signed by the tests' own key (no identity-provider tenant exists yet, ADR 0008).
             services.UseTestCustomerTokens();
+            services.UseTestStaffTokens();
 
             // The mock provider's notifications, signed the test's way (PaymentNotificationTests): maps the webhook endpoint.
             services.AddSingleton<TravelBooking.Modules.Payments.Ports.IPaymentNotifications, TestPaymentNotifications>();

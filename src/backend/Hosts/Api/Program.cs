@@ -8,6 +8,7 @@ using TravelBooking.Integrations.Flights.Sabre;
 using TravelBooking.Integrations.Flights.Travelport;
 using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Integrations.Payments.Stripe;
+using TravelBooking.Modules.Access;
 using TravelBooking.Modules.Customers;
 using TravelBooking.Modules.Flights;
 using TravelBooking.Modules.Orders;
@@ -31,6 +32,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     // Names only: integers such as "cabin": 2 or 99 are rejected, so the server accepts exactly the documented contract.
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
 });
+// The staff API's own document (ADR 0022): kept apart from the customer contract and its generated client.
+builder.Services.AddOpenApi("admin-v1", options => options.AddDocumentTransformer((document, _, _) =>
+{
+    document.Info = new() { Title = "Travel Booking staff API", Version = "admin-v1" };
+    document.Servers?.Clear();
+    return Task.CompletedTask;
+}));
 builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((document, _, _) =>
 {
     document.Info = new() { Title = "Travel Booking API", Version = "v1" };
@@ -46,6 +54,10 @@ builder.Services.AddPaymentsModule(builder.Configuration);
 // values come from configuration (Authentication:Customers); until they are set, every customer token is refused.
 // Travel documents are encrypted with a key-encryption key from user-secrets / Key Vault (ADR 0020): none in appsettings.
 builder.Services.AddCustomersModule(builder.Configuration);
+
+// Staff identity (ADR 0008, ADR 0022): workforce tokens with MFA, mapped to our staff id and permissions. Tenant values
+// come from configuration (Authentication:Staff); until they are set, every staff token is refused.
+builder.Services.AddAccessModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
 {
@@ -137,6 +149,11 @@ if (app.Environment.IsDevelopment())
     // The signed-in customer's endpoints: behind the same gate as the flights they order.
     v1.MapCustomersEndpoints();
     v1.MapOrdersEndpoints();
+
+    // Staff endpoints (ADR 0022): a separate route group, staff scheme and permission policies only, rate limited per
+    // client, and kept out of the customer API document ("v1") and its generated client.
+    var admin = app.MapGroup("/api/admin/v1").RequireRateLimiting(RateLimitPolicies.Anonymous).WithGroupName("admin-v1");
+    admin.MapOrdersAdminEndpoints();
 }
 
 app.Run();

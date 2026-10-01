@@ -116,6 +116,45 @@ internal sealed partial class FlightBookingOrchestrator(
     private bool TooLateToSend(FlightOrderItem item) =>
         item.BookingStartedAt is not { } started || timeProvider.GetUtcNow() - started >= options.Value.LookupAfter / 2;
 
+    /// <summary>
+    /// A staff member's check of an item in manual review: the booking is looked up by our reference (never booked).
+    /// Found as agreed → Confirmed; absent after the supplier's consistency window → Failed; anything else stays in
+    /// review with the check on the timeline. The payment settles once nothing is unsettled (same save, by the caller).
+    /// </summary>
+    public async Task<FlightOrderItemStatus> CheckReviewAsync(Order order, Guid itemId, string reason, TransitionContext context, CancellationToken cancellationToken)
+    {
+        var item = order.Items.Single(i => i.Id == itemId);
+        FlightBookingResult outcome;
+        try
+        {
+            outcome = await bookings.ReconcileAsync(item.SelectedOfferId, order.CustomerId, item.Id.ToString(), item.AgreedPrice, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogReviewLookupFailed(logger, order.Id, itemId, exception.GetType().Name);
+            outcome = new FlightBookingResult(FlightBookingStatus.Unknown); // the lookup failed: nothing is concluded
+        }
+
+        // Items whose booking start was never recorded predate booking (nothing was sent then): every window has passed.
+        var sinceStart = item.BookingStartedAt is { } started ? context.At - started : TimeSpan.MaxValue;
+        switch (outcome.Status)
+        {
+            case FlightBookingStatus.Booked when outcome is { ProviderId: { } providerId, Locator: { } locator }:
+                order.Confirm(itemId, providerId, locator, context, outcome.Ticketing is FlightTicketingStatus.Issued ? TicketingStatus.Issued : TicketingStatus.Pending);
+                break;
+            case FlightBookingStatus.NotFound when sinceStart >= options.Value.NotFoundConclusiveAfter && !order.HadSupplierMismatch(itemId):
+                order.Fail(itemId, $"Checked with the supplier: no booking under our reference; nothing was booked ({reason})", context);
+                break;
+            default:
+                // Not as agreed, unknown, too early, or a mismatched booking no longer found: a person decides (never charged).
+                order.NoteReviewCheck(itemId, $"Checked with the supplier ({outcome.Status}); still in review ({reason})", context);
+                break;
+        }
+
+        Settle(order, context);
+        return item.Status;
+    }
+
     // An item from before booking start times were recorded was never sent (booking did not exist then): look it up now.
     private bool NeedsLookup(FlightOrderItem item, DateTimeOffset now) =>
         (item.NextBookingLookupAt is null || item.NextBookingLookupAt <= now)
@@ -204,7 +243,8 @@ internal sealed partial class FlightBookingOrchestrator(
                 order.Fail(itemId, "The supplier has no booking under our reference after its consistency window; nothing was booked", context);
                 break;
             case FlightBookingStatus.Mismatch:
-                order.RequireManualReview(itemId, "A booking exists at the supplier but not as agreed; it is never charged until a person decides", context);
+                order.RequireManualReview(itemId, "A booking exists at the supplier but not as agreed; it is never charged until a person decides", context,
+                    outcome is { ProviderId: { } mismatchProvider, Locator: { } mismatchLocator } ? $"{mismatchProvider}:{mismatchLocator}" : null);
                 LogMismatch(logger, order.Id, itemId);
                 break;
             default:
@@ -254,6 +294,9 @@ internal sealed partial class FlightBookingOrchestrator(
     // Our ids only: never passenger data or supplier messages (security rules).
     [LoggerMessage(Level = LogLevel.Warning, Message = "Booking call for order {OrderId} item {ItemId} failed ({ExceptionType}); outcome unknown, it will be looked up, never resubmitted")]
     private static partial void LogBookingCallFailed(ILogger logger, Guid orderId, Guid itemId, string exceptionType);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The review check of order {OrderId} item {ItemId} could not look the booking up ({ExceptionType}); it stays in review")]
+    private static partial void LogReviewLookupFailed(ILogger logger, Guid orderId, Guid itemId, string exceptionType);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Booking outcomes for order {OrderId} could not be saved after concurrent changes; reconciliation will look them up")]
     private static partial void LogOutcomeNotSaved(ILogger logger, Guid orderId);

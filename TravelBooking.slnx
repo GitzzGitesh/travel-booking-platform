@@ -24,6 +24,10 @@
     <Project Path="src/backend/Modules/Flights/Modules.Flights.Contracts/Modules.Flights.Contracts.csproj" />
     <Project Path="src/backend/Modules/Flights/Modules.Flights/Modules.Flights.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Access/">
+    <Project Path="src/backend/Modules/Access/Modules.Access/Modules.Access.csproj" />
+    <Project Path="src/backend/Modules/Access/Modules.Access.Contracts/Modules.Access.Contracts.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Customers/">
     <Project Path="src/backend/Modules/Customers/Modules.Customers/Modules.Customers.csproj" />
     <Project Path="src/backend/Modules/Customers/Modules.Customers.Contracts/Modules.Customers.Contracts.csproj" />

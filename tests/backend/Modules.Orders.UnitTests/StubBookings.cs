@@ -14,6 +14,8 @@ internal sealed class StubBookings : IFlightBookings
 
     public List<string> LookedUp { get; } = [];
 
+    public bool LookupThrows { get; set; }
+
     public Task<FlightBookingResult> BookAsync(FlightBookingRequest request, CancellationToken cancellationToken)
     {
         Booked.Add(request);
@@ -23,6 +25,6 @@ internal sealed class StubBookings : IFlightBookings
     public Task<FlightBookingResult> ReconcileAsync(Guid selectedOfferId, string customerId, string clientReference, Money agreedPrice, CancellationToken cancellationToken)
     {
         LookedUp.Add(clientReference);
-        return Task.FromResult(NextLookup);
+        return LookupThrows ? throw new HttpRequestException("supplier down") : Task.FromResult(NextLookup);
     }
 }

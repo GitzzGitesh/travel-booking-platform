@@ -148,6 +148,72 @@ public sealed class FlightBookingOrchestratorTests
         _order.Timeline[^1].CorrelationId.ShouldBe(_order.Timeline[^2].CorrelationId);
     }
 
+    // ---------- A staff member's review check (ADR 0022) ----------
+
+    [Fact]
+    public async Task A_review_check_finding_the_booking_as_agreed_confirms_and_charges()
+    {
+        InReview();
+        _bookings.NextLookup = new FlightBookingResult(FlightBookingStatus.Booked, "mock", "LOC123", FlightTicketingStatus.Issued);
+
+        (await CheckReview()).ShouldBe(FlightOrderItemStatus.Confirmed);
+
+        _order.Items[0].Ticketing.ShouldBe(TicketingStatus.Issued);
+        _store.Pending.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentCaptureRequested>();
+        _bookings.Booked.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(FlightBookingStatus.Mismatch)] // a booking not as agreed is never confirmed or charged by a check
+    [InlineData(FlightBookingStatus.Unknown)]
+    [InlineData(FlightBookingStatus.NotBooked)]
+    internal async Task A_review_check_that_proves_nothing_leaves_the_booking_in_review_and_settles_nothing(FlightBookingStatus found)
+    {
+        InReview();
+        _bookings.NextLookup = new FlightBookingResult(found, "mock", "LOC999");
+        var entries = _order.Timeline.Count;
+
+        (await CheckReview()).ShouldBe(FlightOrderItemStatus.ManualReview);
+
+        _store.Pending.ShouldBeEmpty();
+        _order.Timeline.Count.ShouldBe(entries + 1); // the check is on the timeline
+        _order.Timeline[^1].Reason.ShouldContain("TICKET-1");
+    }
+
+    [Fact]
+    public async Task A_booking_once_found_not_as_agreed_is_never_failed_by_a_later_not_found()
+    {
+        _order.AwaitConfirmation(ItemId, "unknown", new TransitionContext(_clock.GetUtcNow(), "test"));
+        _order.RequireManualReview(ItemId, "not as agreed", new TransitionContext(_clock.GetUtcNow(), "test"), providerReference: "mock:LOC999");
+        _clock.Advance(TimeSpan.FromHours(2));
+        _bookings.NextLookup = new FlightBookingResult(FlightBookingStatus.NotFound, "mock");
+
+        (await CheckReview()).ShouldBe(FlightOrderItemStatus.ManualReview);
+
+        _store.Pending.ShouldBeEmpty(); // never released: a ticket may exist
+    }
+
+    [Fact]
+    public async Task A_review_check_whose_lookup_fails_leaves_the_booking_in_review()
+    {
+        InReview();
+        _bookings.LookupThrows = true;
+
+        (await CheckReview()).ShouldBe(FlightOrderItemStatus.ManualReview);
+
+        _store.Pending.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_review_note_is_only_added_to_an_item_in_review()
+    {
+        var entries = _order.Timeline.Count;
+
+        _order.NoteReviewCheck(ItemId, "checked", new TransitionContext(_clock.GetUtcNow(), "test")); // still Booking
+
+        _order.Timeline.Count.ShouldBe(entries);
+    }
+
     [Fact]
     public void The_payment_is_settled_once_and_never_while_a_booking_is_unsettled()
     {
@@ -167,6 +233,16 @@ public sealed class FlightBookingOrchestratorTests
 
         _order.SettlePayment(context).ShouldBe(new PaymentSettlement.Release(_paymentId));
     }
+
+    private void InReview()
+    {
+        Pending();
+        _order.RequireManualReview(ItemId, "still unknown after its limit", new TransitionContext(_clock.GetUtcNow(), "test")).IsSuccess.ShouldBeTrue();
+        _clock.Advance(TimeSpan.FromHours(25));
+    }
+
+    private Task<FlightOrderItemStatus> CheckReview() =>
+        Orchestrator(new NoTravellers()).CheckReviewAsync(_order, ItemId, "TICKET-1", new TransitionContext(_clock.GetUtcNow(), "staff:s1", "trace-r"), TestContext.Current.CancellationToken);
 
     private void Pending() =>
         _order.AwaitConfirmation(ItemId, "unknown", new TransitionContext(_clock.GetUtcNow(), "test")).IsSuccess.ShouldBeTrue();
@@ -201,6 +277,9 @@ public sealed class FlightBookingOrchestratorTests
 
         public List<IIntegrationEvent> Published { get; } = [];
 
+        /// <summary>Published but not yet saved (the review check leaves the save to its handler).</summary>
+        public IReadOnlyList<IIntegrationEvent> Pending => _pending;
+
         public Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken) => Task.FromResult(Orders.SingleOrDefault(o => o.Id == orderId));
 
         public Task<Order?> FindOwnedAsync(Guid orderId, string customerId, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -226,5 +305,12 @@ public sealed class FlightBookingOrchestratorTests
         public Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public void Audit(TravelBooking.BuildingBlocks.Audit.AuditEntry entry)
+        {
+        }
     }
 }

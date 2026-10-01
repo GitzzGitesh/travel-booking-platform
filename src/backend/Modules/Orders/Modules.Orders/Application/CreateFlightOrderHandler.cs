@@ -40,6 +40,15 @@ internal interface IOrderStore
     /// most overdue first, so one supplier outage never starves newer bookings.
     /// </summary>
     Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Operations queue: orders with an item in <paramref name="status"/>, oldest first, created after
+    /// <paramref name="after"/> in (CreatedAt, Id) order (the cursor: no order is skipped on ties), with their items, read-only.
+    /// </summary>
+    Task<IReadOnlyList<Order>> FindWithItemStatusAsync(FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken);
+
+    /// <summary>Adds an audit entry, saved atomically with the next <see cref="TrySaveAsync"/> (ADR 0022).</summary>
+    void Audit(BuildingBlocks.Audit.AuditEntry entry);
 }
 
 /// <summary><paramref name="CustomerId"/> is the authenticated customer (Q8); the actor recorded on the timeline.</summary>

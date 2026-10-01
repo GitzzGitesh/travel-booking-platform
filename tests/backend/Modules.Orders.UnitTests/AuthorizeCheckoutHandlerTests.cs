@@ -535,5 +535,12 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public void Audit(TravelBooking.BuildingBlocks.Audit.AuditEntry entry)
+        {
+        }
     }
 }
