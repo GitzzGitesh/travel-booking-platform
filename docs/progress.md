@@ -85,7 +85,7 @@ _Last updated: 2026-10-01 (Phase 3 complete with mock providers; Phase 4: identi
   - A failed concurrent save now clears the Orders unit of work, so a retry reads the stored order, not this request's unsaved changes (and outbox rows).
   - The Payments database context now retries transient SQL errors, as Orders and Flights already did. Parallel same-key authorizations could make a read the deadlock victim (SQL error 1205), which surfaced as an error instead of a replay.
 - **Not done:** Amadeus booking (ADR 0019: its booking ADR, sandbox and supplier answers; checkout refuses its offers before payment); ticketing and fulfilment after confirmation (F-16); cancellation and refunds; operator endpoints for booking and payment review (staff identity); the F-24 re-authorize-or-cancel policy (business); the checkout UI; multi-item orders (F-17 end to end); the operator resolution of an item in manual review. It must settle the payment in the same save; until then, a held payment waits for a person and lapses after about 7 days (runbook); telling a traveller-read failure at booking that could pass on retry from a lasting one (today nothing is sent and the hold is released: safe, but the customer must pay again). Runbooks `booking-pending-confirmation.md` and `payment-captured-booking-failed.md` |
-| 6 | **Phase 4 start: staff access and first operations** (ADR 0022, Proposed) | **Done, without a staff tenant.**
+| 6 | **Phase 4 start: staff access and first operations** (ADR 0022, Accepted 2026-10-01) | **Done, without a staff tenant.**
 - **Access module:** new module `Modules.Access`, schema `access`, migration `InitialAccess`.
   - The `Staff` JwtBearer scheme, configured by `Authentication:Staff`. Placeholders mean every staff token is refused.
   - Tokens must show MFA (`amr` contains `mfa`). Reserved claims and app-only tokens are refused.
@@ -107,8 +107,19 @@ _Last updated: 2026-10-01 (Phase 3 complete with mock providers; Phase 4: identi
   - Role grants are read live.
   - `Modules.Access.Contracts` holds the permission catalog.
   - The admin OpenAPI document is separate.
-- **Next:** payment review and legal hold endpoints, the review list (Q10), managed role grants with maker-checker, and the `admin-web` shell. The `admin-web` token pattern (BFF lean, ADR 0008) is still to be finalised.
+- **Next:** done in row 7.
 - **Blocked externally:** the staff tenant (Entra ID workforce) and its token claims (`amr`). |
+| 7 | **Staff operations, part 2** (ADR 0022, Accepted 2026-10-01) | **Done, without a staff tenant.**
+- **Payments:**
+  - `POST /api/admin/v1/payments/{attemptId}/review-resolutions` (`payments.review.resolve`): settled only by a provider lookup (F-26). A repeat answers 409 with the current status. Supplier-call rate limit.
+  - `GET /api/admin/v1/payments/{attemptId}`: the attempt and its history.
+  - `GET /api/admin/v1/payments/attempt-limit-reviews`: the Q10 review list. Both need `payments.read`.
+- **Personal data:** `PUT /api/admin/v1/orders/{orderId}/legal-hold` (`personal-data.legal-hold`): idempotent by state, recorded as a retention event (ADR 0020).
+- **Common to all three:** every change is audited in the acting module's schema, in the same save (migrations `AddPaymentsAuditLog`, `AddCustomersAuditLog`). Staff actors are `staff:{id}` everywhere.
+- **Roles:** Operations gains the payments permissions; a new Privacy role holds the legal hold (with `orders.read`).
+- **Reasons:** one rule for staff reasons (`AuditReasons`): a ticket reference or a plain note.
+- **Next:** managed role grants with maker-checker, and the `admin-web` shell (its token pattern, BFF lean, is to be finalised).
+- **Blocked externally:** the staff tenant. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

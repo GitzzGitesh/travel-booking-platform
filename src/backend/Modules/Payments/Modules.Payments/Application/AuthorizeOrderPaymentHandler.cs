@@ -10,6 +10,9 @@ namespace TravelBooking.Modules.Payments.Application;
 /// <summary>Persistence port for payment attempts; implemented in Infrastructure (architecture rules).</summary>
 internal interface IPaymentAttemptStore
 {
+    /// <summary>Adds an audit entry, saved atomically with the next <see cref="TrySaveAsync"/> (ADR 0022).</summary>
+    void Audit(BuildingBlocks.Audit.AuditEntry entry);
+
     Task<PaymentAttempt?> FindAsync(Guid attemptId, CancellationToken cancellationToken);
 
     Task<PaymentAttempt?> FindByKeyAsync(Guid orderId, string idempotencyKey, CancellationToken cancellationToken);

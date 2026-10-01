@@ -11,12 +11,21 @@ namespace TravelBooking.Modules.Access.Application;
 /// </summary>
 internal static class StaffRoles
 {
+    /// <summary>Bookings and payments operations: queues, timelines, and settling reviews by lookup.</summary>
     public const string Operations = "Operations";
+
+    /// <summary>Privacy and legal: legal holds on personal data (Q9).</summary>
+    public const string Privacy = "Privacy";
+
     public const string Administrator = "Administrator";
 
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> Permissions { get; } = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
     {
-        [Operations] = [StaffPermissions.OrdersRead, StaffPermissions.BookingsReviewResolve],
+        [Operations] =
+        [
+            StaffPermissions.OrdersRead, StaffPermissions.BookingsReviewResolve, StaffPermissions.PaymentsRead, StaffPermissions.PaymentsReviewResolve,
+        ],
+        [Privacy] = [StaffPermissions.OrdersRead, StaffPermissions.PersonalDataLegalHold],
         [Administrator] = StaffPermissions.All,
     };
 

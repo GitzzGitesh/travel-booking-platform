@@ -14,7 +14,7 @@ All queries are read-only.
 4. The order: `orders.FlightOrderItems` (Confirmed, locator) and the timeline note "Booking confirmed: … to be charged".
 
 ## Resolve
-- **The provider shows it captured for the requested amount:** the charge happened and our record missed it. Resolve the review to what the provider holds through `ResolvePaymentReviewHandler` (engineering, until the operator endpoint exists).
+- **The provider shows it captured for the requested amount:** the charge happened and our record missed it. Resolve the review to what the provider holds: `POST /api/admin/v1/payments/{attemptId}/review-resolutions` (`payments.review.resolve`, a ticket reference as the reason).
 - **Still authorized (not captured):** the capture can still be made with the same key (`{attempt}:capture`). Escalate to payments engineering; do not capture by hand in the dashboard.
 - **Lapsed or voided hold (F-24):** we cannot charge this payment. Re-authorizing or cancelling the booking is a business decision that is still open. Escalate to payments operations and the supplier desk the same day: the supplier's free cancellation period may be short.
 - **`PaymentCaptureNotPossible`:** a capture request reached an attempt that was not Authorized, or had a release requested. Compare the order's timeline with the attempt's history. This should not happen, so escalate to engineering.

@@ -197,6 +197,9 @@ public sealed class PersonalDataTests
 
         (await holds.HandleAsync(new LegalHoldRequest(_orderId, Hold: true, "ops-1", "chargeback case 123"), Ct)).ShouldBe(LegalHoldOutcome.Applied);
         (await holds.HandleAsync(new LegalHoldRequest(_orderId, Hold: true, "ops-1", "chargeback case 123"), Ct)).ShouldBe(LegalHoldOutcome.Unchanged);
+        var placed = _store.AuditEntries.ShouldHaveSingleItem(); // the unchanged repeat writes nothing
+        (placed.Actor, placed.Action, placed.Target, placed.Before, placed.After)
+            .ShouldBe(("staff:ops-1", "personal-data.legal-hold", $"order:{_orderId}", "not held", "held; chargeback case 123"));
         _clock.SetUtcNow(new DateTimeOffset(_lastTravel.AddYears(3).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
 
         (await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct)).ShouldBeFalse();
@@ -204,8 +207,9 @@ public sealed class PersonalDataTests
         (await Save([Adult("Grace")])).Error.ShouldBe(TravellersFailure.NotEditable); // frozen while held
 
         (await holds.HandleAsync(new LegalHoldRequest(_orderId, Hold: false, "ops-1", "case closed"), Ct)).ShouldBe(LegalHoldOutcome.Applied);
+        (_store.AuditEntries[^1].Before, _store.AuditEntries[^1].After).ShouldBe(("held", "not held; case closed"));
         (await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct)).ShouldBeTrue();
-        _store.Events.Select(e => (e.Action, e.Actor)).Take(2).ShouldBe([(RetentionAction.LegalHoldPlaced, "operator:ops-1"), (RetentionAction.LegalHoldReleased, "operator:ops-1")]);
+        _store.Events.Select(e => (e.Action, e.Actor)).Take(2).ShouldBe([(RetentionAction.LegalHoldPlaced, "staff:ops-1"), (RetentionAction.LegalHoldReleased, "staff:ops-1")]);
     }
 
     // ---------- Abandoned orders (Q9, approved 2026-09-29) ----------
@@ -266,11 +270,37 @@ public sealed class PersonalDataTests
         _store.Consumed.Count.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task Anonymised_personal_data_cannot_be_held_and_nothing_is_audited()
+    {
+        _orders.Needs = Needs();
+        await Save([Adult()]);
+        _clock.SetUtcNow(new DateTimeOffset(_lastTravel.AddMonths(25).AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
+        await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct);
+
+        (await new LegalHoldHandler(_store, _clock).HandleAsync(new LegalHoldRequest(_orderId, true, "ops-1", "CASE-9"), Ct)).ShouldBe(LegalHoldOutcome.Anonymised);
+
+        _store.AuditEntries.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("TICKET-2026-0042", true)]
+    [InlineData("CASE 17 refund on order 2026", true)] // short numbers are fine
+    [InlineData("TICKET 4111 1111 1111 1111", false)]
+    [InlineData("TICKET 4111-1111-1111-1111", false)]
+    [InlineData("TICKET 4111111111111", false)] // 13 digits
+    [InlineData("TICKET <script>", false)]
+    public void A_staff_reason_is_a_ticket_reference_and_never_a_card_number(string reason, bool valid) =>
+        TravelBooking.BuildingBlocks.Audit.AuditReasons.IsValid(reason).ShouldBe(valid);
+
     [Theory]
     [InlineData("", "reason")]
     [InlineData("ops 1", "reason")]
     [InlineData("ops-1", " ")]
     [InlineData("ops-1", "line\nbreak")]
+    [InlineData("ops-1", "CASE-1 4111 1111 1111 1111")] // never a card number in an audited reason
+    [InlineData("ops-1", "CASE-1 4111-1111-1111-1111")]
+    [InlineData("ops-1", "4111111111111111")]
     public async Task A_legal_hold_names_its_operator_and_reason(string actor, string reason)
     {
         _orders.Needs = Needs();
@@ -359,6 +389,10 @@ public sealed class PersonalDataTests
         public void Audit(DocumentAccess access) => Accesses.Add(access);
 
         public void Audit(RetentionEvent retentionEvent) => Events.Add(retentionEvent);
+
+        public List<TravelBooking.BuildingBlocks.Audit.AuditEntry> AuditEntries { get; } = [];
+
+        public void Audit(TravelBooking.BuildingBlocks.Audit.AuditEntry entry) => AuditEntries.Add(entry);
 
         public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 

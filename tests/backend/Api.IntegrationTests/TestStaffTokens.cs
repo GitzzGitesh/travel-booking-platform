@@ -19,6 +19,8 @@ internal static class TestStaffTokens
 
     /// <summary>Object ids granted roles in the test configuration (Access:RoleAssignments).</summary>
     public const string Operations = "staff-operations";
+    public const string Privacy = "staff-privacy";
+    public const string Administrator = "staff-administrator";
     public const string Unassigned = "staff-without-roles";
 
     private static readonly RsaSecurityKey _key = new(RSA.Create(2048)) { KeyId = "staff-test-key" };

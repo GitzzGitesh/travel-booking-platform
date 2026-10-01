@@ -10,14 +10,9 @@ namespace TravelBooking.Modules.Orders.Application;
 /// </summary>
 internal sealed record CheckBookingReview(Guid OrderId, Guid ItemId, string StaffId, string Reason, AuditSource Source)
 {
-    public const int MaxReasonLength = 200;
+    public const int MaxReasonLength = AuditReasons.MaxLength;
 
-    // A ticket reference, optionally with a short note in plain characters: letters, digits, spaces and . _ : / # -
-    // (no control or format characters, so nothing can disguise the audit text). Never personal data (ADR 0022).
-    public bool IsValid() =>
-        Reason is { Length: >= 3 and <= MaxReasonLength } && char.IsAsciiLetterOrDigit(Reason[0])
-        && Reason.All(c => char.IsAsciiLetterOrDigit(c) || c is ' ' or '.' or '_' or ':' or '/' or '#' or '-')
-        && StaffId is { Length: > 0 and <= 64 };
+    public bool IsValid() => AuditReasons.IsValid(Reason) && StaffId is { Length: > 0 and <= 64 };
 }
 
 internal enum BookingReviewFailure

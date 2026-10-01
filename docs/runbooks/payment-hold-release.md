@@ -16,7 +16,7 @@ All queries are read-only.
 The reconciliation job looks the payment up every run and repeats the void with the same key while the payment is still authorized. Check the Worker is running and `payments.JobLeases` shows `payments.reconcile-attempts` renewing. If the provider is down, wait for it to recover.
 
 ### Case B: `ManualReview`
-The provider reported something unexpected: a different amount, a captured payment, a void it refused, or a payment it no longer finds. Compare with the provider's dashboard using `ProviderPaymentId`, then resolve it with `ResolvePaymentReviewHandler` (operator id and reason required; the admin endpoint comes with staff identity, so until then engineering runs it for you).
+The provider reported something unexpected: a different amount, a captured payment, a void it refused, or a payment it no longer finds. Compare with the provider's dashboard using `ProviderPaymentId`, then resolve it with `POST /api/admin/v1/payments/{attemptId}/review-resolutions`. This needs the `payments.review.resolve` permission, and the reason is a ticket reference. `GET /api/admin/v1/payments/{attemptId}` shows the attempt and its history. Each resolution is audited in the same save.
 - It looks the payment up with the provider and moves the attempt only to what the provider holds:
   - Authorized (this attempt's amount: then released by reconciliation if Orders asked, or used as usual);
   - Declined, Canceled, Expired, Voided, or Failed (not found after the consistency window).

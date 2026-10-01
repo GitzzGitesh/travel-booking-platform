@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using TravelBooking.BuildingBlocks.Background.Persistence;
+using TravelBooking.BuildingBlocks.Http;
+using TravelBooking.Modules.Access.Contracts;
 using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Contracts;
@@ -60,12 +62,47 @@ public static class PaymentsModule
         // The way out of ManualReview (an operations action; its admin endpoint comes with staff identity).
         services.AddScoped<ResolvePaymentReviewHandler>();
         services.AddScoped<PaymentAttemptReviewList>();
+        services.AddValidation(); // the request types in this module's Endpoints namespace (ADR 0003)
         services.AddScoped<ReceivePaymentNotificationHandler>();
 
         // Checked at startup in both hosts: one provider, and only a production-ready one outside Development and Staging.
         services.AddSingleton<IValidateOptions<PaymentProviderComposition>, PaymentProviderCompositionValidator>();
         services.AddOptions<PaymentProviderComposition>().ValidateOnStart();
         return services;
+    }
+
+    /// <summary>
+    /// The staff endpoints for payments (ADR 0022), under the admin route group: staff with MFA and the named permission
+    /// only. Resolving a review is audited in the same save, and calls the provider (supplier-call rate limit).
+    /// </summary>
+    public static IEndpointRouteBuilder MapPaymentsAdminEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/payments").WithTags("Payments (staff)");
+
+        group.MapGet("/attempt-limit-reviews", AdminPaymentEndpoints.AttemptLimitReview)
+            .WithName("ListAttemptLimitReviews")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PaymentsRead))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapGet("/{attemptId:guid}", AdminPaymentEndpoints.Get)
+            .WithName("GetPaymentAttemptForOperations")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PaymentsRead))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{attemptId:guid}/review-resolutions", AdminPaymentEndpoints.Resolve)
+            .WithName("ResolvePaymentReview")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PaymentsReviewResolve))
+            .RequireRateLimiting(RateLimitPolicies.SupplierCalls) // every resolution is a provider lookup
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+        return endpoints;
     }
 
     /// <summary>

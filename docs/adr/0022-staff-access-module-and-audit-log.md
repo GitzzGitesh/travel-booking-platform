@@ -1,6 +1,6 @@
 # 0022. Staff access module, permission policies and the audit log
 
-- **Status:** Proposed (2026-10-01)
+- **Status:** Accepted (2026-10-01) by the project owner
 - **Date:** 2026-10-01
 - **Deciders:** Project owner
 - **Related:** [0002](0002-modular-monolith-and-module-boundaries.md), [0008](0008-identity-and-permissions.md) (implements its staff side), [0021](0021-booking-orchestration-supplier-booking-and-capture.md), `docs/architecture/security.md`, `.claude/rules/security.md`
