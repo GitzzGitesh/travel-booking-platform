@@ -18,10 +18,12 @@ internal static class TestStaffTokens
     public const string Audience = "api://travel-booking-staff-tests";
 
     /// <summary>Object ids granted roles in the test configuration (Access:RoleAssignments).</summary>
-    public const string Operations = "staff-operations";
-    public const string Privacy = "staff-privacy";
-    public const string Administrator = "staff-administrator";
-    public const string Unassigned = "staff-without-roles";
+    public const string Operations = "0b6a4d1e-0000-4a55-9f86-000000000001";
+    public const string Privacy = "0b6a4d1e-0000-4a55-9f86-000000000002";
+    public const string Administrator = "0b6a4d1e-0000-4a55-9f86-000000000003";
+    public const string SecondAdministrator = "0b6a4d1e-0000-4a55-9f86-000000000004";
+    public const string ThirdAdministrator = "0b6a4d1e-0000-4a55-9f86-000000000006";
+    public const string Unassigned = "0b6a4d1e-0000-4a55-9f86-000000000005";
 
     private static readonly RsaSecurityKey _key = new(RSA.Create(2048)) { KeyId = "staff-test-key" };
 

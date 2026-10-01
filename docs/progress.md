@@ -120,6 +120,24 @@ _Last updated: 2026-10-01 (Phase 3 complete with mock providers; Phase 4: identi
 - **Reasons:** one rule for staff reasons (`AuditReasons`): a ticket reference or a plain note.
 - **Next:** managed role grants with maker-checker, and the `admin-web` shell (its token pattern, BFF lean, is to be finalised).
 - **Blocked externally:** the staff tenant. |
+| 8 | **Managed staff role grants with maker-checker** (ADR 0022) | **Done.**
+- **Requests:** `POST /api/admin/v1/access/role-changes` (`access.grants.request`) for a workforce object id, a role, Grant or Revoke, and a ticket reference.
+- **Decisions:** a different administrator decides with `POST .../{id}/decision` (`access.grants.approve`). Nobody requests a change to their own access or approves their own request.
+- **Uniqueness:** one pending request per account and role, and one active grant (filtered unique indexes; migration `AddRoleGrants`).
+- **Effective permissions:** the configuration bootstrap plus approved grants, read on every sign-in (revocation is immediate).
+- **Reads:** `GET .../role-changes` and `GET .../role-grants` (`access.grants.read`).
+- **Audit:** every request and decision in `access.AuditEntries`.
+- **Review fixes:**
+  - The account a change concerns never decides on it, either way, and a revocation can only be withdrawn by its requester.
+  - Requester and approver are also compared by account.
+  - Approval needs a requester who may still request, a request under 7 days old, and a real change.
+  - Configuration-granted roles answer `granted-by-configuration` and are listed with their source.
+  - Object ids must be canonical lowercase GUIDs.
+  - The request list is cursor-paged.
+  - Maker-checker refusals are `RoleChangeRefused` security events.
+- **Runbook:** `staff-access.md`.
+- **Next:** the `admin-web` shell, which needs its token pattern decided (an ADR: BFF lean, ADR 0008).
+- **Blocked externally:** the staff tenant. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

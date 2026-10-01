@@ -8,6 +8,7 @@ Step-by-step procedures for operational situations. A runbook is written **in th
 | `flight-supplier-onboarding.md` (written) | Q6 preparation | Credentials or commercial approval arrive for a supplier |
 | `payment-hold-release.md` (written) | Phase 3 (background money safety) | Hold not released / release request given up |
 | `stripe-test-mode.md` (written) | ADR 0006 groundwork | Verifying the Stripe adapter in test mode, or running locally against Stripe |
+| `staff-access.md` (written) | Managed role grants (ADR 0022) | Granting or revoking staff roles (maker-checker); bootstrap and break-glass |
 | `personal-data-retention.md` (written) | Q9/Q10 batch (ADR 0020) | Purge stopped, documents unavailable, `PaymentAttemptLimitRepeated`; document key setup and rotation, legal hold |
 | `booking-pending-confirmation.md` (written) | Booking orchestration (ADR 0021) | `BookingUnresolved`, `BookingMismatch`, `BookingFoundAfterFailure` |
 | `payment-captured-booking-failed.md` (written) | Booking orchestration (ADR 0021) | `PaymentCaptureFailed`, `PaymentCaptureNotPossible` |

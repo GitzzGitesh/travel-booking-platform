@@ -10,7 +10,7 @@
 
 Tokens: the Api validates JWTs from both issuers with separate authentication schemes. Admin endpoints accept **only** the staff scheme. As built (ADR 0022):
 - Staff tokens must show MFA (`amr`) and map to an internal staff id in the Access module.
-- Admin routes (`/api/admin/v1`) require one `staff:{permission}` policy; roles are permission bundles granted by `Access:RoleAssignments`.
+- Admin routes (`/api/admin/v1`) require one `staff:{permission}` policy. Roles are permission bundles, granted by **maker-checker**: one administrator requests, a different one approves; nobody changes their own access. Grants and requests are audited. `Access:RoleAssignments` remains the bootstrap and break-glass (runbook `staff-access.md`): it is neither time-bound nor audited in-app (the platform's configuration change log traces it), and it is shown with its source in the grants list. The target of a change never decides on it, a revocation can only be withdrawn by its requester, and maker-checker refusals are `RoleChangeRefused` security events. Permissions are read on every sign-in, so revocation is immediate.
 - Staff actions are audited (`AuditEntries` in the acting module's schema, in the same save).
 - A 403 is the `StaffAuthorizationDenied` security event, and a refused staff token is `StaffTokenRefused`.
 - Audit entries hold the client address (personal data), kept for the security audit period (12 months, Q9).
@@ -21,7 +21,7 @@ Tokens: the Api validates JWTs from both issuers with separate authentication sc
 - Roles are bundles of permissions managed in the Access module. Code checks permissions, never role names.
 - Customer endpoints enforce **resource ownership** (customer ID from the token, never from the request).
 - Maker-checker for: refund approval above a threshold (Q11), markup and promotion changes, permission grants.
-- Break-glass admin access: TBD (time-bound, fully audited).
+- Break-glass admin access: today `Access:RoleAssignments` (configuration), which is neither time-bound nor audited in-app; making it time-bound and audited is a follow-up (runbook `staff-access.md`).
 
 ## Data classification
 | Class | Examples | Controls |

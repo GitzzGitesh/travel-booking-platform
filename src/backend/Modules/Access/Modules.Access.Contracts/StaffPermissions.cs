@@ -23,5 +23,17 @@ public static class StaffPermissions
     /// <summary>Place or release a legal hold on an order's personal data (Q9; on instruction from legal).</summary>
     public const string PersonalDataLegalHold = "personal-data.legal-hold";
 
-    public static IReadOnlyList<string> All { get; } = [OrdersRead, BookingsReviewResolve, PaymentsRead, PaymentsReviewResolve, PersonalDataLegalHold];
+    /// <summary>See role change requests and active role grants.</summary>
+    public const string AccessGrantsRead = "access.grants.read";
+
+    /// <summary>Request a role grant or revocation (maker).</summary>
+    public const string AccessGrantsRequest = "access.grants.request";
+
+    /// <summary>Approve or reject another staff member's request (checker): never one's own, never for one's own access.</summary>
+    public const string AccessGrantsApprove = "access.grants.approve";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        OrdersRead, BookingsReviewResolve, PaymentsRead, PaymentsReviewResolve, PersonalDataLegalHold, AccessGrantsRead, AccessGrantsRequest, AccessGrantsApprove,
+    ];
 }
