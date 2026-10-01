@@ -154,6 +154,8 @@ if (app.Environment.IsDevelopment())
     // client, and kept out of the customer API document ("v1") and its generated client.
     var admin = app.MapGroup("/api/admin/v1").RequireRateLimiting(RateLimitPolicies.Anonymous).WithGroupName("admin-v1");
     admin.MapOrdersAdminEndpoints();
+    admin.MapPaymentsAdminEndpoints();
+    admin.MapCustomersAdminEndpoints();
 }
 
 app.Run();

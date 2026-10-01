@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TravelBooking.BuildingBlocks.Audit;
 using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Customers.Domain;
 using TravelBooking.Modules.Orders.Contracts;
@@ -17,30 +18,34 @@ internal enum LegalHoldOutcome
     /// <summary>No personal data is kept for this order.</summary>
     NotFound,
 
-    /// <summary>No actor or reason given, or the data is already anonymised (nothing left to hold).</summary>
+    /// <summary>No actor or reason given.</summary>
     Invalid,
+
+    /// <summary>The data is already anonymised: nothing left to hold.</summary>
+    Anonymised,
 
     Conflict,
 }
 
 /// <param name="Actor">An opaque staff id (never a name or email); from the staff principal once staff identity exists.</param>
 /// <param name="Reason">A case or ticket reference and a short note, with no personal data.</param>
-internal sealed record LegalHoldRequest(Guid OrderId, bool Hold, string Actor, string Reason, string? CorrelationId = null);
+internal sealed record LegalHoldRequest(Guid OrderId, bool Hold, string Actor, string Reason, string? CorrelationId = null, AuditSource? Source = null);
 
 /// <summary>
 /// Places or releases a legal hold on an order's personal data (Q9): while held, nothing is anonymised or shredded and
-/// the data is not changed. An operations action: its admin endpoint comes with staff identity. Recorded in the
-/// append-only retention events.
+/// the data is not changed. A staff action (permission personal-data.legal-hold, ADR 0022): recorded in the append-only
+/// retention events and the audit log, in the same save.
 /// </summary>
 internal sealed class LegalHoldHandler(IPersonalDataStore store, TimeProvider timeProvider)
 {
     public const int MaxActorLength = 64;
-    public const int MaxReasonLength = 200;
+    public const int MaxReasonLength = AuditReasons.MaxLength;
+    public const string Action = "personal-data.legal-hold";
 
     public async Task<LegalHoldOutcome> HandleAsync(LegalHoldRequest request, CancellationToken cancellationToken)
     {
         if (request.Actor is not { Length: > 0 and <= MaxActorLength } || !request.Actor.All(c => c is > ' ' and <= '~')
-            || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > MaxReasonLength || request.Reason.Any(char.IsControl))
+            || !AuditReasons.IsValid(request.Reason))
         {
             return LegalHoldOutcome.Invalid;
         }
@@ -52,7 +57,7 @@ internal sealed class LegalHoldHandler(IPersonalDataStore store, TimeProvider ti
 
         if (set.AnonymisedAt is not null)
         {
-            return LegalHoldOutcome.Invalid;
+            return LegalHoldOutcome.Anonymised;
         }
 
         if (set.LegalHold == request.Hold)
@@ -70,8 +75,11 @@ internal sealed class LegalHoldHandler(IPersonalDataStore store, TimeProvider ti
             set.ReleaseLegalHold(now);
         }
 
+        var actor = $"staff:{request.Actor}";
         store.Audit(new RetentionEvent(request.OrderId, request.Hold ? RetentionAction.LegalHoldPlaced : RetentionAction.LegalHoldReleased,
-            $"operator:{request.Actor}", request.Reason, now, request.CorrelationId));
+            actor, request.Reason, now, request.CorrelationId));
+        store.Audit(AuditEntry.For(request.Source ?? new AuditSource(request.CorrelationId, null, null), now, actor, Action, $"order:{request.OrderId}",
+            request.Hold ? "not held" : "held", $"{(request.Hold ? "held" : "not held")}; {request.Reason}"));
         return await store.TrySaveAsync(cancellationToken) ? LegalHoldOutcome.Applied : LegalHoldOutcome.Conflict;
     }
 }

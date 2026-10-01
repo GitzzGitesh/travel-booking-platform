@@ -31,7 +31,13 @@ Check that the Worker is running with the Customers connection string. A failing
 ### Legal hold (litigation, dispute, authority request)
 Holds are placed on instruction from legal only, with a ticket reference as the reason (never personal data). A held set is neither purged nor changed. Releasing a hold lets the next purge run apply any overdue retention.
 
-**Not yet operable.** There is no operator entry point for `LegalHoldHandler` until staff identity exists (ADR 0008), and editing `LegalHold` in the database is not allowed, because it skips the record. Until the entry point ships (a production gate), escalate a hold request to engineering at once. Engineering first stops the Worker's purge job, which is the only thing that shreds or anonymises. Then a reviewed change applies the hold through `LegalHoldHandler`.
+**Place or release:** `PUT /api/admin/v1/orders/{orderId}/legal-hold` with `{ "hold": true|false, "reason": "<case or ticket reference>" }`.
+- It needs the `personal-data.legal-hold` permission (the Privacy role).
+- It is recorded as a retention event and in the audit log, in the same save.
+- Repeating the same request changes nothing.
+- Never edit `LegalHold` in the database: that skips the record.
+
+The review list for repeated payment-limit refusals (Q10) is `GET /api/admin/v1/payments/attempt-limit-reviews` (`payments.read`).
 
 ### `PaymentAttemptLimitRepeated`
 A customer reached the payment-attempt limit repeatedly: possible card testing. Look at their attempts (`payments.PaymentAttempts` by `CustomerId`) and at Stripe Radar for the same payments. There is no automatic block in the MVP (Q10). Decide with fraud operations, and record the outcome in the ticket.

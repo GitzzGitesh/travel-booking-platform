@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using TravelBooking.BuildingBlocks;
+using TravelBooking.BuildingBlocks.Audit;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Domain;
@@ -22,6 +23,7 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
     {
         modelBuilder.HasDefaultSchema(Schema);
         modelBuilder.AddInbox().AddJobLeases(); // ADR 0007: consumed events, and the reconciliation job's lease
+        modelBuilder.AddAuditLog(); // ADR 0022: staff actions on payments, saved with the action
 
         var attempt = modelBuilder.Entity<PaymentAttempt>();
         attempt.ToTable("PaymentAttempts", table => table.HasCheckConstraint(

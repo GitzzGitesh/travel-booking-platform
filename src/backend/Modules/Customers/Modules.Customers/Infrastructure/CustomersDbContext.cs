@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using TravelBooking.BuildingBlocks.Audit;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Customers.Application;
 using TravelBooking.Modules.Customers.Domain;
@@ -32,6 +33,7 @@ internal sealed class CustomersDbContext(DbContextOptions<CustomersDbContext> op
         customer.Ignore(c => c.CustomerId);
 
         modelBuilder.AddInbox().AddJobLeases(); // ADR 0007: consumed events (abandoned orders), and the purge job's lease
+        modelBuilder.AddAuditLog(); // ADR 0022: staff actions on personal data (legal holds), saved with the action
         MapPersonalData(modelBuilder);
     }
 
@@ -115,6 +117,8 @@ internal sealed class SqlPersonalDataStore(CustomersDbContext db) : IPersonalDat
     public void Audit(DocumentAccess access) => db.Set<DocumentAccess>().Add(access);
 
     public void Audit(RetentionEvent retentionEvent) => db.Set<RetentionEvent>().Add(retentionEvent);
+
+    public void Audit(BuildingBlocks.Audit.AuditEntry entry) => db.Set<BuildingBlocks.Audit.AuditEntry>().Add(entry);
 
     public Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken) =>
         db.Set<InboxMessage>().AnyAsync(m => m.MessageId == messageId && m.Handler == handler, cancellationToken);

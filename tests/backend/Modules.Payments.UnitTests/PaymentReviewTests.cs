@@ -40,8 +40,12 @@ public sealed class PaymentReviewTests
         result.ShouldBe(new PaymentReviewResult(PaymentReviewOutcome.Resolved, expected));
         attempt.Status.ShouldBe(expected);
         var entry = attempt.Events[^1];
-        (entry.FromStatus, entry.ToStatus, entry.Actor, entry.CorrelationId).ShouldBe(("ManualReview", expected.ToString(), "operator:ops-1", "trace-ops"));
+        (entry.FromStatus, entry.ToStatus, entry.Actor, entry.CorrelationId).ShouldBe(("ManualReview", expected.ToString(), "staff:ops-1", "trace-ops"));
         entry.Reason.ShouldContain("checked with the provider on ticket 42");
+        var audit = _store.AuditEntries.ShouldHaveSingleItem();
+        (audit.Actor, audit.Action, audit.Target, audit.Before, audit.CorrelationId)
+            .ShouldBe(("staff:ops-1", "payments.review.resolve", $"payment-attempt:{attempt.Id}", "ManualReview", "trace-ops"));
+        audit.After!.ShouldStartWith(expected.ToString());
     }
 
     [Fact]
@@ -75,7 +79,9 @@ public sealed class PaymentReviewTests
 
         new[] { afterCapture, afterOtherAmount, afterFailure }.ShouldAllBe(r => r == new PaymentReviewResult(PaymentReviewOutcome.StillNeedsReview, PaymentAttemptStatus.ManualReview));
         captured.Events[^1].Reason.ShouldContain("still in review");
-        captured.Events[^1].Actor.ShouldBe("operator:ops-1");
+        captured.Events[^1].Actor.ShouldBe("staff:ops-1");
+        _store.AuditEntries.Count.ShouldBe(3); // every check is audited, settled or not
+        _store.AuditEntries.ShouldAllBe(a => a.Before == "ManualReview" && a.After!.StartsWith("ManualReview;"));
     }
 
     [Fact]
@@ -137,7 +143,7 @@ public sealed class PaymentReviewTests
     public async Task The_domain_moves_out_of_review_only_to_a_provider_established_status()
     {
         var attempt = await InReview();
-        var change = new PaymentChange(_now, "operator:ops-1", null);
+        var change = new PaymentChange(_now, "staff:ops-1", null);
 
         attempt.ResolveReview(PaymentAttemptStatus.ActionRequired, "no", change).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);
         attempt.ResolveReview(PaymentAttemptStatus.Voiding, "no", change).Error.ShouldBe(PaymentAttemptTransitionError.Illegal);

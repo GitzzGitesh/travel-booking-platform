@@ -71,6 +71,8 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
     public Task<int> CountForCustomerSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken) =>
         db.PaymentAttempts.CountAsync(a => a.CustomerId == customerId && a.CreatedAt >= since, cancellationToken);
 
+    public void Audit(BuildingBlocks.Audit.AuditEntry entry) => db.Set<BuildingBlocks.Audit.AuditEntry>().Add(entry);
+
     public void RecordLimitTrip(AttemptLimitTrip trip) => db.Set<AttemptLimitTrip>().Add(trip);
 
     public Task<int> CountLimitTripsSinceAsync(string customerId, DateTimeOffset since, CancellationToken cancellationToken) =>

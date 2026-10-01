@@ -60,6 +60,10 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         // Staff roles for the admin tests: one operations account; any other staff account holds none (ADR 0022).
         builder.UseSetting("Access:RoleAssignments:0:ObjectId", TestStaffTokens.Operations);
         builder.UseSetting("Access:RoleAssignments:0:Roles:0", "Operations");
+        builder.UseSetting("Access:RoleAssignments:1:ObjectId", TestStaffTokens.Privacy);
+        builder.UseSetting("Access:RoleAssignments:1:Roles:0", "Privacy");
+        builder.UseSetting("Access:RoleAssignments:2:ObjectId", TestStaffTokens.Administrator);
+        builder.UseSetting("Access:RoleAssignments:2:Roles:0", "Administrator");
         // Many tests here pay as the same customer: the per-customer attempt limit is tested on its own (unit, and
         // OrderPaymentAuthorizationTests for the per-order limit), so it does not cap unrelated tests.
         builder.UseSetting("Payments:AttemptLimits:MaxAttemptsPerCustomerPerDay", "10000");

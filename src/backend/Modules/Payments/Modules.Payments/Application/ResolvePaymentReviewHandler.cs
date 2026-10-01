@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using TravelBooking.BuildingBlocks.Audit;
 using TravelBooking.Modules.Payments.Domain;
 using TravelBooking.Modules.Payments.Ports;
 
@@ -12,7 +13,7 @@ namespace TravelBooking.Modules.Payments.Application;
 /// Why they resolve it now: a ticket reference and a short note, kept on the append-only history, so it must hold no
 /// personal or card data (Q9). Printable text, 1 to <see cref="ResolvePaymentReviewHandler.MaxReasonLength"/> characters.
 /// </param>
-internal sealed record ResolvePaymentReview(Guid AttemptId, string OperatorId, string Reason, string? CorrelationId = null);
+internal sealed record ResolvePaymentReview(Guid AttemptId, string OperatorId, string Reason, string? CorrelationId = null, AuditSource? Source = null);
 
 internal enum PaymentReviewOutcome
 {
@@ -47,12 +48,13 @@ internal sealed class ResolvePaymentReviewHandler(
     IOptions<PaymentReconciliationOptions> reconciliation)
 {
     public const int MaxOperatorIdLength = 64;
-    public const int MaxReasonLength = 200;
+    public const int MaxReasonLength = AuditReasons.MaxLength;
+    public const string Action = "payments.review.resolve";
 
     public async Task<PaymentReviewResult> HandleAsync(ResolvePaymentReview command, CancellationToken cancellationToken)
     {
         if (command.OperatorId is not { Length: > 0 and <= MaxOperatorIdLength } || !command.OperatorId.All(c => c is > ' ' and <= '~')
-            || string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Length > MaxReasonLength || command.Reason.Any(char.IsControl))
+            || !AuditReasons.IsValid(command.Reason))
         {
             return new PaymentReviewResult(PaymentReviewOutcome.Invalid, null);
         }
@@ -68,7 +70,8 @@ internal sealed class ResolvePaymentReviewHandler(
         }
 
         var outcome = await operations.ReconcileAsync(new PaymentReference(attempt.Reference), attempt.KnownProviderPayment(), cancellationToken);
-        var change = new PaymentChange(timeProvider.GetUtcNow(), $"operator:{command.OperatorId}", command.CorrelationId);
+        var change = new PaymentChange(timeProvider.GetUtcNow(), $"staff:{command.OperatorId}", command.CorrelationId);
+        var source = command.Source ?? new AuditSource(command.CorrelationId, null, null);
         var reason = command.Reason;
         var found = SnapshotOf(outcome);
         if (Target(attempt, outcome) is not { } target
@@ -76,10 +79,12 @@ internal sealed class ResolvePaymentReviewHandler(
         {
             // Unsettled, or not this attempt's payment, or a hold we could not release: the check is recorded.
             attempt.RecordFinding($"Review checked by operator ({reason}); the provider reports {outcome.GetType().Name}: still in review", change, found?.Payment.Value ?? attempt.ProviderPaymentId);
+            store.Audit(AuditEntry.For(source, change.At, change.Actor, Action, $"payment-attempt:{attempt.Id}", "ManualReview", $"ManualReview; {reason}"));
             await store.TrySaveAsync(cancellationToken);
             return new PaymentReviewResult(PaymentReviewOutcome.StillNeedsReview, attempt.Status);
         }
 
+        store.Audit(AuditEntry.For(source, change.At, change.Actor, Action, $"payment-attempt:{attempt.Id}", "ManualReview", $"{attempt.Status}; {reason}"));
         if (!await store.TrySaveAsync(cancellationToken))
         {
             // Another request changed the attempt first: report what it is now.

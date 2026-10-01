@@ -11,6 +11,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.BuildingBlocks.Http;
+using TravelBooking.Modules.Access.Contracts;
 using TravelBooking.Modules.Customers.Application;
 using TravelBooking.Modules.Customers.Contracts;
 using TravelBooking.Modules.Customers.Endpoints;
@@ -118,6 +119,24 @@ public static class CustomersModule
         services.AddBackgroundJob<PurgePersonalDataJob, CustomersDbContext>(PurgePersonalDataJob.Name, TimeSpan.FromHours(1));
         services.AddIntegrationEventHandler<OrderAbandoned, OrderAbandonedHandler>();
         return services;
+    }
+
+    /// <summary>
+    /// The staff endpoints for personal data (ADR 0022), under the admin route group: the legal hold (Q9), for staff with
+    /// MFA and the personal-data.legal-hold permission only, recorded and audited in the same save.
+    /// </summary>
+    public static IEndpointRouteBuilder MapCustomersAdminEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGroup("/orders").WithTags("Personal data (staff)")
+            .MapPut("/{orderId:guid}/legal-hold", AdminLegalHoldEndpoints.Set)
+            .WithName("SetLegalHold")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PersonalDataLegalHold))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+        return endpoints;
     }
 
     /// <summary>The signed-in customer's own endpoints.</summary>

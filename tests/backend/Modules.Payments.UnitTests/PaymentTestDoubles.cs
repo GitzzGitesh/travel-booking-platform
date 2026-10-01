@@ -71,6 +71,10 @@ internal sealed class FakeStore : IPaymentAttemptStore
         return Task.FromResult(true);
     }
 
+    public List<TravelBooking.BuildingBlocks.Audit.AuditEntry> AuditEntries { get; } = [];
+
+    public void Audit(TravelBooking.BuildingBlocks.Audit.AuditEntry entry) => AuditEntries.Add(entry);
+
     public List<AttemptLimitTrip> Trips { get; } = [];
 
     private AttemptLimitTrip? _pendingTrip;

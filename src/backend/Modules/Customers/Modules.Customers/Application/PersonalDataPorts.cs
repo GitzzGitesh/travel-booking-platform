@@ -22,6 +22,9 @@ internal interface IPersonalDataStore
 
     void Audit(RetentionEvent retentionEvent);
 
+    /// <summary>Adds a staff audit entry, saved atomically with the next <see cref="TrySaveAsync"/> (ADR 0022).</summary>
+    void Audit(BuildingBlocks.Audit.AuditEntry entry);
+
     /// <summary>Saves; false if another request changed the set first (optimistic concurrency) or it was added twice.</summary>
     Task<bool> TrySaveAsync(CancellationToken cancellationToken);
 
