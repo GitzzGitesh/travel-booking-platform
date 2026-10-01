@@ -156,6 +156,7 @@ if (app.Environment.IsDevelopment())
     admin.MapOrdersAdminEndpoints();
     admin.MapPaymentsAdminEndpoints();
     admin.MapCustomersAdminEndpoints();
+    admin.MapAccessAdminEndpoints();
 }
 
 app.Run();

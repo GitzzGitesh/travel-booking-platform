@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +14,7 @@ using Microsoft.IdentityModel.Tokens;
 using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Modules.Access.Application;
 using TravelBooking.Modules.Access.Contracts;
+using TravelBooking.Modules.Access.Endpoints;
 using TravelBooking.Modules.Access.Infrastructure;
 
 namespace TravelBooking.Modules.Access;
@@ -44,6 +47,9 @@ public static partial class AccessModule
             }));
         services.AddScoped<IStaffStore, SqlStaffStore>();
         services.AddScoped<StaffDirectory>();
+        services.AddScoped<IRoleGrantStore, SqlRoleGrantStore>();
+        services.AddScoped<RoleChangeHandler>();
+        services.AddValidation(); // the request types in this module's Endpoints namespace (ADR 0003)
         services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler, StaffAuthorizationEvents>();
 
         var settings = configuration.GetSection(SettingsSection);
@@ -153,11 +159,54 @@ public static partial class AccessModule
             return;
         }
 
-        // Read live: removing a grant from configuration takes effect without a restart.
-        var permissions = services.GetRequiredService<IOptionsMonitor<AccessOptions>>().CurrentValue.PermissionsFor(objectId);
+        // Read live on every sign-in: the configuration bootstrap plus approved managed grants, so an approved revocation
+        // (or a grant removed from configuration) takes effect at once.
+        var granted = await services.GetRequiredService<IRoleGrantStore>().FindActiveRolesAsync(objectId, context.HttpContext.RequestAborted);
+        var permissions = services.GetRequiredService<IOptionsMonitor<AccessOptions>>().CurrentValue.PermissionsFor(objectId)
+            .Union(StaffRoles.PermissionsOf(granted), StringComparer.Ordinal).ToList();
         principal.AddIdentity(new ClaimsIdentity(
             [new Claim(StaffIdentity.StaffIdClaim, staffId), .. permissions.Select(p => new Claim(StaffIdentity.PermissionClaim, p))],
             StaffIdentity.MappedIdentityType));
+    }
+
+    /// <summary>
+    /// The managed role grants (ADR 0022, maker-checker), under the admin route group: requests and decisions are audited
+    /// in the Access schema in the same save.
+    /// </summary>
+    public static IEndpointRouteBuilder MapAccessAdminEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/access").WithTags("Access (staff)");
+
+        group.MapGet("/role-changes", AdminAccessEndpoints.ListRequests)
+            .WithName("ListRoleChanges")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.AccessGrantsRead))
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapGet("/role-grants", AdminAccessEndpoints.ListGrants)
+            .WithName("ListRoleGrants")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.AccessGrantsRead))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPost("/role-changes", AdminAccessEndpoints.Request)
+            .WithName("RequestRoleChange")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.AccessGrantsRequest))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/role-changes/{requestId:guid}/decision", AdminAccessEndpoints.Decide)
+            .WithName("DecideRoleChange")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.AccessGrantsApprove))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+        return endpoints;
     }
 
     private static void Fail(TokenValidatedContext context, string reason)
