@@ -114,6 +114,16 @@ public static class OrdersModule
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // ADR 0025: a person's outcome (no supplier call): cancelled at the supplier's desk, or accepted as booked.
+        group.MapPost("/{orderId:guid}/items/{itemId:guid}/review-outcomes", AdminOrderEndpoints.RecordOutcome)
+            .WithName("RecordBookingReviewOutcome")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.BookingsReviewResolve))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
         return endpoints;
     }
 

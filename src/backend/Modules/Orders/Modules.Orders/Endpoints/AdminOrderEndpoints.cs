@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using TravelBooking.BuildingBlocks.Audit;
 using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Modules.Orders.Application;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 
 namespace TravelBooking.Modules.Orders.Endpoints;
@@ -13,6 +14,28 @@ namespace TravelBooking.Modules.Orders.Endpoints;
 /// <summary>Why a staff member checks a booking in review: a ticket reference or a short note, never personal data.</summary>
 public sealed class BookingReviewCheckRequest
 {
+    [Required]
+    [StringLength(CheckBookingReview.MaxReasonLength, MinimumLength = 3)]
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// A staff outcome for a booking in review (ADR 0025), with a ticket reference. <c>supplierReference</c> is the supplier
+/// desk's cancellation reference (for <c>CancelledAtSupplier</c>). Accepting needs both confirmations, given by the person
+/// who compared the supplier's booking with the order: the same travellers and flights, at no more than the agreed price.
+/// </summary>
+public sealed class BookingReviewOutcomeRequest
+{
+    [Required]
+    public BookingReviewOutcome? Outcome { get; init; }
+
+    [StringLength(CheckBookingReview.MaxReasonLength, MinimumLength = 3)]
+    public string? SupplierReference { get; init; }
+
+    public bool SameTravellersAndFlights { get; init; }
+
+    public bool PriceNotAboveAgreed { get; init; }
+
     [Required]
     [StringLength(CheckBookingReview.MaxReasonLength, MinimumLength = 3)]
     public string? Reason { get; init; }
@@ -82,6 +105,33 @@ internal static class AdminOrderEndpoints
                 BookingReviewFailure.NotFound => Problem(StatusCodes.Status404NotFound, "order-item-not-found", "This order item was not found."),
                 BookingReviewFailure.Conflict => Problem(StatusCodes.Status409Conflict, "concurrency-conflict", "The order changed at the same time. Check again."),
                 _ => Problem(StatusCodes.Status400BadRequest, "invalid-request", "Give a ticket reference (3 to 200 letters, digits, spaces or . _ : / # -)."),
+            };
+    }
+
+    public static async Task<Results<Ok<BookingReviewCheckResponse>, ProblemHttpResult>> RecordOutcome(
+        Guid orderId, Guid itemId, BookingReviewOutcomeRequest request, ClaimsPrincipal user, HttpContext http,
+        ResolveBookingReviewHandler handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.RecordOutcomeAsync(
+            new RecordBookingReviewOutcome(orderId, itemId, request.Outcome!.Value, request.SupplierReference, request.SameTravellersAndFlights,
+                request.PriceNotAboveAgreed, user.StaffId()!, request.Reason!, AuditSources.From(http)),
+            cancellationToken);
+        if (result.IsSuccess && result.Value.AlreadySettled)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status409Conflict, type: "not-in-review", title: "This booking is not in manual review.",
+                extensions: new Dictionary<string, object?> { ["itemStatus"] = result.Value.Status.ToString() });
+        }
+
+        return result.IsSuccess
+            ? TypedResults.Ok(new BookingReviewCheckResponse(result.Value.OrderId, result.Value.ItemId, result.Value.Status.ToString(), result.Value.Resolved))
+            : result.Error switch
+            {
+                BookingReviewFailure.NotFound => Problem(StatusCodes.Status404NotFound, "order-item-not-found", "This order item was not found."),
+                BookingReviewFailure.Conflict => Problem(StatusCodes.Status409Conflict, "concurrency-conflict", "The order changed at the same time. Check again."),
+                BookingReviewFailure.NoSupplierBookingSeen => Problem(StatusCodes.Status409Conflict, "no-supplier-booking-seen",
+                    "No supplier booking was seen under our reference for this item: there is nothing to accept or cancel. Check it with the supplier instead."),
+                _ => Problem(StatusCodes.Status400BadRequest, "invalid-request",
+                    "Give a ticket reference; a cancellation needs the supplier's reference, and accepting needs both confirmations."),
             };
     }
 

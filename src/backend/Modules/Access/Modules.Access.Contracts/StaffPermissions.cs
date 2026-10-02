@@ -20,8 +20,11 @@ public static class StaffPermissions
     /// <summary>Settle a payment attempt in manual review by a provider lookup (never by someone's statement).</summary>
     public const string PaymentsReviewResolve = "payments.review.resolve";
 
-    /// <summary>Place or release a legal hold on an order's personal data (Q9; on instruction from legal).</summary>
+    /// <summary>Place a legal hold on an order's personal data, or request its release (Q9, ADR 0026; on instruction from legal).</summary>
     public const string PersonalDataLegalHold = "personal-data.legal-hold";
+
+    /// <summary>Approve or reject another staff member's request to release a legal hold (checker, ADR 0026): never one's own.</summary>
+    public const string PersonalDataLegalHoldApprove = "personal-data.legal-hold.approve";
 
     /// <summary>See role change requests and active role grants.</summary>
     public const string AccessGrantsRead = "access.grants.read";
@@ -34,6 +37,7 @@ public static class StaffPermissions
 
     public static IReadOnlyList<string> All { get; } =
     [
-        OrdersRead, BookingsReviewResolve, PaymentsRead, PaymentsReviewResolve, PersonalDataLegalHold, AccessGrantsRead, AccessGrantsRequest, AccessGrantsApprove,
+        OrdersRead, BookingsReviewResolve, PaymentsRead, PaymentsReviewResolve, PersonalDataLegalHold, PersonalDataLegalHoldApprove,
+        AccessGrantsRead, AccessGrantsRequest, AccessGrantsApprove,
     ];
 }

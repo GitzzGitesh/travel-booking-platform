@@ -39,5 +39,11 @@ export const routes: Routes = [
     canActivate: [staffWith('access.grants.read')],
     loadComponent: () => import('./access/staff-access').then((m) => m.StaffAccess),
   },
+  {
+    path: 'legal-hold-releases',
+    title: 'Legal-hold releases · Travel booking operations',
+    canActivate: [staffWith('personal-data.legal-hold.approve')],
+    loadComponent: () => import('./legal/legal-hold-releases').then((m) => m.LegalHoldReleases),
+  },
   { path: '**', redirectTo: '' },
 ];

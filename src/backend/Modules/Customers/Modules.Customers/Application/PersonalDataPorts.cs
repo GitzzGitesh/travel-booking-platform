@@ -79,6 +79,9 @@ internal sealed class PersonalDataRetentionOptions
     /// <summary>Days after an order is abandoned (never booked, no payment unsettled) until its personal data is anonymised.</summary>
     public int PersonalDataDaysAfterAbandonment { get; set; } = 30;
 
+    /// <summary>Days after an approved legal-hold release before the purge may apply retention (ADR 0026; pending legal confirmation).</summary>
+    public int LegalHoldReleaseGraceDays { get; set; } = 30;
+
     public RetentionDates DatesFor(DateOnly lastTravelDate) =>
         new(lastTravelDate, lastTravelDate.AddMonths(PersonalDataMonthsAfterTravel), lastTravelDate.AddDays(DocumentDaysAfterTravel));
 }

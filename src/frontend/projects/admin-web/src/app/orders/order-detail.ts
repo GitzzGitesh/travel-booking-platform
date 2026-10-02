@@ -6,12 +6,17 @@ import {
   Api,
   checkBookingReview,
   getOrderForOperations,
-  setLegalHold,
+  recordBookingReviewOutcome,
 } from '@travel-booking/admin-api-client';
-import type { AdminOrderDetail } from '@travel-booking/admin-api-client';
+import type {
+  AdminOrderDetail,
+  BookingReviewOutcomeRequest,
+} from '@travel-booking/admin-api-client';
 import { describeProblem, problemExtension, problemType } from '../shared/problems';
 import { ReasonForm } from '../shared/reason-form';
 import { StaffSession } from '../staff-session';
+import { LegalHoldPanel } from './legal-hold-panel';
+import { ReviewOutcomeForm } from './review-outcome-form';
 
 /**
  * One order for operations: its items, the append-only booking timeline, and the staff actions the permissions allow
@@ -19,7 +24,7 @@ import { StaffSession } from '../staff-session';
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, ReasonForm, RouterLink],
+  imports: [DatePipe, LegalHoldPanel, ReasonForm, ReviewOutcomeForm, RouterLink],
   selector: 'adm-order-detail',
   template: `
     <p><a routerLink="/orders">Back to the booking queues</a></p>
@@ -104,31 +109,24 @@ import { StaffSession } from '../staff-session';
                 [busy]="busy()"
                 (submitted)="checkReview(item.itemId, $event)"
               />
+              <h3>Or record an outcome</h3>
+              <p>
+                When the supplier's desk cancelled it, or after comparing a booking seen not as
+                agreed with this order. The payment follows: released, or the agreed price charged.
+              </p>
+              <adm-review-outcome-form
+                [busy]="busy()"
+                (submitted)="recordOutcome(item.itemId, $event)"
+              />
             </section>
           }
         }
       }
 
-      @if (session.can('personal-data.legal-hold')) {
-        <section class="action" aria-labelledby="legal-hold">
-          <h2 id="legal-hold">Legal hold</h2>
-          <p>
-            On instruction from legal only. A hold keeps this order's personal data past its
-            retention period; releasing it lets retention apply again.
-          </p>
-          <adm-reason-form
-            label="Case reference to place a hold"
-            action="Place legal hold"
-            [busy]="busy()"
-            (submitted)="legalHold(true, $event)"
-          />
-          <adm-reason-form
-            label="Case reference to release the hold"
-            action="Release legal hold"
-            [busy]="busy()"
-            (submitted)="legalHold(false, $event)"
-          />
-        </section>
+      @if (
+        session.can('personal-data.legal-hold') || session.can('personal-data.legal-hold.approve')
+      ) {
+        <adm-legal-hold-panel [orderId]="orderId()" />
       }
 
       <h2>Timeline</h2>
@@ -210,24 +208,24 @@ export class OrderDetail {
     );
   }
 
-  protected async legalHold(hold: boolean, reason: string): Promise<void> {
+  protected async recordOutcome(itemId: string, body: BookingReviewOutcomeRequest): Promise<void> {
     await this.act(
       async () => {
-        const result = await this.api.invoke(setLegalHold, {
+        const result = await this.api.invoke(recordBookingReviewOutcome, {
           orderId: this.orderId(),
-          body: { hold, reason },
+          itemId,
+          body,
         });
-        const state = result.held ? 'under a legal hold' : 'not under a legal hold';
-        return result.changed
-          ? `Done: the order's personal data is now ${state}.`
-          : `No change: it was already ${state}.`;
+        return `Recorded: the item is now ${result.itemStatus}, and the payment follows.`;
       },
       (error) =>
-        describeProblem(error, {
-          'personal-data-not-found': 'No personal data is kept for this order.',
-          'personal-data-anonymised':
-            "This order's personal data is already anonymised: nothing is left to hold.",
-        }),
+        problemType(error) === 'not-in-review'
+          ? `This booking is no longer in manual review (now ${problemExtension(error, 'itemStatus') ?? 'changed'}).`
+          : describeProblem(error, {
+              'no-supplier-booking-seen':
+                'No supplier booking was seen for this item: there is nothing to accept. Check it with the supplier instead.',
+              'order-item-not-found': 'This order item was not found.',
+            }),
     );
   }
 

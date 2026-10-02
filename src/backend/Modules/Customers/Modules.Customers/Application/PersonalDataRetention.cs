@@ -24,6 +24,9 @@ internal enum LegalHoldOutcome
     /// <summary>The data is already anonymised: nothing left to hold.</summary>
     Anonymised,
 
+    /// <summary>A held order's release needs a second person's approval (ADR 0026): use a release request.</summary>
+    ReleaseNeedsApproval,
+
     Conflict,
 }
 
@@ -65,15 +68,14 @@ internal sealed class LegalHoldHandler(IPersonalDataStore store, TimeProvider ti
             return LegalHoldOutcome.Unchanged;
         }
 
+        // Placing a hold is one step; releasing one is maker-checker (ADR 0026: LegalHoldReleaseHandler).
+        if (!request.Hold)
+        {
+            return LegalHoldOutcome.ReleaseNeedsApproval;
+        }
+
         var now = timeProvider.GetUtcNow();
-        if (request.Hold)
-        {
-            set.PlaceLegalHold(now);
-        }
-        else
-        {
-            set.ReleaseLegalHold(now);
-        }
+        set.PlaceLegalHold(now);
 
         var actor = $"staff:{request.Actor}";
         store.Audit(new RetentionEvent(request.OrderId, request.Hold ? RetentionAction.LegalHoldPlaced : RetentionAction.LegalHoldReleased,
@@ -94,13 +96,13 @@ internal sealed class PersonalDataPurger(IPersonalDataStore store, TimeProvider 
 
     public async Task<bool> PurgeAsync(Guid orderId, CancellationToken cancellationToken)
     {
-        if (await store.FindSetAsync(orderId, cancellationToken) is not { LegalHold: false } set)
+        var now = timeProvider.GetUtcNow();
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        if (await store.FindSetAsync(orderId, cancellationToken) is not { } set || !set.MayPurge(today))
         {
             return false;
         }
 
-        var now = timeProvider.GetUtcNow();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
         var changed = false;
         if (set.DocumentsRetainUntil < today || (set.AnonymisedAt is null && set.RetainUntil < today))
         {

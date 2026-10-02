@@ -48,6 +48,8 @@ public static class CustomersModule
 
         // Personal data (Q9, ADR 0020): travellers, contacts and encrypted documents, with their retention.
         services.AddScoped<IPersonalDataStore, SqlPersonalDataStore>();
+        services.AddScoped<ILegalHoldReleaseStore, SqlLegalHoldReleaseStore>();
+        services.AddScoped<LegalHoldReleaseHandler>();
         services.AddScoped<SaveOrderTravellersHandler>();
         services.AddScoped<OrderTravellersQuery>();
         services.AddScoped<SaveTravelDocumentHandler>();
@@ -62,7 +64,7 @@ public static class CustomersModule
             .ValidateOnStart();
         services.AddOptions<PersonalDataRetentionOptions>()
             .Bind(configuration.GetSection(PersonalDataRetentionOptions.SectionName))
-            .Validate(o => o.PersonalDataMonthsAfterTravel > 0 && o.DocumentDaysAfterTravel > 0, "Customers:Retention periods must be positive.")
+            .Validate(o => o.PersonalDataMonthsAfterTravel > 0 && o.DocumentDaysAfterTravel > 0 && o.LegalHoldReleaseGraceDays >= 0, "Customers:Retention periods must be positive (the legal-hold release grace may be 0).")
             .ValidateOnStart();
         services.AddValidation(); // the request types in this module's Endpoints namespace (ADR 0003)
 
@@ -131,6 +133,46 @@ public static class CustomersModule
         endpoints.MapGroup("/orders").WithTags("Personal data (staff)")
             .MapPut("/{orderId:guid}/legal-hold", AdminLegalHoldEndpoints.Set)
             .WithName("SetLegalHold")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PersonalDataLegalHold))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // ADR 0026: releasing a hold is maker-checker (requested by one person, decided by another).
+        var orders = endpoints.MapGroup("/orders").WithTags("Personal data (staff)");
+        orders.MapGet("/{orderId:guid}/legal-hold", AdminLegalHoldReleaseEndpoints.Status)
+            .WithName("GetLegalHold")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.OrdersRead))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+        orders.MapPost("/{orderId:guid}/legal-hold/release-requests", AdminLegalHoldReleaseEndpoints.Request)
+            .WithName("RequestLegalHoldRelease")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PersonalDataLegalHold))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        var releases = endpoints.MapGroup("/legal-hold/release-requests").WithTags("Personal data (staff)");
+        releases.MapGet("/", AdminLegalHoldReleaseEndpoints.Pending)
+            .WithName("ListLegalHoldReleaseRequests")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PersonalDataLegalHoldApprove))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+        releases.MapPost("/{requestId:guid}/decision", AdminLegalHoldReleaseEndpoints.Decide)
+            .WithName("DecideLegalHoldRelease")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PersonalDataLegalHoldApprove))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+        releases.MapPost("/{requestId:guid}/withdrawal", AdminLegalHoldReleaseEndpoints.Withdraw)
+            .WithName("WithdrawLegalHoldRelease")
             .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PersonalDataLegalHold))
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized)

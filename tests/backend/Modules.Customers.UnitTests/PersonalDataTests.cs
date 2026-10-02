@@ -206,10 +206,35 @@ public sealed class PersonalDataTests
         _store.Documents.Single().IsShredded.ShouldBeFalse();
         (await Save([Adult("Grace")])).Error.ShouldBe(TravellersFailure.NotEditable); // frozen while held
 
-        (await holds.HandleAsync(new LegalHoldRequest(_orderId, Hold: false, "ops-1", "case closed"), Ct)).ShouldBe(LegalHoldOutcome.Applied);
-        (_store.AuditEntries[^1].Before, _store.AuditEntries[^1].After).ShouldBe(("held", "not held; case closed"));
+        // ADR 0026: a release is never one person's step; it is requested and approved by someone else.
+        (await holds.HandleAsync(new LegalHoldRequest(_orderId, Hold: false, "ops-1", "case closed"), Ct)).ShouldBe(LegalHoldOutcome.ReleaseNeedsApproval);
+        _store.AuditEntries.Count.ShouldBe(1);
+
+        // Once released (approved), the purge waits the grace period, and a hold placed again in it stops the release.
+        var set = (await _store.FindSetAsync(_orderId, Ct))!;
+        set.ReleaseLegalHold(_clock.GetUtcNow(), graceDays: 30);
+        (await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct)).ShouldBeFalse();
+        _clock.Advance(TimeSpan.FromDays(30));
+        (await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct)).ShouldBeFalse(); // the whole 30th day still counts
+        _clock.Advance(TimeSpan.FromDays(1));
         (await new PersonalDataPurger(_store, _clock).PurgeAsync(_orderId, Ct)).ShouldBeTrue();
-        _store.Events.Select(e => (e.Action, e.Actor)).Take(2).ShouldBe([(RetentionAction.LegalHoldPlaced, "staff:ops-1"), (RetentionAction.LegalHoldReleased, "staff:ops-1")]);
+        _store.Events[0].Action.ShouldBe(RetentionAction.LegalHoldPlaced);
+    }
+
+    // ADR 0026: the requester is recognised by staff id or by workforce account, so neither a second staff id for the same
+    // account nor the same staff id with another account can approve.
+    [Theory]
+    [InlineData("staff-1", "account-b")]
+    [InlineData("staff-2", "ACCOUNT-A")]
+    public void A_release_is_never_approved_by_its_requester_under_another_id_or_account(string staffId, string account)
+    {
+        var request = LegalHoldReleaseRequest.For(_orderId, "staff-1", "account-a", "CASE-1", _clock.GetUtcNow());
+
+        request.Approve(staffId, account, "CASE-1", _clock.GetUtcNow()).ShouldBe(LegalHoldReleaseRefusal.SelfApproval);
+        request.Approve("staff-3", "account-c", "CASE-1", _clock.GetUtcNow() + LegalHoldReleaseRequest.ApprovalWindow + TimeSpan.FromSeconds(1))
+            .ShouldBe(LegalHoldReleaseRefusal.Expired);
+        request.Approve("staff-3", "account-c", "CASE-1", _clock.GetUtcNow()).ShouldBeNull();
+        request.Status.ShouldBe(LegalHoldReleaseStatus.Approved);
     }
 
     // ---------- Abandoned orders (Q9, approved 2026-09-29) ----------

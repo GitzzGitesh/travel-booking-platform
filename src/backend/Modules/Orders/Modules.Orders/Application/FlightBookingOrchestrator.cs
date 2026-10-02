@@ -155,6 +155,9 @@ internal sealed partial class FlightBookingOrchestrator(
         return item.Status;
     }
 
+    /// <summary>After a staff outcome (ADR 0025): the payment follows the order (charge, release, or nothing yet), in the same save.</summary>
+    public void SettleAfterReviewOutcome(Order order, TransitionContext context) => Settle(order, context);
+
     // An item from before booking start times were recorded was never sent (booking did not exist then): look it up now.
     private bool NeedsLookup(FlightOrderItem item, DateTimeOffset now) =>
         (item.NextBookingLookupAt is null || item.NextBookingLookupAt <= now)

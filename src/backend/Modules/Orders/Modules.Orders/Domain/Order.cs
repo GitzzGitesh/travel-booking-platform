@@ -356,6 +356,45 @@ internal sealed class Order
     public bool HadSupplierMismatch(Guid itemId) =>
         _timeline.Any(e => e.ItemId == itemId && e.ToStatus == nameof(FlightOrderItemStatus.ManualReview) && e.ProviderReference is not null);
 
+    /// <summary>The supplier booking last seen not as agreed for this item (its provider and locator), if any.</summary>
+    public (string ProviderId, string Locator)? MismatchedBooking(Guid itemId) =>
+        _timeline.LastOrDefault(e => e.ItemId == itemId && e.ToStatus == nameof(FlightOrderItemStatus.ManualReview)
+                && e.ProviderReference is { } candidate && candidate.Contains(':', StringComparison.Ordinal) && !Guid.TryParse(candidate, out _))
+            ?.ProviderReference is { } reference && reference.IndexOf(':', StringComparison.Ordinal) is > 0 and var separator && separator < reference.Length - 1
+            ? (reference[..separator], reference[(separator + 1)..])
+            : null;
+
+    /// <summary>
+    /// A staff outcome for an item in review (ADR 0025): the supplier booking was cancelled at the supplier's desk, with
+    /// its reference as evidence. Nothing is booked any more, so nothing is charged for it (the hold follows the order's
+    /// settlement).
+    /// </summary>
+    /// <remarks>
+    /// Only for a booking that was seen under our reference (a mismatch): an item in review because its outcome is
+    /// unknown leaves review only through a supplier lookup, never through a person's statement that releases the hold.
+    /// </remarks>
+    public Result<FlightOrderItemStatus, OrderTransitionError> CancelledAtSupplier(Guid itemId, string deskReference, TransitionContext context) =>
+        string.IsNullOrWhiteSpace(deskReference)
+            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(deskReference)))
+            : MismatchedBooking(itemId) is null
+            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference("supplierBooking"))
+            : Transition(itemId, FlightOrderItemStatus.Failed, "Cancelled at the supplier by operations; nothing is booked", context, deskReference,
+                FlightOrderItemStatus.ManualReview);
+
+    /// <summary>
+    /// A staff outcome for an item in review (ADR 0025): the booking seen not as agreed is accepted, because a person
+    /// checked that its travellers and flights are the customer's and its price is not above the agreed one. It is
+    /// confirmed under that supplier reference, and the agreed price is charged, never more.
+    /// </summary>
+    public Result<FlightOrderItemStatus, OrderTransitionError> AcceptAsBooked(Guid itemId, TransitionContext context) =>
+        Find(itemId) is not { } item
+            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId))
+            : item.Status is not FlightOrderItemStatus.ManualReview
+            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, FlightOrderItemStatus.Confirmed))
+            : MismatchedBooking(itemId) is not { } booking
+                ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference("supplierBooking"))
+                : Confirm(itemId, booking.ProviderId, booking.Locator, context);
+
     /// <summary>
     /// Once every item's booking is settled (none booking, pending or in review): the charge for the confirmed items, or,
     /// with none confirmed, the release of the hold. Once per order (null again afterwards, or while anything is

@@ -40,6 +40,22 @@ internal sealed class CustomersDbContext(DbContextOptions<CustomersDbContext> op
     // Personal data (Q9, ADR 0020): kept only here, keyed by internal ids, with no foreign key to other schemas.
     private static void MapPersonalData(ModelBuilder modelBuilder)
     {
+        // ADR 0026: releasing a legal hold is maker-checker; one pending request per order.
+        var release = modelBuilder.Entity<LegalHoldReleaseRequest>();
+        release.ToTable("LegalHoldReleaseRequests", table => table.HasCheckConstraint(
+            "CK_LegalHoldReleaseRequests_Status", "[Status] IN ('Pending','Approved','Rejected')"));
+        release.HasKey(r => r.Id);
+        release.Property(r => r.Id).ValueGeneratedNever();
+        release.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsUnicode(false);
+        release.Property(r => r.RequestedBy).HasMaxLength(64).IsUnicode(false);
+        release.Property(r => r.RequestedByAccount).HasMaxLength(128).IsUnicode(false);
+        release.Property(r => r.Reason).HasMaxLength(AuditReasons.MaxLength);
+        release.Property(r => r.DecidedBy).HasMaxLength(64).IsUnicode(false);
+        release.Property(r => r.DecisionReason).HasMaxLength(AuditReasons.MaxLength);
+        release.Property<byte[]>("RowVersion").IsRowVersion();
+        release.HasIndex(r => r.OrderId).IsUnique().HasFilter("[Status] = 'Pending'").HasDatabaseName("IX_LegalHoldReleaseRequests_OrderId_Pending");
+        release.HasIndex(r => new { r.Status, r.RequestedAt });
+
         var set = modelBuilder.Entity<OrderTravellerSet>();
         set.ToTable("TravellerSets");
         set.HasKey(s => s.OrderId);
@@ -143,11 +159,30 @@ internal sealed class SqlPersonalDataStore(CustomersDbContext db) : IPersonalDat
 
     public async Task<IReadOnlyList<Guid>> FindDueForPurgeAsync(DateOnly today, int limit, CancellationToken cancellationToken) =>
         await db.Set<OrderTravellerSet>().AsNoTracking()
-            .Where(s => !s.LegalHold
+            .Where(s => !s.LegalHold && (s.PurgeNotBefore == null || s.PurgeNotBefore < today)
                 && ((s.AnonymisedAt == null && s.RetainUntil < today)
                     || (s.DocumentsRetainUntil < today && db.Set<TravelDocument>().Any(d => d.OrderId == s.OrderId && d.ShreddedAt == null))))
             .OrderBy(s => s.DocumentsRetainUntil)
             .Select(s => s.OrderId)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+}
+
+internal sealed class SqlLegalHoldReleaseStore(CustomersDbContext db) : ILegalHoldReleaseStore
+{
+    public void Add(LegalHoldReleaseRequest request) => db.Set<LegalHoldReleaseRequest>().Add(request);
+
+    public Task<LegalHoldReleaseRequest?> FindAsync(Guid requestId, CancellationToken cancellationToken) =>
+        db.Set<LegalHoldReleaseRequest>().SingleOrDefaultAsync(r => r.Id == requestId, cancellationToken);
+
+    public Task<LegalHoldReleaseRequest?> FindPendingForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        db.Set<LegalHoldReleaseRequest>().AsNoTracking()
+            .SingleOrDefaultAsync(r => r.OrderId == orderId && r.Status == LegalHoldReleaseStatus.Pending, cancellationToken);
+
+    public async Task<IReadOnlyList<LegalHoldReleaseRequest>> FindPendingAsync(int limit, CancellationToken cancellationToken) =>
+        await db.Set<LegalHoldReleaseRequest>().AsNoTracking()
+            .Where(r => r.Status == LegalHoldReleaseStatus.Pending)
+            .OrderBy(r => r.RequestedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);
 }

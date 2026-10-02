@@ -73,6 +73,15 @@ internal sealed class OrderTravellerSet
     /// <summary>A legal hold (dispute, chargeback, fraud or legal case) suspends anonymisation and shredding.</summary>
     public bool LegalHold { get; private set; }
 
+    /// <summary>
+    /// After an approved release (ADR 0026), the purge waits until after this date: a mistaken release can be undone by placing
+    /// the hold again meanwhile. Null when no release is in its grace period.
+    /// </summary>
+    public DateOnly? PurgeNotBefore { get; private set; }
+
+    /// <summary>Whether retention may be applied today: not held, and past any grace period after a release.</summary>
+    public bool MayPurge(DateOnly today) => !LegalHold && (PurgeNotBefore is null || PurgeNotBefore < today);
+
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public int Revision { get; private set; }
@@ -184,12 +193,15 @@ internal sealed class OrderTravellerSet
     public void PlaceLegalHold(DateTimeOffset at)
     {
         LegalHold = true;
+        PurgeNotBefore = null; // held again: the grace period of an earlier release no longer matters
         Touch(at);
     }
 
-    public void ReleaseLegalHold(DateTimeOffset at)
+    /// <summary>Releases an approved hold (ADR 0026): the purge may apply retention only after the grace period.</summary>
+    public void ReleaseLegalHold(DateTimeOffset at, int graceDays)
     {
         LegalHold = false;
+        PurgeNotBefore = DateOnly.FromDateTime(at.UtcDateTime).AddDays(graceDays);
         Touch(at);
     }
 

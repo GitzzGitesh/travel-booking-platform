@@ -33,6 +33,13 @@ A staff check today can only repeat the supplier lookup. Nothing ends a case, wh
    - **Shown:** the deadline appears on the staff payment page.
 6. **Reconciliation keeps running.** A lookup can still settle a case before a person does, and every outcome rechecks the current state (concurrency by rowversion).
 
+## As built (2026-10-02)
+- **Cancelled at the supplier:** only for a booking seen not as agreed (an item whose outcome is unknown leaves review only through a supplier lookup). The item becomes `Failed`, with the desk reference as the timeline's provider reference and the reason "cancelled at the supplier". There is no separate `Cancelled` state: nothing is booked any more, which is what `Failed` means for the payment. `Cancelled` arrives with refunds (ADR 0027), for confirmed items cancelled later.
+- **Not booked:** already covered by the supplier check (`review-checks`), which fails an item the supplier has no booking for after its window. A person's statement never does.
+- **Accept as booked:** only for an item whose supplier booking was seen not as agreed (`provider:locator` on the timeline). It needs the person's two confirmations (same travellers and flights, price not above the agreed one) and charges the agreed price.
+- **Absorbing a higher price:** not built. The allowance default is none, so such a booking is cancelled at the supplier. The maker-checker path (`bookings.review.approve-loss`) comes if an allowance is ever configured.
+- **Failed capture after a confirmed booking:** stays with the payment review and the hold watch (point 5). Cancelling a confirmed item comes with refunds (ADR 0027).
+
 ## Consequences
 **Positive**
 - Every review case can end, money follows the outcome, and the hold is never forgotten.
