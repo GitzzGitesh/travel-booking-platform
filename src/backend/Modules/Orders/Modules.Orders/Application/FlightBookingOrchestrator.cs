@@ -272,9 +272,15 @@ internal sealed partial class FlightBookingOrchestrator(
         {
             case PaymentSettlement.Capture capture:
                 store.Publish(new OrderPaymentCaptureRequested(Guid.NewGuid(), context.At, order.Id, capture.PaymentId, capture.Amount, context.CorrelationId), context.CorrelationId);
+                // The customer's notice, in the same save as the charge (ADR 0024): exactly once per settlement.
+                store.Publish(new OrderBookingSettled(Guid.NewGuid(), context.At, order.Id,
+                    order.Status is OrderStatus.Confirmed ? BookingOutcome.Confirmed : BookingOutcome.PartiallyConfirmed,
+                    [.. order.Items.Where(i => i.Status is FlightOrderItemStatus.Confirmed && i.SupplierLocator is not null).Select(i => i.SupplierLocator!)],
+                    capture.Amount, context.CorrelationId), context.CorrelationId);
                 break;
             case PaymentSettlement.Release release:
                 PaymentHolds.Publish(store, order.Id, release.PaymentId, "nothing was booked", context);
+                store.Publish(new OrderBookingSettled(Guid.NewGuid(), context.At, order.Id, BookingOutcome.NotBooked, [], null, context.CorrelationId), context.CorrelationId);
                 break;
         }
     }

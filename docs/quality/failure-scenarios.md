@@ -6,17 +6,18 @@ Status: `Planned` → `Covered (link to test)` → `Verified E2E`.
 
 Levels: U = domain/application unit · I = integration (real DB) · A = API · C = concurrency · P = provider contract · E = Playwright E2E.
 
-**Identifiers and count.** This file is the only authoritative source for scenario IDs and the scenario count. It currently holds **42 scenarios in 7 categories**. IDs are numbered in bands of ten per category, so gaps are intentional, and the highest ID (F-62) is not the count:
+**Identifiers and count.** This file is the only authoritative source for scenario IDs and the scenario count. It currently holds **45 scenarios in 8 categories**. IDs are numbered in bands of ten per category, so gaps are intentional, and the highest ID (F-62) is not the count:
 
 | Band | Category | Scenarios |
 |---|---|---|
 | `F-0x` | Pricing and offers | F-01–F-04 (4) |
 | `F-1x` | Supplier booking | F-10–F-17 (8) |
-| `F-2x` | Payments | F-20–F-26 (7) |
+| `F-2x` | Payments | F-20–F-27 (8) |
 | `F-3x` | Duplicates, ordering, and concurrency | F-30–F-38 (9) |
 | `F-4x` | Cancellation and refunds | F-40–F-44 (5) |
 | `F-5x` | Supplier-initiated changes | F-50–F-52 (3) |
 | `F-6x` | Security and personal data | F-60–F-66 (7) |
+| `F-7x` | Customer notices | F-70–F-71 (2) |
 
 Add a new scenario with the next free ID in its category's band, and update this table in the same change. Never renumber or reuse an ID, because tests and PRs reference them. Other documents refer to scenarios by ID and must not restate the count.
 
@@ -50,6 +51,7 @@ Add a new scenario with the next free ID in its category's band, and update this
 | F-24 | Authorization expired before capture | Alert; policy decision (re-authorize or cancel) | U | Partly done (ADR 0021): a hold found lapsed while charging → `ManualReview` with `PaymentCaptureFailed` (U). The re-authorize-or-cancel policy is a business decision still open |
 | F-25 | Process crash between supplier confirm and capture | On restart, the Worker completes capture from outbox/timeline state | I | Done (ADR 0021): the capture request is written to the outbox in the same save as the confirmation, and a booking interrupted before its outcome was saved is looked up after `LookupAfter` (U; I/A: CheckoutBookingTests) |
 | F-26 | Payment attempt stuck in `ManualReview` | Resolved only by a provider lookup (operator path): to what the provider holds, never what someone states; idempotent; operator and reason on the history; a payment the provider no longer finds stays in review | U, A | Done (row 4d2; U: PaymentReviewTests; row 7: the staff endpoint `POST /api/admin/v1/payments/{id}/review-resolutions` with `payments.review.resolve`, audited in the same save; A: AdminOperationsEndpointTests) |
+| F-27 | A payment hold about to lapse while neither captured nor released (e.g. stuck in review) | One `PaymentHoldExpiring` alert, `Payments:Holds:WarningBefore` before the provider's hold lifetime ends; never an automatic capture or release; the staff payment page shows when the hold lapses | U, I | **Done** (ADR 0025): `WatchExpiringHoldsJob`. A review that never showed Authorized is dated from the attempt's start (early, never late). The lifetime is a placeholder until the provider confirms it |
 
 ## Duplicates, ordering, and concurrency
 | ID | Scenario | Expected behaviour | Levels | Status |
@@ -90,3 +92,9 @@ Add a new scenario with the next free ID in its category's band, and update this
 | F-64 | Document encryption key missing, wrong or ciphertext tampered with | Nothing stored without a key (503 `documents-unavailable`); a moved or altered ciphertext never decrypts; a read releases data only after its audit row is saved | U | Done (row 4f; U: PersonalDataTests) |
 | F-65 | Personal data due for purge, of an abandoned order, or under legal hold | Documents shredded after last flight + 30 days, travellers and contact anonymised after + 25 months, idempotently. An abandoned order (never booked, no payment unsettled) has its documents shredded at once and its personal data anonymised 30 days later, from an `OrderAbandoned` event consumed once. A held set is neither purged nor changed until released | U, I | Done (row 4f; U: PersonalDataTests, ExpireUnpaidOrderHandlerTests; I/A: OrderTravellerEndpointTests, including abandonment end to end) |
 | F-66 | Card testing: repeated payment attempts | Attempt limits refuse with a generic message, and the order stays AwaitingPayment. Refusals are recorded once per key, and the refusal stands even if recording fails. Reaching the threshold raises `PaymentAttemptLimitRepeated` once and lists the customer for review, with no automatic block. Per-customer write limit and per-address limit before authentication (429) | U, A | Done (row 4f; U: AuthorizeOrderPaymentHandlerTests; A: OrderTravellerEndpointTests rate limits). The checkout endpoint limit applies when checkout is exposed |
+
+## Customer notices
+| ID | Scenario | Expected behaviour | Levels | Status |
+|---|---|---|---|---|
+| F-70 | The email provider times out, throttles or is down | The notice is retried with backoff (at least once: a duplicate is acceptable, a lost confirmation is not); after 10 attempts it is Failed with the `NotificationFailed` alert; a send interrupted by a crash is retried after the timeout; with no provider configured, notices wait | U, I | **Done** (ADR 0024): recording sender scenarios, domain tests for backoff, the timeout and exhaustion |
+| F-71 | A booking event delivered twice, or a notice for an order whose personal data is gone | One notice per event and kind (unique constraint); no contact any more → Suppressed, nothing sent | I | **Done** (ADR 0024) |

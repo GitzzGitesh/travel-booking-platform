@@ -165,7 +165,25 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **Staff access** (`access.grants.read`): roles held (with their source), requests waiting for a decision (**Approve** / **Reject**, `access.grants.approve`), and **Request a change** (`access.grants.request`; a lowercase GUID and a known role). The server's maker-checker refusals are explained on the page.
 - **Every action** takes a ticket reference, checked against the server's rule before sending; one action at a time, so a double click is one request. Navigation and routes follow the permissions; the server checks every call.
 - **Tests:** Vitest for the order, payment and access pages (actions, refusals, permissions); Playwright with axe for the payment review list and staff access, including a self-approval refused in the UI. E2E now also applies the Payments migrations.
-- **Next:** with the staff tenant, sign-in against it; hotels, refunds and notifications wait on their decisions (Q1 for hotels, Q11, an email provider). |
+- **Next:** row 11. |
+| 11 | **Decisions (2026-10-02, delegated authority) and Batch A: customer notices and payment hold deadlines** | **Done; the email provider is external.**
+- **Decisions:** ADR 0024 (notifications, ACS Email as the provider), ADR 0025 (resolving bookings in review, Q15), ADR 0026 (legal-hold release maker-checker, Q16), ADR 0027 (refunds and cancellations, Q11). Each records what is pending legal or provider confirmation.
+- **Notifications module** (`Modules.Notifications`, schema `notifications`, migration `InitialNotifications`; Worker only):
+  - Orders publishes `OrderBookingSettled` in the same save as the payment settlement (capture or release). Its outcome is Confirmed, PartiallyConfirmed or NotBooked, with the booked references and the amount charged; no personal data.
+  - A notice is recorded once per event and kind (unique constraint).
+  - The `notifications.send` job sends at least once: saved as Sending first, unknown outcomes retried with backoff, and `NotificationFailed` after 10 attempts.
+  - The recipient is read from Customers (`IOrderContacts`) when sending and never stored. An anonymised order is suppressed.
+  - Typed HTML and text templates, English first.
+  - The `IEmailSender` port has a deterministic recording sender for Development and Staging. With no provider configured, notices wait safely (`NotificationProviderMissing`).
+- **Payment hold deadlines:** `AuthorizedAt` (backfilled from each attempt's history) and `HoldWarningRaisedAt` (migration `AddPaymentHoldDeadlines`).
+  - The `payments.watch-expiring-holds` job raises `PaymentHoldExpiring` once per held attempt, `Payments:Holds:WarningBefore` (48 hours) before `Lifetime` (7 days; a placeholder until the provider confirms it).
+  - The staff payment API and page show "Hold lapses" (additive `authorizedAt`, `holdExpiresAt`).
+- **Runbook:** `customer-notices-and-hold-deadlines.md`.
+- **Next:** Batch B, the ADR 0025 review outcomes and the ADR 0026 legal-hold release maker-checker.
+- **Blocked externally:**
+  - the ACS Email resource, its sending limits, and the sending domain's DNS (SPF, DKIM, DMARC);
+  - the support reply-to address (Q12);
+  - the real hold lifetime (payment provider). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

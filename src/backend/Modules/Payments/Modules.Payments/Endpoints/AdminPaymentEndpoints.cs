@@ -25,9 +25,10 @@ public sealed class PaymentReviewResolutionRequest
 /// </summary>
 internal static class AdminPaymentEndpoints
 {
-    public static async Task<Results<Ok<AdminPaymentAttempt>, ProblemHttpResult>> Get(Guid attemptId, IPaymentAttemptStore store, CancellationToken cancellationToken) =>
+    public static async Task<Results<Ok<AdminPaymentAttempt>, ProblemHttpResult>> Get(
+        Guid attemptId, IPaymentAttemptStore store, Microsoft.Extensions.Options.IOptions<PaymentHoldOptions> holds, CancellationToken cancellationToken) =>
         await store.FindAsync(attemptId, cancellationToken) is { } attempt
-            ? TypedResults.Ok(AdminPaymentAttempt.From(attempt))
+            ? TypedResults.Ok(AdminPaymentAttempt.From(attempt, holds.Value))
             : TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, type: "payment-not-found", title: "This payment attempt was not found.");
 
     // The attempt is looked up with the provider by our reference and moves only to what the provider holds.
@@ -63,9 +64,10 @@ internal sealed record AttemptLimitReviewEntry(string CustomerId, int Refusals);
 
 internal sealed record AdminPaymentAttempt(
     Guid AttemptId, Guid OrderId, string CustomerId, string Status, AdminAmount Amount, string? ProviderId, string? ProviderPaymentId, string? DeclineReason,
-    DateTimeOffset CreatedAt, DateTimeOffset? ReleaseRequestedAt, DateTimeOffset? CaptureRequestedAt, AdminAmount? CaptureAmount, IReadOnlyList<AdminPaymentEvent> History)
+    DateTimeOffset CreatedAt, DateTimeOffset? ReleaseRequestedAt, DateTimeOffset? CaptureRequestedAt, AdminAmount? CaptureAmount, IReadOnlyList<AdminPaymentEvent> History,
+    DateTimeOffset? AuthorizedAt, DateTimeOffset? HoldExpiresAt)
 {
-    public static AdminPaymentAttempt From(PaymentAttempt attempt) => new(
+    public static AdminPaymentAttempt From(PaymentAttempt attempt, PaymentHoldOptions holds) => new(
         attempt.Id,
         attempt.OrderId,
         attempt.CustomerId,
@@ -78,7 +80,9 @@ internal sealed record AdminPaymentAttempt(
         attempt.ReleaseRequestedAt,
         attempt.CaptureRequestedAt,
         attempt.CaptureAmount is { } capture ? AdminAmount.From(capture) : null,
-        [.. attempt.Events.OrderBy(e => e.At).ThenBy(e => e.Id).Select(e => new AdminPaymentEvent(e.At, e.Actor, e.FromStatus, e.ToStatus, e.Reason, e.CorrelationId, e.ProviderReference))]);
+        [.. attempt.Events.OrderBy(e => e.At).ThenBy(e => e.Id).Select(e => new AdminPaymentEvent(e.At, e.Actor, e.FromStatus, e.ToStatus, e.Reason, e.CorrelationId, e.ProviderReference))],
+        attempt.AuthorizedAt,
+        attempt.MayHoldFunds ? holds.ExpiresAt(attempt) : null); // only while funds may be held: the deadline to settle by
 }
 
 internal sealed record AdminAmount(string Amount, string Currency)

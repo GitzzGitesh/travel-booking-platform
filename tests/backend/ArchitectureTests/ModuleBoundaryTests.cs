@@ -108,6 +108,14 @@ public sealed class ModuleBoundaryTests
             .Because("travellers' personal data leaves the Customers module only for the supplier booking")
             .Check(_architecture);
 
+    // The booker's email leaves Customers only for customer notices, read at sending time (ADR 0024).
+    [Fact]
+    public void Only_notifications_reads_order_contacts() =>
+        Types().That().DoNotResideInNamespaceMatching(@"^TravelBooking\.Modules\.(Notifications|Customers)(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().HaveFullName("TravelBooking.Modules.Customers.Contracts.IOrderContacts"))
+            .Because("the booker's contact leaves the Customers module only for customer notices")
+            .Check(_architecture);
+
     // BuildingBlocks carries EF Core and ASP.NET Core for the outbox, inbox and leases (ADR 0007): keep them out of the
     // supplier adapters and the module Contracts that reference it (architecture review, background batch).
     [Fact]

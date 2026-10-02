@@ -52,6 +52,7 @@ public static class CustomersModule
         services.AddScoped<OrderTravellersQuery>();
         services.AddScoped<SaveTravelDocumentHandler>();
         services.AddScoped<IOrderTravellers, OrderTravellersReadinessQuery>();
+        services.AddScoped<IOrderContacts, OrderContactsQuery>();
         services.AddScoped<TravelDocumentReader>();
         services.AddScoped<LegalHoldHandler>();
         services.AddScoped<PersonalDataPurger>();

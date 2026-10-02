@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MsSql;
@@ -12,6 +13,7 @@ using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Customers;
 using TravelBooking.Modules.Customers.Infrastructure;
 using TravelBooking.Modules.Flights.Infrastructure;
+using TravelBooking.Modules.Notifications;
 using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Orders.Infrastructure;
 using TravelBooking.Modules.Payments;
@@ -35,6 +37,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<CustomersDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Access.Infrastructure.AccessDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Notifications.Infrastructure.NotificationsDbContext>().Database.MigrateAsync();
     }
 
     public new async ValueTask DisposeAsync()
@@ -56,6 +59,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         builder.UseSetting("ConnectionStrings:Payments", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Customers", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Access", _sql.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:Notifications", _sql.GetConnectionString());
 
         // Staff roles for the admin tests: one operations account; any other staff account holds none (ADR 0022).
         builder.UseSetting("Access:RoleAssignments:0:ObjectId", TestStaffTokens.Operations);
@@ -83,6 +87,12 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.AddOrdersBackgroundJobs();
             services.AddPaymentsBackgroundJobs();
             services.AddCustomersBackgroundJobs();
+
+            // The Worker's notices (ADR 0024), with the recording sender: the Api host itself never sends email.
+            services.AddNotificationsModule(new ConfigurationBuilder().AddInMemoryCollection(
+                [new KeyValuePair<string, string?>("ConnectionStrings:Notifications", _sql.GetConnectionString())]).Build());
+            services.AddNotificationsBackgroundJobs();
+            services.AddRecordingEmailSender();
             services.AddSingleton<BackgroundJobRunner>();
 
             // Customer tokens signed by the tests' own key (no identity-provider tenant exists yet, ADR 0008).
