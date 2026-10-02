@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TravelBooking.BuildingBlocks.Background;
@@ -13,14 +14,17 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
     // SQL Server duplicate-key errors: unique index (2601) and unique constraint (2627).
     private static readonly int[] _uniqueViolations = [2601, 2627];
 
+    /// <summary>Loads tried before giving up when the order keeps changing underneath (see <see cref="LoadAsync"/>).</summary>
+    internal const int MaxLoadAttempts = 5;
+
     public Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken) =>
-        Load().SingleOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+        LoadAsync(o => o.Id == orderId, tracked: true, cancellationToken);
 
     public Task<Order?> FindOwnedAsync(Guid orderId, string customerId, CancellationToken cancellationToken) =>
-        Load().SingleOrDefaultAsync(o => o.Id == orderId && o.CustomerId == customerId, cancellationToken);
+        LoadAsync(o => o.Id == orderId && o.CustomerId == customerId, tracked: true, cancellationToken);
 
     public Task<Order?> FindByIdempotencyKeyAsync(string customerId, string idempotencyKey, CancellationToken cancellationToken) =>
-        Load().AsNoTracking().SingleOrDefaultAsync(o => o.CustomerId == customerId && o.IdempotencyKey == idempotencyKey, cancellationToken);
+        LoadAsync(o => o.CustomerId == customerId && o.IdempotencyKey == idempotencyKey, tracked: false, cancellationToken);
 
     public async Task<Guid?> FindOrderIdBySelectedOfferAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
         await db.Orders.AsNoTracking()
@@ -102,5 +106,46 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
 
     public void Audit(BuildingBlocks.Audit.AuditEntry entry) => db.Set<BuildingBlocks.Audit.AuditEntry>().Add(entry);
 
-    private IQueryable<Order> Load() => db.Orders.Include(o => o.Items).Include(o => o.Timeline).AsSplitQuery();
+    // The order, its items and its timeline are read by separate queries (split query). A change committed between them
+    // would give a torn aggregate: for instance items already in Booking on an order without its payment authorization,
+    // which a duplicate checkout then refuses as not payable. Every change rewrites the order row (Order.Revision), so a
+    // load counts only when the order's rowversion is the same before and after it; otherwise it is repeated. A commit
+    // after that is caught by the rowversion check when saving.
+    private async Task<Order?> LoadAsync(Expression<Func<Order, bool>> predicate, bool tracked, CancellationToken cancellationToken)
+    {
+        // A repeated tracked load clears the unit of work, so it must not hold anything unsaved (IOrderStore remarks).
+        if (tracked && db.ChangeTracker.HasChanges())
+        {
+            throw new InvalidOperationException("Load the order before changing anything in this unit of work.");
+        }
+
+        for (var attempt = 1; ; attempt++)
+        {
+            if (await db.Orders.AsNoTracking().Where(predicate).Select(o => new { o.Id, RowVersion = EF.Property<byte[]>(o, "RowVersion") })
+                    .SingleOrDefaultAsync(cancellationToken) is not { } before)
+            {
+                return null;
+            }
+
+            var query = db.Orders.Where(predicate).Include(o => o.Items).Include(o => o.Timeline).AsSplitQuery();
+            var order = await (tracked ? query : query.AsNoTracking()).SingleOrDefaultAsync(cancellationToken);
+            if (order is not null && await RowVersion(order.Id, cancellationToken) is { } after && after.AsSpan().SequenceEqual(before.RowVersion))
+            {
+                return order;
+            }
+
+            if (tracked)
+            {
+                db.ChangeTracker.Clear();
+            }
+
+            if (attempt == MaxLoadAttempts)
+            {
+                throw new OrderKeptChangingException(before.Id);
+            }
+        }
+    }
+
+    private Task<byte[]?> RowVersion(Guid orderId, CancellationToken cancellationToken) =>
+        db.Orders.AsNoTracking().Where(o => o.Id == orderId).Select(o => EF.Property<byte[]?>(o, "RowVersion")).SingleOrDefaultAsync(cancellationToken);
 }

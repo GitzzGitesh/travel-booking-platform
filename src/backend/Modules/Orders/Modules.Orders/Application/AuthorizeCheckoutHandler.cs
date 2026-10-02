@@ -169,6 +169,20 @@ internal sealed class AuthorizeCheckoutHandler(
 
     public async Task<Result<CheckoutResult, CheckoutFailure>> HandleAsync(AuthorizeCheckout command, CancellationToken cancellationToken)
     {
+        try
+        {
+            return await CheckoutAsync(command, cancellationToken);
+        }
+        catch (OrderKeptChangingException)
+        {
+            // The order could not be read consistently, and nothing was changed by this request after that point (the
+            // booking path below answers for itself): the customer tries again with the same key.
+            return Failure(new CheckoutFailure.TryAgain());
+        }
+    }
+
+    private async Task<Result<CheckoutResult, CheckoutFailure>> CheckoutAsync(AuthorizeCheckout command, CancellationToken cancellationToken)
+    {
         if (!Order.IsValidCustomerId(command.CustomerId) || string.IsNullOrWhiteSpace(command.IdempotencyKey) || string.IsNullOrWhiteSpace(command.PaymentMethodToken))
         {
             return Failure(new CheckoutFailure.InvalidRequest());
@@ -324,7 +338,16 @@ internal sealed class AuthorizeCheckoutHandler(
             // This request moved the order to Booking, so it (and only it) books: authorize → book → capture. From here the
             // request's abort token no longer applies: a customer closing the page must not cut the supplier write or the
             // save of its outcome (the supplier calls have their own timeouts).
-            return Success(Booking(await booking.BookAsync(order, context, CancellationToken.None), payment.PaymentId));
+            try
+            {
+                return Success(Booking(await booking.BookAsync(order, context, CancellationToken.None), payment.PaymentId));
+            }
+            catch (OrderKeptChangingException)
+            {
+                // Booking started and was saved (its authorization is stored), but its outcome could not be read back:
+                // pending is true, and reconciliation settles it by lookup (never books again).
+                return Success(new CheckoutResult(order.Id, CheckoutStatus.BookingPending, payment.PaymentId));
+            }
         }
 
         // Another request changed the order first. The payment is idempotent by key, so repeating this request converges;
