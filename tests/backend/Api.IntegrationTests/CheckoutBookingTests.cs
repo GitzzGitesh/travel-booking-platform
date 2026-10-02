@@ -187,7 +187,9 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         email.To.ShouldStartWith("booker-");
         email.TextBody.ShouldContain(stored.Items[0].SupplierLocator!);
         email.TextBody.ShouldContain($"Charged: {stored.Items[0].AgreedPrice.Amount} {stored.Items[0].AgreedPrice.Currency.Value}");
-        email.HtmlBody.ShouldNotContain("Ada"); // the travellers' names are not in the notice
+        // The travellers' names are not in the notice (the surname, matched exactly: a GUID can contain "ada").
+        email.HtmlBody.ShouldNotContain("Lovelace", Case.Sensitive);
+        email.TextBody.ShouldNotContain("Lovelace", Case.Sensitive);
         var notice = await NoticeFor(order);
         (notice.Kind, notice.Status, notice.Attempts).ShouldBe((NoticeTemplates.BookingConfirmed, NotificationStatus.Accepted, 1));
         notice.Values.ShouldNotContain("@"); // no address stored in the notifications schema
