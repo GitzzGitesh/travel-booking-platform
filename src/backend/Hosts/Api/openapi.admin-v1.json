@@ -1066,7 +1066,9 @@
           "releaseRequestedAt",
           "captureRequestedAt",
           "captureAmount",
-          "history"
+          "history",
+          "authorizedAt",
+          "holdExpiresAt"
         ],
         "type": "object",
         "properties": {
@@ -1138,6 +1140,20 @@
             "items": {
               "$ref": "#/components/schemas/AdminPaymentEvent"
             }
+          },
+          "authorizedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "holdExpiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },

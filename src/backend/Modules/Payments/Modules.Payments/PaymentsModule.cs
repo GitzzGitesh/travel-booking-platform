@@ -33,6 +33,10 @@ public static class PaymentsModule
             .Bind(configuration.GetSection(PaymentAttemptLimits.SectionName))
             .Validate(options => options.MaxAttemptsPerOrder > 0 && options.MaxAttemptsPerCustomerPerDay > 0 && options.AlertAfterTrips > 0, "Payments:AttemptLimits values must be positive.")
             .ValidateOnStart();
+        services.AddOptions<PaymentHoldOptions>()
+            .Bind(configuration.GetSection(PaymentHoldOptions.SectionName))
+            .Validate(options => options.IsValid(), "Payments:Holds needs 0 < WarningBefore < Lifetime.")
+            .ValidateOnStart();
         services.AddOptions<PaymentReconciliationOptions>()
             .Bind(configuration.GetSection(PaymentReconciliationOptions.SectionName))
             .Validate(options => options.NotFoundConclusiveAfter >= TimeSpan.Zero, "Payments:Reconciliation:NotFoundConclusiveAfter must not be negative.")
@@ -134,6 +138,7 @@ public static class PaymentsModule
         services.AddIntegrationEventHandler<OrderPaymentReleaseRequested, OrderPaymentReleaseRequestedHandler>();
         services.AddIntegrationEventHandler<OrderPaymentCaptureRequested, OrderPaymentCaptureRequestedHandler>();
         services.AddBackgroundJob<ProcessPaymentNotificationsJob, PaymentsDbContext>(ProcessPaymentNotificationsJob.Name, TimeSpan.FromSeconds(10));
+        services.AddBackgroundJob<WatchExpiringHoldsJob, PaymentsDbContext>(WatchExpiringHoldsJob.Name, TimeSpan.FromMinutes(15));
         return services;
     }
 }

@@ -97,6 +97,11 @@ internal sealed class FakeStore : IPaymentAttemptStore
     public Task<PaymentAttempt?> FindLiveByOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
         Task.FromResult(Attempts.SingleOrDefault(a => a.OrderId == orderId && PaymentAttempt.LiveStatuses.Contains(a.Status)));
 
+    public Task<IReadOnlyList<Guid>> FindHoldsToWarnAsync(DateTimeOffset authorizedBefore, int limit, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Guid>>([.. Attempts
+            .Where(a => a.MayHoldFunds && a.HoldStartedAt <= authorizedBefore && a.HoldWarningRaisedAt is null)
+            .OrderBy(a => a.HoldStartedAt).Select(a => a.Id).Take(limit)]);
+
     public Task<IReadOnlyList<Guid>> FindReconcilableAsync(DateTimeOffset settledBefore, int limit, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<Guid>>([.. Attempts
             .Where(a => (a.Status is PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.AuthorizationUnknown or PaymentAttemptStatus.ActionRequired

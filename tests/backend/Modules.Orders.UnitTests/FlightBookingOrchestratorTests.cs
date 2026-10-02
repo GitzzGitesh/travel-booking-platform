@@ -44,7 +44,7 @@ public sealed class FlightBookingOrchestratorTests
         _order.Items[0].SupplierLocator.ShouldBe("LOC123");
         _bookings.Booked.ShouldBeEmpty();
         _bookings.LookedUp.ShouldBe([ItemId.ToString()]);
-        var capture = _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentCaptureRequested>();
+        var capture = _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
         (capture.PaymentId, capture.Amount).ShouldBe((_paymentId, OrderTests.Price));
     }
 
@@ -71,7 +71,7 @@ public sealed class FlightBookingOrchestratorTests
         await Reconcile();
 
         _order.Status.ShouldBe(OrderStatus.Failed);
-        _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>().PaymentId.ShouldBe(_paymentId);
+        _store.Published.OfType<OrderPaymentReleaseRequested>().ShouldHaveSingleItem().PaymentId.ShouldBe(_paymentId);
         _bookings.Booked.ShouldBeEmpty();
     }
 
@@ -113,7 +113,7 @@ public sealed class FlightBookingOrchestratorTests
 
         _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.Confirmed);
         _bookings.Booked.ShouldBeEmpty();
-        _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentCaptureRequested>();
+        _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class FlightBookingOrchestratorTests
 
         _bookings.Booked.ShouldBeEmpty();
         _order.Status.ShouldBe(OrderStatus.Failed);
-        _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>();
+        _store.Published.OfType<OrderPaymentReleaseRequested>().ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -159,7 +159,8 @@ public sealed class FlightBookingOrchestratorTests
         (await CheckReview()).ShouldBe(FlightOrderItemStatus.Confirmed);
 
         _order.Items[0].Ticketing.ShouldBe(TicketingStatus.Issued);
-        _store.Pending.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentCaptureRequested>();
+        _store.Pending.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
+        _store.Pending.OfType<OrderBookingSettled>().ShouldHaveSingleItem().Outcome.ShouldBe(BookingOutcome.Confirmed);
         _bookings.Booked.ShouldBeEmpty();
     }
 

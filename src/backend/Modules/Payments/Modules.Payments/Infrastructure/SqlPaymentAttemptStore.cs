@@ -11,6 +11,8 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
     // SQL Server duplicate-key errors: unique index (2601) and unique constraint (2627).
     private static readonly int[] _uniqueViolations = [2601, 2627];
 
+    private static readonly PaymentAttemptStatus[] _holdingStatuses = PaymentAttempt.HoldingStatuses;
+
     private static readonly PaymentAttemptStatus[] _lookupStatuses =
     [
         PaymentAttemptStatus.Authorizing, PaymentAttemptStatus.AuthorizationUnknown, PaymentAttemptStatus.ActionRequired,
@@ -61,6 +63,14 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
             .Where(a => (_lookupStatuses.Contains(a.Status) && a.UpdatedAt <= settledBefore)
                 || (a.Status == PaymentAttemptStatus.Authorized && (a.ReleaseRequestedAt != null || a.CaptureRequestedAt != null)))
             .OrderBy(a => a.UpdatedAt)
+            .Select(a => a.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Guid>> FindHoldsToWarnAsync(DateTimeOffset authorizedBefore, int limit, CancellationToken cancellationToken) =>
+        await db.PaymentAttempts.AsNoTracking()
+            .Where(a => _holdingStatuses.Contains(a.Status) && a.HoldWarningRaisedAt == null && (a.AuthorizedAt ?? a.CreatedAt) <= authorizedBefore)
+            .OrderBy(a => a.AuthorizedAt ?? a.CreatedAt)
             .Select(a => a.Id)
             .Take(limit)
             .ToListAsync(cancellationToken);

@@ -32,6 +32,9 @@
     <Project Path="src/backend/Modules/Customers/Modules.Customers/Modules.Customers.csproj" />
     <Project Path="src/backend/Modules/Customers/Modules.Customers.Contracts/Modules.Customers.Contracts.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Notifications/">
+    <Project Path="src/backend/Modules/Notifications/Modules.Notifications/Modules.Notifications.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Orders/">
     <Project Path="src/backend/Modules/Orders/Modules.Orders/Modules.Orders.csproj" />
     <Project Path="src/backend/Modules/Orders/Modules.Orders.Contracts/Modules.Orders.Contracts.csproj" />

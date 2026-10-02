@@ -69,6 +69,13 @@ import { StaffSession } from '../staff-session';
           <dt>Decline reason</dt>
           <dd>{{ attempt.declineReason }}</dd>
         }
+        @if (attempt.holdExpiresAt) {
+          <dt>Hold lapses (UTC)</dt>
+          <dd>
+            {{ attempt.holdExpiresAt | date: 'yyyy-MM-dd HH:mm' : 'UTC' }}: capture, release or
+            resolve it before then
+          </dd>
+        }
         <dt>Created (UTC)</dt>
         <dd>{{ attempt.createdAt | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</dd>
       </dl>

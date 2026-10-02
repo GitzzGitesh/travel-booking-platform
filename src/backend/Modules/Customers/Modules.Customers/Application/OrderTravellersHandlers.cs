@@ -271,3 +271,10 @@ internal sealed class TravelDocumentReader(IPersonalDataStore store, IDocumentPr
             : Result<TravelDocumentDetails, TravellersFailure>.Failure(TravellersFailure.Conflict);
     }
 }
+
+/// <summary>The booker email for an order's customer notices (ADR 0024); nothing once anonymised.</summary>
+internal sealed class OrderContactsQuery(IPersonalDataStore store) : IOrderContacts
+{
+    public async Task<OrderContact?> FindForNoticeAsync(Guid orderId, CancellationToken cancellationToken) =>
+        await store.FindSetAsync(orderId, cancellationToken) is { AnonymisedAt: null, ContactEmail: { Length: > 0 } email } ? new OrderContact(email) : null;
+}

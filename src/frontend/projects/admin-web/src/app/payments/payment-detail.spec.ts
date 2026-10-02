@@ -17,6 +17,8 @@ const attempt = (status: string) => ({
   providerPaymentId: 'pi_1',
   declineReason: null,
   createdAt: '2026-10-01T08:30:00+00:00',
+  authorizedAt: '2026-10-01T08:31:00+00:00',
+  holdExpiresAt: status === 'ManualReview' ? '2026-10-08T08:31:00+00:00' : null,
   history: [
     {
       at: '2026-10-01T08:31:00+00:00',
@@ -50,6 +52,7 @@ describe('PaymentDetail', () => {
   it('settles a payment in review only by asking the provider, and shows the history', async () => {
     const { fixture, element } = await render(['payments.read', 'payments.review.resolve']);
     expect(element.querySelector('tbody')?.textContent).toContain('outcome unknown');
+    expect(element.textContent).toContain('2026-10-08 08:31'); // the hold deadline (ADR 0025)
 
     fillAndSubmit(
       element.querySelector('#payment-review')!.closest('section')!.querySelector('form')!,

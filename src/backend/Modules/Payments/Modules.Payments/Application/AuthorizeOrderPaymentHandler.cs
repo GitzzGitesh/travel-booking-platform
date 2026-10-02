@@ -38,6 +38,9 @@ internal interface IPaymentAttemptStore
     /// </summary>
     Task<IReadOnlyList<Guid>> FindReconcilableAsync(DateTimeOffset settledBefore, int limit, CancellationToken cancellationToken);
 
+    /// <summary>Attempts that may still hold funds, authorized before <paramref name="authorizedBefore"/>, not yet warned about (ADR 0025).</summary>
+    Task<IReadOnlyList<Guid>> FindHoldsToWarnAsync(DateTimeOffset authorizedBefore, int limit, CancellationToken cancellationToken);
+
     /// <summary>How many attempts this order has had, whatever their outcome.</summary>
     Task<int> CountForOrderAsync(Guid orderId, CancellationToken cancellationToken);
 

@@ -9,7 +9,12 @@ using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Integrations.Flights.Mock;
 using TravelBooking.Integrations.Payments.Mock;
+using TravelBooking.Modules.Notifications.Application;
+using TravelBooking.Modules.Notifications.Domain;
+using TravelBooking.Modules.Notifications.Infrastructure;
+using TravelBooking.Modules.Notifications.Ports;
 using TravelBooking.Modules.Orders.Application;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 using TravelBooking.Modules.Orders.Infrastructure;
 using TravelBooking.Modules.Payments.Application;
@@ -162,6 +167,88 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         }
     }
 
+    // ADR 0024: the customer is told the outcome once, by email, from the settled order: the booking reference and the
+    // amount charged, sent through the outbox and the Worker; repeating the jobs never sends it again.
+    [Fact]
+    public async Task A_confirmed_booking_sends_one_confirmation_with_its_reference_and_charge()
+    {
+        var token = Token();
+        var order = await ReadyOrder(token, email: $"booker-{Guid.NewGuid():N}@example.com");
+        (await Checkout(token, order, NewKey())).Dispose();
+
+        await Run("orders.outbox");
+        await Run("orders.outbox");
+        await Run(SendNotificationsJob.Name);
+        await Run(SendNotificationsJob.Name);
+
+        var stored = await LoadOrder(order);
+        var email = EmailsAbout(order).ShouldHaveSingleItem();
+        email.Subject.ShouldBe("Your booking is confirmed");
+        email.To.ShouldStartWith("booker-");
+        email.TextBody.ShouldContain(stored.Items[0].SupplierLocator!);
+        email.TextBody.ShouldContain($"Charged: {stored.Items[0].AgreedPrice.Amount} {stored.Items[0].AgreedPrice.Currency.Value}");
+        email.HtmlBody.ShouldNotContain("Ada"); // the travellers' names are not in the notice
+        var notice = await NoticeFor(order);
+        (notice.Kind, notice.Status, notice.Attempts).ShouldBe((NoticeTemplates.BookingConfirmed, NotificationStatus.Accepted, 1));
+        notice.Values.ShouldNotContain("@"); // no address stored in the notifications schema
+    }
+
+    [Fact]
+    public async Task A_failed_booking_tells_the_customer_nothing_was_charged()
+    {
+        var token = Token();
+        var order = await ReadyOrder(token, MockBookingScenarios.RejectedFamilyName);
+        (await Checkout(token, order, NewKey())).Dispose();
+
+        await Run("orders.outbox");
+        await Run(SendNotificationsJob.Name);
+
+        var email = EmailsAbout(order).ShouldHaveSingleItem();
+        email.Subject.ShouldBe("We could not complete your booking");
+        email.TextBody.ShouldContain("Charged: Nothing");
+    }
+
+    // At least once, never twice (ADR 0024): a redelivered event finds the unique (event, kind) record and adds nothing; an
+    // order with no contact any more (anonymised, or never given) is suppressed, and nothing is sent anywhere.
+    [Fact]
+    public async Task A_redelivered_event_records_one_notice_and_an_order_without_a_contact_is_suppressed()
+    {
+        var orderId = Guid.NewGuid(); // no travellers or contact were ever stored for it
+        var settled = new OrderBookingSettled(Guid.NewGuid(), api.Clock.GetUtcNow(), orderId, BookingOutcome.NotBooked, [], null, "trace-1");
+        foreach (var _ in new[] { 1, 2 })
+        {
+            using var scope = api.Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IIntegrationEventHandler<OrderBookingSettled>>().HandleAsync(settled, Ct);
+        }
+
+        await Run(SendNotificationsJob.Name);
+
+        var notice = await NoticeFor(orderId);
+        (notice.Status, notice.LastError, notice.Attempts).ShouldBe((NotificationStatus.Suppressed, "no-contact", 0));
+        EmailsAbout(orderId).ShouldBeEmpty();
+    }
+
+    // The provider's answer decides: unknown → sent again later (backoff), refused → failed for good, a suppressed address →
+    // suppressed.
+    [Theory]
+    [InlineData(RecordingEmailSender.UnknownDomain, "Pending")]
+    [InlineData(RecordingEmailSender.RejectedDomain, "Failed")]
+    [InlineData(RecordingEmailSender.SuppressedDomain, "Suppressed")]
+    public async Task The_providers_answer_decides_what_happens_to_a_notice(string domain, string expected)
+    {
+        var token = Token();
+        var order = await ReadyOrder(token, email: $"booker@{domain}");
+        (await Checkout(token, order, NewKey())).Dispose();
+
+        await Run("orders.outbox");
+        await Run(SendNotificationsJob.Name);
+        await Run(SendNotificationsJob.Name); // a retry is not due yet
+
+        var notice = await NoticeFor(order);
+        (notice.Status.ToString(), notice.Attempts).ShouldBe((expected, 1));
+        EmailsAbout(order).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task A_supplier_refusal_charges_nothing_and_releases_the_hold()
     {
@@ -293,7 +380,7 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
     private static string NewKey() => $"pay-{Guid.NewGuid():N}";
 
     // Search, select, revalidate, order, and give one adult traveller with the contact: ready to pay.
-    private async Task<Guid> ReadyOrder(string token, string surname = "Lovelace")
+    private async Task<Guid> ReadyOrder(string token, string surname = "Lovelace", string email = "ada@example.com")
     {
         using var client = api.CreateClient();
         var departure = DateOnly.FromDateTime(api.Clock.GetUtcNow().UtcDateTime).AddDays(30).ToString("yyyy-MM-dd");
@@ -313,7 +400,7 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
 
         using var travellers = await Send(HttpMethod.Put, $"/api/v1/orders/{orderId}/travellers", token, new
         {
-            contact = new { email = "ada@example.com", phone = "+447700900123" },
+            contact = new { email, phone = "+447700900123" },
             travellers = new[] { new { type = "Adult", givenNames = "Ada", surname, dateOfBirth = "1990-12-10", gender = "Female" } },
         });
         travellers.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -335,6 +422,15 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
 
         return await client.SendAsync(request, Ct);
     }
+
+    private async Task<Notification> NoticeFor(Guid orderId)
+    {
+        using var scope = api.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().Notifications.AsNoTracking().SingleAsync(n => n.OrderId == orderId, Ct);
+    }
+
+    private IReadOnlyList<EmailMessage> EmailsAbout(Guid orderId) =>
+        [.. api.Services.GetRequiredService<RecordingEmailSender>().Sent.Where(m => m.TextBody.Contains(orderId.ToString(), StringComparison.Ordinal))];
 
     private async Task Run(string job)
     {

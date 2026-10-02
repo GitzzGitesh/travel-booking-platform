@@ -39,8 +39,12 @@ public sealed class AuthorizeCheckoutHandlerTests
         (_order.Items[0].Status, _order.Items[0].SupplierLocator, _order.Items[0].Ticketing).ShouldBe((FlightOrderItemStatus.Confirmed, "LOC123", TicketingStatus.Issued));
         var booked = _bookings.Booked.ShouldHaveSingleItem();
         (booked.ClientReference, booked.AgreedPrice, booked.Passengers.Count).ShouldBe((_order.Items[0].Id.ToString(), OrderTests.Price, 1));
-        var capture = _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentCaptureRequested>();
+        var capture = _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
         (capture.PaymentId, capture.Amount).ShouldBe((_payments.PaymentId, OrderTests.Price));
+        // The customer's notice, in the same save as the charge (ADR 0024): what was booked and charged, no personal data.
+        var settled = _store.Published.OfType<OrderBookingSettled>().ShouldHaveSingleItem();
+        (settled.OrderId, settled.Outcome, settled.Charged).ShouldBe((_order.Id, BookingOutcome.Confirmed, OrderTests.Price));
+        settled.BookingReferences.ShouldBe(["LOC123"]);
         _order.PaymentAuthorizationId.ShouldBe(_payments.PaymentId.ToString());
         _order.Timeline[^1].ProviderReference.ShouldBe(_payments.PaymentId.ToString());
         _selections.Revalidated.ShouldBe([_order.Items[0].SelectedOfferId]);
@@ -195,7 +199,7 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         _order.Timeline.Count.ShouldBe(entries);
         _order.PaymentAuthorizationId.ShouldBeNull();
-        var release = _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>(); // F-22: one release request
+        var release = _store.Published.OfType<OrderPaymentReleaseRequested>().ShouldHaveSingleItem(); // F-22: one release request
         (release.OrderId, release.PaymentId).ShouldBe((_order.Id, _payments.PaymentId));
     }
 
@@ -366,7 +370,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         result.Error.ShouldBe(new CheckoutFailure.AuthorizedButNotBookable(_payments.PaymentId));
         _order.Status.ShouldBe(OrderStatus.AwaitingPayment);
         _order.PaymentAuthorizationId.ShouldBeNull();
-        _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>();
+        _store.Published.OfType<OrderPaymentReleaseRequested>().ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -409,7 +413,9 @@ public sealed class AuthorizeCheckoutHandlerTests
         result.Status.ShouldBe(CheckoutStatus.BookingFailed);
         result.CustomerState.ShouldBe(CustomerPaymentState.Released);
         _order.Status.ShouldBe(OrderStatus.Failed);
-        _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>().PaymentId.ShouldBe(_payments.PaymentId);
+        _store.Published.OfType<OrderPaymentReleaseRequested>().ShouldHaveSingleItem().PaymentId.ShouldBe(_payments.PaymentId);
+        var settled = _store.Published.OfType<OrderBookingSettled>().ShouldHaveSingleItem();
+        (settled.Outcome, settled.Charged, settled.BookingReferences.Count).ShouldBe((BookingOutcome.NotBooked, null, 0));
     }
 
     [Fact]
@@ -445,7 +451,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         (await Handle()).Value.Status.ShouldBe(CheckoutStatus.BookingFailed);
 
         _bookings.Booked.ShouldBeEmpty();
-        _store.Published.ShouldHaveSingleItem().ShouldBeOfType<OrderPaymentReleaseRequested>();
+        _store.Published.OfType<OrderPaymentReleaseRequested>().ShouldHaveSingleItem();
     }
 
     private FlightBookingOrchestrator Orchestrator() =>

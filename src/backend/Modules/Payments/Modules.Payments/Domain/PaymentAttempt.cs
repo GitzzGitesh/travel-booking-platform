@@ -107,6 +107,12 @@ internal sealed class PaymentAttempt
 
     public DateTimeOffset CreatedAt { get; private set; }
 
+    /// <summary>When the funds were first held (the attempt first became Authorized): the hold lapses a provider-set time later (ADR 0025).</summary>
+    public DateTimeOffset? AuthorizedAt { get; private set; }
+
+    /// <summary>When operations were warned that this hold is about to lapse (once per attempt).</summary>
+    public DateTimeOffset? HoldWarningRaisedAt { get; private set; }
+
     public DateTimeOffset UpdatedAt { get; private set; }
 
     /// <summary>Incremented by every change, so the rowversion check always runs.</summary>
@@ -385,10 +391,48 @@ internal sealed class PaymentAttempt
         {
             var from = Status;
             Status = to;
+            if (to == PaymentAttemptStatus.Authorized && AuthorizedAt is null)
+            {
+                // Seen authorizing now: this is when the hold began. Reached any other way (a review settled by lookup),
+                // the start is unknown, so the earliest possible time is kept: the warning comes early, never late.
+                AuthorizedAt = from is PaymentAttemptStatus.Authorizing or PaymentAttemptStatus.AuthorizationUnknown or PaymentAttemptStatus.ActionRequired
+                    ? change.At
+                    : CreatedAt;
+            }
+
             Record(from, reason, change, providerReference);
         }
 
         return Result<PaymentAttemptStatus, PaymentAttemptTransitionError>.Success(Status);
+    }
+
+    /// <summary>
+    /// The statuses in which funds may be held: authorized, and neither captured nor released yet. A manual review may hold
+    /// funds even when the attempt never showed Authorized (e.g. the provider reported a different amount).
+    /// </summary>
+    public static readonly PaymentAttemptStatus[] HoldingStatuses =
+    [
+        PaymentAttemptStatus.Authorized, PaymentAttemptStatus.Capturing, PaymentAttemptStatus.CaptureUnknown,
+        PaymentAttemptStatus.ManualReview, PaymentAttemptStatus.Voiding, PaymentAttemptStatus.VoidUnknown,
+    ];
+
+    public bool MayHoldFunds => HoldingStatuses.Contains(Status);
+
+    /// <summary>When the hold began, or the earliest it can have begun (the attempt's start) when that is not known.</summary>
+    public DateTimeOffset HoldStartedAt => AuthorizedAt ?? CreatedAt;
+
+    /// <summary>Records the expiry warning once; false if it was already raised or no funds are held.</summary>
+    public bool NoteHoldExpiring(DateTimeOffset at)
+    {
+        if (HoldWarningRaisedAt is not null || !MayHoldFunds)
+        {
+            return false;
+        }
+
+        HoldWarningRaisedAt = at;
+        UpdatedAt = at;
+        Revision++;
+        return true;
     }
 
     private void Record(PaymentAttemptStatus? from, string reason, PaymentChange change, string? providerReference)

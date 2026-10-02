@@ -6,12 +6,14 @@ import { AdminPaymentEvent } from '../models/admin-payment-event';
 export interface AdminPaymentAttempt {
   amount: AdminAmount;
   attemptId: string;
+  authorizedAt: (string | null);
   captureAmount: (null | AdminAmount);
   captureRequestedAt: (string | null);
   createdAt: string;
   customerId: string;
   declineReason: (string | null);
   history: Array<AdminPaymentEvent>;
+  holdExpiresAt: (string | null);
   orderId: string;
   providerId: (string | null);
   providerPaymentId: (string | null);

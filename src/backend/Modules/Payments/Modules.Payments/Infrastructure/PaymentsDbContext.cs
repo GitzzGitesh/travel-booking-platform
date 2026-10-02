@@ -52,6 +52,10 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         attempt.Property(a => a.ProviderId).HasMaxLength(50);
         attempt.Property(a => a.ProviderPaymentId).HasMaxLength(255);
         attempt.Property(a => a.ReleaseReason).HasMaxLength(PaymentAttempt.MaxReleaseReasonLength);
+        // The hold-expiry watch (ADR 0025): attempts not yet warned about, by authorization time.
+        attempt.HasIndex(a => new { a.Status, a.AuthorizedAt, a.CreatedAt })
+            .HasDatabaseName("IX_PaymentAttempts_HoldsToWarn")
+            .HasFilter("[HoldWarningRaisedAt] IS NULL AND [Status] IN ('Authorized','Capturing','CaptureUnknown','ManualReview','Voiding','VoidUnknown')");
         attempt.Property(a => a.CaptureAmountValue).HasColumnName("CaptureAmount").HasPrecision(19, 4);
         attempt.Ignore(a => a.CaptureAmount);
         attempt.Ignore(a => a.CaptureKey);
