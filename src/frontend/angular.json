@@ -136,6 +136,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "projects/admin-web/proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "admin-web:build:production"

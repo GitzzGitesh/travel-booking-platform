@@ -17,12 +17,15 @@ public sealed class OpenApiContractTests(WebApplicationFactory<Program> factory)
 
     private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    [Fact]
-    public async Task Document_matches_the_committed_snapshot()
+    // The customer contract, and the staff contract admin-web's client is generated from (ADR 0023).
+    [Theory]
+    [InlineData("v1")]
+    [InlineData("admin-v1")]
+    public async Task Document_matches_the_committed_snapshot(string document)
     {
         using var client = factory.CreateClient();
-        var actual = Normalize(await client.GetStringAsync(_documentUrl, TestContext.Current.CancellationToken));
-        var snapshotPath = Path.Combine(RepositoryRoot(), "src", "backend", "Hosts", "Api", "openapi.v1.json");
+        var actual = Normalize(await client.GetStringAsync($"/openapi/{document}.json", TestContext.Current.CancellationToken));
+        var snapshotPath = Path.Combine(RepositoryRoot(), "src", "backend", "Hosts", "Api", $"openapi.{document}.json");
 
         if (Environment.GetEnvironmentVariable("UPDATE_OPENAPI_SNAPSHOT") == "1")
         {

@@ -74,9 +74,9 @@ jobs:
       - name: Check generated API client is up to date
         run: |
           npm run generate:api-client
-          if [ -n "$(git status --porcelain -- projects/api-client)" ]; then
-            git status --porcelain -- projects/api-client
-            echo "::error::projects/api-client is out of date with openapi.v1.json. Run 'npm run generate:api-client' and commit the result."
+          if [ -n "$(git status --porcelain -- projects/api-client projects/admin-api-client)" ]; then
+            git status --porcelain -- projects/api-client projects/admin-api-client
+            echo "::error::A generated API client is out of date with its contract snapshot. Run 'npm run generate:api-client' and commit the result."
             exit 1
           fi
 
@@ -165,11 +165,14 @@ jobs:
           echo "E2E_FLIGHTS_DB=Server=localhost,1433;Database=TravelBooking;User Id=sa;Password=$password;TrustServerCertificate=true" >> "$GITHUB_ENV"
 
       # Applied the way the pipeline will apply them: never at application startup (database rules).
-      - name: Apply Flights migrations
+      # Flights for selection journeys; Orders and Access for the admin-web operations journey (ADR 0023).
+      - name: Apply Flights, Orders and Access migrations
         run: |
           dotnet tool restore
-          dotnet ef database update --project src/backend/Modules/Flights/Modules.Flights \
-            --startup-project src/backend/Modules/Flights/Modules.Flights --connection "$E2E_FLIGHTS_DB"
+          for module in Flights Orders Access; do
+            dotnet ef database update --project "src/backend/Modules/$module/Modules.$module" \
+              --startup-project "src/backend/Modules/$module/Modules.$module" --connection "$E2E_FLIGHTS_DB"
+          done
         env:
           DOTNET_CLI_TELEMETRY_OPTOUT: "1"
           DOTNET_NOLOGO: "1"
@@ -222,7 +225,6 @@ jobs:
     env:
       OASDIFF_VERSION: 1.32.1
       OASDIFF_SHA256: 7c8939fc49b75ee11fec66a5b83b37a2fca6aee109fed85013b1ba2ac2a1ee7f
-      SPEC: src/backend/Hosts/Api/openapi.v1.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -239,11 +241,18 @@ jobs:
       - name: Fail on breaking API changes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # The customer contract and the staff contract (ADR 0023: tooling may call the staff API with tokens too).
         run: |
-          git show "${BASE_SHA}:${SPEC}" > "$RUNNER_TEMP/base-openapi.json"
-          # Reviewed, intentional breaks are listed one per line in the accepted-breaks file (ADR 0013).
-          "$RUNNER_TEMP/oasdiff" breaking "$RUNNER_TEMP/base-openapi.json" "$SPEC" --fail-on ERR \
-            --err-ignore src/backend/Hosts/Api/openapi-accepted-breaking-changes.txt
+          for SPEC in src/backend/Hosts/Api/openapi.v1.json src/backend/Hosts/Api/openapi.admin-v1.json; do
+            if ! git cat-file -e "${BASE_SHA}:${SPEC}" 2>/dev/null; then
+              echo "No ${SPEC} at the base commit: nothing to compare yet."
+              continue
+            fi
+            git show "${BASE_SHA}:${SPEC}" > "$RUNNER_TEMP/base-openapi.json"
+            # Reviewed, intentional breaks are listed one per line in the accepted-breaks file (ADR 0013).
+            "$RUNNER_TEMP/oasdiff" breaking "$RUNNER_TEMP/base-openapi.json" "$SPEC" --fail-on ERR \
+              --err-ignore src/backend/Hosts/Api/openapi-accepted-breaking-changes.txt
+          done
 
   secret-scan:
     name: Secret scan

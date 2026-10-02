@@ -33,12 +33,17 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
 });
 // The staff API's own document (ADR 0022): kept apart from the customer contract and its generated client.
-builder.Services.AddOpenApi("admin-v1", options => options.AddDocumentTransformer((document, _, _) =>
+builder.Services.AddOpenApi("admin-v1", options =>
 {
-    document.Info = new() { Title = "Travel Booking staff API", Version = "admin-v1" };
-    document.Servers?.Clear();
-    return Task.CompletedTask;
-}));
+    // Staff routes only: routes without a group would otherwise appear in every document.
+    options.ShouldInclude = description => description.GroupName == "admin-v1";
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info = new() { Title = "Travel Booking staff API", Version = "admin-v1" };
+        document.Servers?.Clear();
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((document, _, _) =>
 {
     document.Info = new() { Title = "Travel Booking API", Version = "v1" };

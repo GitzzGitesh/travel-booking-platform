@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/ng-openapi-gen/ng-openapi-gen-schema.json",
+  "input": "../backend/Hosts/Api/openapi.admin-v1.json",
+  "output": "projects/admin-api-client/src",
+  "indexFile": true,
+  "removeStaleFiles": true,
+  "silent": true
+}

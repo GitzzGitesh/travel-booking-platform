@@ -2,6 +2,23 @@
 
 <header class="site-header">
   <a class="brand" routerLink="/">Travel booking operations</a>
+  @if (session.state() === 'signed-in') {
+    <nav aria-label="Main">
+      <ul class="nav-list">
+        @if (session.can('orders.read')) {
+          <li>
+            <a routerLink="/orders" routerLinkActive="active" ariaCurrentWhenActive="page"
+              >Booking queues</a
+            >
+          </li>
+        }
+      </ul>
+    </nav>
+    <div class="account">
+      <span class="staff-id">Signed in as {{ session.staffId() }}</span>
+      <button type="button" (click)="signOut()">Sign out</button>
+    </div>
+  }
 </header>
 
 <main id="main-content" tabindex="-1">

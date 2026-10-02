@@ -1,0 +1,65 @@
+# 0023. admin-web staff sessions: a backend-for-frontend in the Api host
+
+- **Status:** Accepted (2026-10-01) by the project owner (option A of the architecture review)
+- **Date:** 2026-10-01
+- **Deciders:** Project owner
+- **Related:** [0008](0008-identity-and-permissions.md) (decides its "frontend token handling" for `admin-web`), [0009](0009-frontend-applications-and-rendering.md), [0013](0013-openapi-typescript-client-generation.md), [0022](0022-staff-access-module-and-audit-log.md), `docs/architecture/security.md`, `docs/runbooks/staff-access.md`
+
+## Context
+
+ADR 0022 built the staff API: the `Staff` bearer scheme (Entra ID workforce tokens with MFA), our staff id, permission policies and the audit log. `admin-web`, the most privileged browser app, now needs a way to sign staff in and call that API. ADR 0008 left this open, with a lean towards a backend-for-frontend (BFF) and cookies, so that no tokens sit in the browser.
+
+Constraints:
+- An XSS in `admin-web` must not be able to steal a credential that acts as staff elsewhere.
+- Permissions are read on every request, so a revocation applies at once (ADR 0022).
+- The hosting decision (Q2) is open. No staff tenant exists yet.
+
+## Decision
+
+1. **A BFF inside the existing Api host (no new host).** The Access module adds two schemes:
+   - **`StaffSignIn` (OpenID Connect).** Authorization-code flow with PKCE against the workforce tenant, as a confidential client. Settings come from `Authentication:StaffSession`: `Authority`, `ClientId` and `ClientSecret` (user-secrets or Key Vault only). The response mode is `query`. No tokens are saved (`SaveTokens = false`): the Api is itself the resource, so the session needs only the identity.
+   - **`StaffSession` (cookie `__Host-tb-staff`).** The cookie is HttpOnly, Secure and `SameSite=Strict`, with path `/`. It has a 30-minute idle timeout, sliding, and an 8-hour absolute lifetime (security defaults, configurable).
+2. **What the session holds.** The session holds only the issuer, the object id and the sign-in time. It holds no tokens and no permissions, and it is protected by ASP.NET Data Protection.
+   - **On sign-in:** the ID token must show MFA by the same rule as staff tokens (`acrs` context or `amr` = `mfa`, ADR 0022). Reserved claims are refused, and so is an account that is not a staff account.
+   - **On every request:** the same mapping as for bearer tokens runs again. It resolves our staff id and the permissions (configuration plus approved grants), so revocations still apply at once.
+3. **Policies accept either scheme.** The `staff:{permission}` policies accept the session or a staff bearer token, which stays available for tooling. A request that presents both schemes is refused, because its staff identity is ambiguous. The bearer scope check (`RequiredScope`) applies to bearer tokens only. A new `staff:signed-in` policy needs only a mapped staff member.
+4. **CSRF.** The cookie is `SameSite=Strict`. In addition, every unsafe request (anything but GET, HEAD or OPTIONS) authenticated by the session must carry the header `X-TB-Staff-Csrf: 1`. A cross-origin page cannot add that header without a CORS preflight, which our CORS allow-list refuses. A request without the header is refused as unauthenticated, and the refusal is a security event (`StaffTokenRefused` with the reason `session-csrf-header-missing`).
+5. **Session endpoints, under the admin group (`/api/admin/v1/session`):**
+   - `GET /session` (`staff:signed-in`): our staff id and permissions, for the UI only. The server still checks every call.
+   - `GET /session/sign-in?returnUrl=` (anonymous, rate limited): starts the OIDC challenge. It accepts local return paths only. Until the tenant is configured it answers 503 `staff-sign-in-unavailable` (fail closed).
+   - `POST /session/sign-out` (`staff:signed-in`, CSRF header): ends our session. Ending the Entra session is the tenant's own sign-out.
+   - `POST /session/development-sign-in` (anonymous, CSRF header): a **Development-only** stand-in for the tenant, used for local work and E2E.
+     - It is mapped only in the Development environment and only with `Authentication:StaffSession:DevelopmentSignIn` = `true`. Startup refuses that setting in any other environment.
+     - It signs in an object id under the fixed issuer `urn:travel-booking:development-sign-in`, so its staff id is never a tenant member's. Its roles come from `Access:RoleAssignments` and managed grants, which are keyed by object id only: locally, use synthetic object ids. A session with that issuer is refused outside Development.
+6. **Hosting.** `admin-web` is served on the **same origin** as the Api, which makes the cookie first-party. In development it uses the Angular dev-server proxy, as `customer-web` does; in deployment, the same ingress serves both.
+7. **Client generation.** `admin-web` uses its own client, generated from a committed `openapi.admin-v1.json` snapshot, which a contract test enforces. It is generated by the same tool as ADR 0013 (`ng-openapi-gen`) into `projects/admin-api-client`. The customer client never contains staff operations.
+8. **New package.** `Microsoft.AspNetCore.Authentication.OpenIdConnect` (Microsoft, MIT), approved with this decision.
+
+## Consequences
+
+**Positive**
+- No access, refresh or ID token is ever readable by browser script. An XSS can act only within the open tab, behind the CSRF header and the server's permission checks. It cannot take a credential away.
+- The existing staff API is reused unchanged: permissions, MFA, audit and security events. Revocations still apply on the next request.
+- There is no new host, and it still fails closed until the tenant exists.
+
+**Negative / trade-offs**
+- **Data Protection keys.** With more than one Api instance, the keys must be shared and protected (for example in Blob storage, encrypted with Key Vault). Until that exists, a restart signs staff out. This is part of the hosting story (Q2).
+- **Shared failure domain.** `admin-web` and the Api must share an origin, or at least one ingress, so admin traffic and customer traffic share the Api's failure domain. A separate BFF host (option B) remains possible if Q2 requires network isolation.
+- **Unconfirmed claim shape.** The MFA claim in Entra ID tokens is to be confirmed against the tenant, as for access tokens (ADR 0022).
+- **Sign-out only removes the browser's cookie.** The session is a protected cookie, not a server-side record, so a copy taken before sign-out stays valid until its idle or absolute lifetime ends. The cookie is HttpOnly, so script cannot copy it. Disabling the Entra account does not end a live session either, but revoking the person's roles takes effect on their next request (runbook `staff-access.md`). A server-side session store would close this gap if the risk review asks for it.
+- **One authority.** `Authentication:StaffSession:Authority` must be the staff tenant's own authority (not `common`, `organizations` or `consumers`) and equal `Authentication:Staff:Authority`; startup refuses anything else.
+- **Refused sign-ins are security events.** `StaffTokenRefused` records the reason code (`sign-in-no-mfa`, `sign-in-reserved-claim`, `sign-in-not-a-staff-account`, or `sign-in-failed` for anything else). A refused session request also ends the session.
+- **admin-web at the root.** A refused sign-in returns to `/?sign-in=failed`, so admin-web is served at the root of its origin. A different layout needs that path to become a setting.
+- **One issuer per account.** Staff are identified by issuer and object id, so the tenant must issue v2 access tokens. Their issuer then matches the ID token's, and the same person has one staff id whether they use a token or the session.
+
+**Follow-ups**
+- The staff tenant's app registration: a redirect URI `/api/admin/v1/session/callback` and a client credential in Key Vault (external).
+- The Data Protection key ring and the production CSP and security headers for `admin-web`, with the hosting story.
+- The `customer-web` token pattern is still open (ADR 0008), to be decided with the customer tenant.
+
+## Alternatives considered
+
+| Option | Why not chosen |
+|---|---|
+| B. A separate BFF host (a reverse proxy holding the session) | The same browser posture as A, but a new host to build, deploy and monitor. It is only worth it if hosting requires admin traffic to be isolated at network level (Q2) |
+| C. MSAL.js in the SPA (tokens in memory) | Simplest, with no server component. But staff tokens would live in the browser, and an XSS could use them until they expire. That is rejected for the most privileged app (ADR 0008's lean) |

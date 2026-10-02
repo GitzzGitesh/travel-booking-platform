@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -21,8 +23,8 @@ namespace TravelBooking.Modules.Access;
 
 /// <summary>
 /// The Access module's entry point (ADR 0008, ADR 0022): staff authentication (the workforce tenant, MFA required),
-/// the mapping of a staff account to our internal staff id, and the permission policies admin endpoints use. It has no
-/// endpoints of its own yet.
+/// the admin-web session (ADR 0023), the mapping of a staff account to our internal staff id, and the permission
+/// policies admin endpoints use.
 /// </summary>
 public static partial class AccessModule
 {
@@ -61,9 +63,10 @@ public static partial class AccessModule
             throw new InvalidOperationException($"{SettingsSection}:RequiredScope is required when {SettingsSection}:Authority is set.");
         }
 
-        // Only admin endpoints authenticate staff (their policies name the scheme). Until a tenant is configured, every
-        // staff token is refused (no authority, no audience): admin access fails closed.
+        // Only admin endpoints authenticate staff (their policies name the schemes). Until a tenant is configured, every
+        // staff token is refused (no authority, no audience) and staff sign-in is unavailable: admin access fails closed.
         services.AddAuthentication()
+            .AddStaffSession(services, configuration)
             .AddJwtBearer(StaffIdentity.Scheme, options =>
             {
                 options.Authority = authority;
@@ -95,21 +98,29 @@ public static partial class AccessModule
                 };
             });
 
+        // A staff token or the admin-web session (ADR 0023), never both at once (StaffIdentity refuses an ambiguous staff
+        // identity). The scope check applies to tokens: the session has no scope.
+        void StaffPolicy(AuthorizationPolicyBuilder policy, Func<ClaimsPrincipal, bool> allowed)
+        {
+            policy.AddAuthenticationSchemes(StaffIdentity.Scheme, StaffIdentity.SessionScheme)
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => context.User.StaffId() is not null && allowed(context.User));
+            if (requiredScope is not null)
+            {
+                policy.RequireAssertion(context =>
+                    !context.User.Identities.Any(i => i.IsAuthenticated && i.AuthenticationType == StaffIdentity.Scheme)
+                    || context.User.FindFirstValue("scp")?.Split(' ').Contains(requiredScope, StringComparer.Ordinal) == true);
+            }
+        }
+
         services.AddAuthorization(options =>
         {
             foreach (var permission in StaffPermissions.All)
             {
-                options.AddPolicy(StaffIdentity.PolicyFor(permission), policy =>
-                {
-                    policy.AddAuthenticationSchemes(StaffIdentity.Scheme)
-                        .RequireAuthenticatedUser()
-                        .RequireAssertion(context => context.User.StaffId() is not null && context.User.HasPermission(permission));
-                    if (requiredScope is not null)
-                    {
-                        policy.RequireAssertion(context => context.User.FindFirstValue("scp")?.Split(' ').Contains(requiredScope, StringComparer.Ordinal) == true);
-                    }
-                });
+                options.AddPolicy(StaffIdentity.PolicyFor(permission), policy => StaffPolicy(policy, user => user.HasPermission(permission)));
             }
+
+            options.AddPolicy(StaffIdentity.SignedInPolicy, policy => StaffPolicy(policy, _ => true));
         });
         return services;
     }
@@ -120,24 +131,13 @@ public static partial class AccessModule
     {
         var principal = context.Principal!;
 
-        // Only we issue the staff id and permissions: a token carrying them, in any spelling, is refused.
-        if (principal.Claims.Any(c => string.Equals(c.Type, StaffIdentity.StaffIdClaim, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(c.Type, StaffIdentity.PermissionClaim, StringComparison.OrdinalIgnoreCase))
-            || principal.Identities.Any(i => string.Equals(i.AuthenticationType, StaffIdentity.MappedIdentityType, StringComparison.OrdinalIgnoreCase)))
+        if (HasReservedClaims(principal))
         {
             Fail(context, "reserved-claim");
             return;
         }
 
-        // Staff sign in with MFA (ADR 0008: MFA and Conditional Access mandatory). Conditional Access enforces it in the
-        // tenant; the Api refuses a token that does not show it too (defence in depth, fails closed). The signal is the
-        // tenant's choice: a Conditional Access authentication context in "acrs" (MfaAuthenticationContext, e.g. "c1"),
-        // or else "amr" containing "mfa" (ADR 0022: to be confirmed against the tenant's access tokens).
-        var mfaContext = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>()[$"{SettingsSection}:MfaAuthenticationContext"];
-        var mfaShown = mfaContext is { Length: > 0 }
-            ? principal.FindAll("acrs").Any(c => string.Equals(c.Value, mfaContext, StringComparison.Ordinal))
-            : principal.FindAll("amr").Any(c => string.Equals(c.Value, "mfa", StringComparison.Ordinal));
-        if (!mfaShown)
+        if (!ShowsMfa(principal, context.HttpContext.RequestServices))
         {
             Fail(context, "no-mfa");
             return;
@@ -152,21 +152,50 @@ public static partial class AccessModule
             return;
         }
 
-        var services = context.HttpContext.RequestServices;
-        if (await services.GetRequiredService<StaffDirectory>().ResolveAsync(token.Issuer, objectId, context.HttpContext.RequestAborted) is not { } staffId)
+        if (await MapStaffAsync(context.HttpContext, token.Issuer, objectId) is not { } mapped)
         {
             Fail(context, "not-a-staff-account");
             return;
         }
 
-        // Read live on every sign-in: the configuration bootstrap plus approved managed grants, so an approved revocation
-        // (or a grant removed from configuration) takes effect at once.
-        var granted = await services.GetRequiredService<IRoleGrantStore>().FindActiveRolesAsync(objectId, context.HttpContext.RequestAborted);
-        var permissions = services.GetRequiredService<IOptionsMonitor<AccessOptions>>().CurrentValue.PermissionsFor(objectId)
+        principal.AddIdentity(mapped);
+    }
+
+    // Only we issue the staff id and permissions: a token or session carrying them, in any spelling, is refused.
+    internal static bool HasReservedClaims(ClaimsPrincipal principal) =>
+        principal.Claims.Any(c => string.Equals(c.Type, StaffIdentity.StaffIdClaim, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(c.Type, StaffIdentity.PermissionClaim, StringComparison.OrdinalIgnoreCase))
+        || principal.Identities.Any(i => string.Equals(i.AuthenticationType, StaffIdentity.MappedIdentityType, StringComparison.OrdinalIgnoreCase));
+
+    // Staff sign in with MFA (ADR 0008: MFA and Conditional Access mandatory). Conditional Access enforces it in the
+    // tenant; the Api refuses a token (or a sign-in's ID token) that does not show it too (defence in depth, fails
+    // closed). The signal is the tenant's choice: a Conditional Access authentication context in "acrs"
+    // (MfaAuthenticationContext, e.g. "c1"), or else "amr" containing "mfa" (ADR 0022: to be confirmed against the tenant).
+    internal static bool ShowsMfa(ClaimsPrincipal principal, IServiceProvider services)
+    {
+        var mfaContext = services.GetRequiredService<IConfiguration>()[$"{SettingsSection}:MfaAuthenticationContext"];
+        return mfaContext is { Length: > 0 }
+            ? principal.FindAll("acrs").Any(c => string.Equals(c.Value, mfaContext, StringComparison.Ordinal))
+            : principal.FindAll("amr").Any(c => string.Equals(c.Value, "mfa", StringComparison.Ordinal));
+    }
+
+    // The account's internal staff id (created on first sign-in) and its permissions, read live on every request: the
+    // configuration bootstrap plus approved managed grants, so an approved revocation (or a grant removed from
+    // configuration) takes effect at once. Null when the account is not a valid staff identity.
+    internal static async Task<ClaimsIdentity?> MapStaffAsync(HttpContext http, string? issuer, string? objectId)
+    {
+        var services = http.RequestServices;
+        if (await services.GetRequiredService<StaffDirectory>().ResolveAsync(issuer, objectId, http.RequestAborted) is not { } staffId)
+        {
+            return null;
+        }
+
+        var granted = await services.GetRequiredService<IRoleGrantStore>().FindActiveRolesAsync(objectId!, http.RequestAborted);
+        var permissions = services.GetRequiredService<IOptionsMonitor<AccessOptions>>().CurrentValue.PermissionsFor(objectId!)
             .Union(StaffRoles.PermissionsOf(granted), StringComparer.Ordinal).ToList();
-        principal.AddIdentity(new ClaimsIdentity(
+        return new ClaimsIdentity(
             [new Claim(StaffIdentity.StaffIdClaim, staffId), .. permissions.Select(p => new Claim(StaffIdentity.PermissionClaim, p))],
-            StaffIdentity.MappedIdentityType));
+            StaffIdentity.MappedIdentityType);
     }
 
     /// <summary>
@@ -206,7 +235,42 @@ public static partial class AccessModule
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        MapSessionEndpoints(endpoints);
         return endpoints;
+    }
+
+    // The admin-web session (ADR 0023). Sign-in is anonymous by nature; everything else needs a signed-in staff member.
+    private static void MapSessionEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        var session = endpoints.MapGroup("/session").WithTags("Staff session");
+
+        session.MapGet("/", StaffSessionEndpoints.Current)
+            .WithName("GetStaffSession")
+            .RequireAuthorization(StaffIdentity.SignedInPolicy)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        session.MapGet("/sign-in", StaffSessionEndpoints.SignIn)
+            .WithName("SignInStaff")
+            .AllowAnonymous()
+            .Produces(StatusCodes.Status302Found)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        session.MapPost("/sign-out", (Delegate)StaffSessionEndpoints.SignOut)
+            .WithName("SignOutStaff")
+            .RequireAuthorization(StaffIdentity.SignedInPolicy)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        var services = endpoints.ServiceProvider;
+        if (services.GetRequiredService<IHostEnvironment>().IsDevelopment()
+            && services.GetRequiredService<IOptions<StaffSessionOptions>>().Value.DevelopmentSignIn)
+        {
+            session.MapPost("/development-sign-in", StaffSessionEndpoints.DevelopmentSignIn)
+                .WithName("SignInStaffForDevelopment")
+                .AllowAnonymous()
+                .ProducesValidationProblem()
+                .ProducesProblem(StatusCodes.Status400BadRequest);
+        }
     }
 
     private static void Fail(TokenValidatedContext context, string reason)
@@ -217,10 +281,10 @@ public static partial class AccessModule
 
     // A security event (security rules: authentication failures), with a reason code, the route and the trace only:
     // never the token, the object id or the issuer.
-    private static void Refused(HttpContext http, string reason) =>
+    internal static void Refused(HttpContext http, string reason) =>
         LogRefused(http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AccessModule).FullName!),
             reason, http.Request.Path.Value ?? string.Empty, http.TraceIdentifier);
 
-    [LoggerMessage(Level = LogLevel.Warning, EventName = "StaffTokenRefused", Message = "Security: a staff token was refused ({Reason}) on {Path} (trace {TraceId})")]
+    [LoggerMessage(Level = LogLevel.Warning, EventName = "StaffTokenRefused", Message = "Security: a staff credential was refused ({Reason}) on {Path} (trace {TraceId})")]
     private static partial void LogRefused(ILogger logger, string reason, string path, string traceId);
 }
