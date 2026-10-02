@@ -12,6 +12,23 @@
             >
           </li>
         }
+        @if (session.can('payments.read')) {
+          <li>
+            <a
+              routerLink="/payments/attempt-limit-reviews"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              >Payment attempt reviews</a
+            >
+          </li>
+        }
+        @if (session.can('access.grants.read')) {
+          <li>
+            <a routerLink="/access" routerLinkActive="active" ariaCurrentWhenActive="page"
+              >Staff access</a
+            >
+          </li>
+        }
       </ul>
     </nav>
     <div class="account">

@@ -165,11 +165,11 @@ jobs:
           echo "E2E_FLIGHTS_DB=Server=localhost,1433;Database=TravelBooking;User Id=sa;Password=$password;TrustServerCertificate=true" >> "$GITHUB_ENV"
 
       # Applied the way the pipeline will apply them: never at application startup (database rules).
-      # Flights for selection journeys; Orders and Access for the admin-web operations journey (ADR 0023).
-      - name: Apply Flights, Orders and Access migrations
+      # Flights for selection journeys; Orders, Access and Payments for the admin-web operations journeys (ADR 0023).
+      - name: Apply Flights, Orders, Access and Payments migrations
         run: |
           dotnet tool restore
-          for module in Flights Orders Access; do
+          for module in Flights Orders Access Payments; do
             dotnet ef database update --project "src/backend/Modules/$module/Modules.$module" \
               --startup-project "src/backend/Modules/$module/Modules.$module" --connection "$E2E_FLIGHTS_DB"
           done

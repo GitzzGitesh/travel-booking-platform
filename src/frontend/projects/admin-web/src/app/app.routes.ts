@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { signedIn } from './staff-session';
+import { staffWith } from './staff-session';
 
 export const routes: Routes = [
   {
@@ -11,14 +11,33 @@ export const routes: Routes = [
   {
     path: 'orders',
     title: 'Booking queues · Travel booking operations',
-    canActivate: [signedIn],
+    canActivate: [staffWith('orders.read')],
     loadComponent: () => import('./orders/order-queue').then((m) => m.OrderQueue),
   },
   {
     path: 'orders/:orderId',
     title: 'Order · Travel booking operations',
-    canActivate: [signedIn],
+    canActivate: [staffWith('orders.read')],
     loadComponent: () => import('./orders/order-detail').then((m) => m.OrderDetail),
+  },
+  {
+    path: 'payments/attempt-limit-reviews',
+    title: 'Payment attempt reviews · Travel booking operations',
+    canActivate: [staffWith('payments.read')],
+    loadComponent: () =>
+      import('./payments/attempt-limit-reviews').then((m) => m.AttemptLimitReviews),
+  },
+  {
+    path: 'payments/:attemptId',
+    title: 'Payment · Travel booking operations',
+    canActivate: [staffWith('payments.read')],
+    loadComponent: () => import('./payments/payment-detail').then((m) => m.PaymentDetail),
+  },
+  {
+    path: 'access',
+    title: 'Staff access · Travel booking operations',
+    canActivate: [staffWith('access.grants.read')],
+    loadComponent: () => import('./access/staff-access').then((m) => m.StaffAccess),
   },
   { path: '**', redirectTo: '' },
 ];

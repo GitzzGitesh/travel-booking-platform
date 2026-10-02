@@ -98,10 +98,17 @@ export const staffApiInterceptor: HttpInterceptorFn = (request, next) => {
   );
 };
 
-/** Pages that need a signed-in staff member; signed out, the home page offers the sign-in. */
-export const signedIn: CanActivateFn = async () => {
-  const session = inject(StaffSession);
-  const router = inject(Router); // before the await: injection works only synchronously
-  await session.load();
-  return session.state() === 'signed-in' || router.createUrlTree(['/']);
-};
+/**
+ * Pages for a signed-in staff member holding this permission; anyone else goes to the home page (which offers the
+ * sign-in, or says the account lacks a role). The server checks every call itself.
+ */
+export function staffWith(permission: string): CanActivateFn {
+  return async () => {
+    const session = inject(StaffSession);
+    const router = inject(Router); // before the await: injection works only synchronously
+    await session.load();
+    return (
+      (session.state() === 'signed-in' && session.can(permission)) || router.createUrlTree(['/'])
+    );
+  };
+}
