@@ -1,0 +1,198 @@
+<h1>Staff access</h1>
+
+@if (state() === 'error') {
+  <p class="alert alert-error" role="alert">Staff access could not be loaded. Try again shortly.</p>
+}
+@if (message(); as message) {
+  <p class="alert" [class.alert-error]="message.error" role="status">{{ message.text }}</p>
+}
+
+@if (session.can('access.grants.request')) {
+  <section class="action" aria-labelledby="request-change">
+    <h2 id="request-change">Request a change</h2>
+    <p>A different administrator must approve it. Nobody requests a change to their own access.</p>
+    <form class="request-form" (submit)="submitRequest($event)" novalidate>
+      <label for="object-id">Entra object id (lowercase GUID)</label>
+      <input
+        id="object-id"
+        name="objectId"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        maxlength="36"
+        aria-describedby="object-id-hint"
+        [attr.aria-invalid]="requestErrors().objectId"
+        [disabled]="busy()"
+        [value]="objectId()"
+        (input)="objectId.set($any($event.target).value)"
+      />
+      <span id="object-id-hint">
+        @if (requestErrors().objectId) {
+          <strong>Use the object id from the Entra admin portal, in lowercase.</strong>
+        } @else {
+          From the Entra admin portal: the user's Object ID.
+        }
+      </span>
+
+      <label for="role">Role</label>
+      <select
+        id="role"
+        name="role"
+        [disabled]="busy()"
+        [value]="role()"
+        (change)="role.set($any($event.target).value)"
+      >
+        @for (option of roles; track option) {
+          <option [value]="option">{{ option }}</option>
+        }
+      </select>
+
+      <fieldset>
+        <legend>Change</legend>
+        <label>
+          <input
+            type="radio"
+            name="action"
+            value="Grant"
+            [checked]="action() === 'Grant'"
+            [disabled]="busy()"
+            (change)="action.set('Grant')"
+          />
+          Grant
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="action"
+            value="Revoke"
+            [checked]="action() === 'Revoke'"
+            [disabled]="busy()"
+            (change)="action.set('Revoke')"
+          />
+          Revoke
+        </label>
+      </fieldset>
+
+      <label for="request-reason">Ticket reference</label>
+      <input
+        id="request-reason"
+        name="reason"
+        type="text"
+        autocomplete="off"
+        maxlength="200"
+        aria-describedby="request-reason-hint"
+        [attr.aria-invalid]="requestErrors().reason"
+        [disabled]="busy()"
+        [value]="reason()"
+        (input)="reason.set($any($event.target).value)"
+      />
+      <span id="request-reason-hint">
+        @if (requestErrors().reason) {
+          <strong
+            >Start with a letter or digit; use 3 to 200 letters, digits, spaces or . _ : / #
+            -.</strong
+          >
+        } @else {
+          A ticket reference: never personal data.
+        }
+      </span>
+      <button type="submit" [disabled]="busy()">Request</button>
+    </form>
+  </section>
+}
+
+<h2>Waiting for a decision</h2>
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Requested (UTC)</th>
+        <th scope="col">Change</th>
+        <th scope="col">Account</th>
+        <th scope="col">Requested by</th>
+        @if (session.can('access.grants.approve')) {
+          <th scope="col">Decision</th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @for (request of pending(); track request.requestId) {
+        <tr>
+          <td>{{ request.requestedAt | date: 'yyyy-MM-dd HH:mm' : 'UTC' }}</td>
+          <td>{{ request.action }} {{ request.role }}</td>
+          <td class="mono">{{ request.objectId }}</td>
+          <td class="mono">{{ request.requestedBy }}</td>
+          @if (session.can('access.grants.approve')) {
+            <td>
+              <details>
+                <summary>Decide</summary>
+                <adm-reason-form
+                  label="Ticket reference to approve"
+                  action="Approve"
+                  [busy]="busy()"
+                  (submitted)="decide(request, true, $event)"
+                />
+                <adm-reason-form
+                  label="Ticket reference to reject"
+                  action="Reject"
+                  [busy]="busy()"
+                  (submitted)="decide(request, false, $event)"
+                />
+              </details>
+            </td>
+          }
+        </tr>
+      } @empty {
+        @if (state() === 'loaded') {
+          <tr>
+            <td [attr.colspan]="session.can('access.grants.approve') ? 5 : 4">
+              Nothing is waiting.
+            </td>
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>
+@if (nextCursor()) {
+  <button type="button" (click)="loadMore()">Load more</button>
+}
+
+<h2>Roles held</h2>
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Account</th>
+        <th scope="col">Role</th>
+        <th scope="col">Source</th>
+        <th scope="col">Granted (UTC)</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (grant of grants(); track grant.objectId + grant.role + grant.source) {
+        <tr>
+          <td class="mono">{{ grant.objectId }}</td>
+          <td>{{ grant.role }}</td>
+          <td>
+            {{
+              grant.source === 'configuration' ? 'Configuration (bootstrap)' : 'Approved request'
+            }}
+          </td>
+          <td>
+            {{ grant.grantedAt ? (grant.grantedAt | date: 'yyyy-MM-dd HH:mm' : 'UTC') : '—' }}
+          </td>
+        </tr>
+      } @empty {
+        @if (state() === 'loaded') {
+          <tr>
+            <td colspan="4">No roles are held.</td>
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>
+@if (state() === 'loading') {
+  <p role="status">Loading…</p>
+}

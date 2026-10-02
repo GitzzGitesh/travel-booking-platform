@@ -156,8 +156,16 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - Api: `StaffSessionTests` (cookie flags, permissions, CSRF, live grants, ambiguity, sign-out, idle and absolute lifetimes, return paths), plus authorization and contract tests.
   - Vitest: session, interceptor, shell and queue.
   - Playwright: sign in, queues, sign out, with axe. CI applies the Orders and Access migrations for it.
-- **Next:** admin-web operations actions (review checks, payment review resolution, legal hold, role grants) on these screens.
+- **Next:** admin-web operations actions (row 10).
 - **Blocked externally:** the staff tenant's app registration (redirect URI `/api/admin/v1/session/callback`, a client credential in Key Vault); the MFA claim shape in ID tokens; the Data Protection key ring and the admin-web CSP and headers (hosting, Q2). |
+| 10 | **admin-web operations actions** (ADR 0022, ADR 0023; UI only, no API change) | **Done, without a staff tenant.**
+- **Order page:** for an item in manual review, **Check with the supplier** (`bookings.review.resolve`), with the outcome announced: settled, still in review, or no longer in review. **Place / Release legal hold** (`personal-data.legal-hold`). The payment id links to the payment page (`payments.read`).
+- **Payment page** (`/payments/{attemptId}`, `payments.read`): amounts, provider references and the history. A payment in manual review offers **Check with the payment provider** (`payments.review.resolve`): settled only by the provider's answer (F-26).
+- **Payment attempt reviews** (`payments.read`): the Q10 review list.
+- **Staff access** (`access.grants.read`): roles held (with their source), requests waiting for a decision (**Approve** / **Reject**, `access.grants.approve`), and **Request a change** (`access.grants.request`; a lowercase GUID and a known role). The server's maker-checker refusals are explained on the page.
+- **Every action** takes a ticket reference, checked against the server's rule before sending; one action at a time, so a double click is one request. Navigation and routes follow the permissions; the server checks every call.
+- **Tests:** Vitest for the order, payment and access pages (actions, refusals, permissions); Playwright with axe for the payment review list and staff access, including a self-approval refused in the UI. E2E now also applies the Payments migrations.
+- **Next:** with the staff tenant, sign-in against it; hotels, refunds and notifications wait on their decisions (Q1 for hotels, Q11, an email provider). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

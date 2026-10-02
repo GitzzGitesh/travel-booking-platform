@@ -22,6 +22,9 @@ export async function routeApiToBackend(page: Page): Promise<void> {
 /** The synthetic operations account the E2E Api grants the Operations role (playwright.config.ts). */
 export const e2eOperationsAccount = '0e2e0000-0000-4000-8000-000000000001';
 
+/** The synthetic administrator account the E2E Api grants the Administrator role (playwright.config.ts). */
+export const e2eAdministratorAccount = '0e2e0000-0000-4000-8000-000000000002';
+
 /**
  * Signs this page's browser in to admin-web with the Api's Development-only stand-in (ADR 0023), from the page itself,
  * so the HttpOnly session cookie lands exactly as a real sign-in's would.

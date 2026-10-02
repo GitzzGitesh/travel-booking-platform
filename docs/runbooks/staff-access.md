@@ -21,6 +21,8 @@ Code checks permissions, never role names. A role is a bundle of permissions (`M
 - **Local development only:** with `Authentication:StaffSession:DevelopmentSignIn` = `true`, `POST /api/admin/v1/session/development-sign-in` with `{ "objectId": "<lowercase GUID>" }` and the header `X-TB-Staff-Csrf: 1` signs in without a tenant. Roles still come from `Access:RoleAssignments`, which is keyed by object id only: signing in as a real colleague's object id gives their configured roles, so use synthetic ids locally. The Api refuses to start with this setting outside Development.
 
 ## Grant or revoke a role
+In admin-web, **Staff access** does the same: **Request a change**, then a second administrator opens **Decide** on the waiting request. The API calls below are for tooling.
+
 1. **Request:** `POST /api/admin/v1/access/role-changes` with `{ "objectId": "<the person's Entra object id>", "role": "Operations", "action": "Grant" | "Revoke", "reason": "<ticket reference>" }`.
    - The object id comes from the Entra admin portal (user, then Object ID), as a lowercase GUID.
    - You cannot request a change to your own access.

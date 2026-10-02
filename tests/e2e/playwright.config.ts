@@ -48,13 +48,16 @@ export default defineConfig({
         ASPNETCORE_ENVIRONMENT: 'Development',
         ASPNETCORE_URLS: 'http://localhost:5099',
         ConnectionStrings__Flights: process.env['E2E_FLIGHTS_DB'] ?? '',
-        // The admin-web operations journey (ADR 0023): the same database (Orders and Access migrations applied), the
+        // The admin-web operations journey (ADR 0023): the same database (Orders, Access and Payments migrations applied), the
         // Development-only sign-in stand-in, and one synthetic operations account (support/api.ts).
         ConnectionStrings__Orders: process.env['E2E_FLIGHTS_DB'] ?? '',
         ConnectionStrings__Access: process.env['E2E_FLIGHTS_DB'] ?? '',
+        ConnectionStrings__Payments: process.env['E2E_FLIGHTS_DB'] ?? '',
         Authentication__StaffSession__DevelopmentSignIn: 'true',
         Access__RoleAssignments__0__ObjectId: '0e2e0000-0000-4000-8000-000000000001',
         Access__RoleAssignments__0__Roles__0: 'Operations',
+        Access__RoleAssignments__1__ObjectId: '0e2e0000-0000-4000-8000-000000000002',
+        Access__RoleAssignments__1__Roles__0: 'Administrator',
         // Every journey comes from one local address, so the per-client limits (appsettings.json) are raised for E2E only.
         RateLimiting__Anonymous__PermitLimit: '10000',
         RateLimiting__SupplierCalls__PermitLimit: '10000',
