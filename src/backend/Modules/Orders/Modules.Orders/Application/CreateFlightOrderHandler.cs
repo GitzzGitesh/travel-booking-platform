@@ -6,6 +6,20 @@ using TravelBooking.Modules.Orders.Domain;
 namespace TravelBooking.Modules.Orders.Application;
 
 /// <summary>Persistence port for orders; implemented in Infrastructure (architecture rules).</summary>
+/// <summary>
+/// The order kept changing while it was being read, so no consistent copy could be loaded (it is read again a few times
+/// first). Nothing was changed: the caller may answer "try again", and must not decide anything from a partial read.
+/// </summary>
+internal sealed class OrderKeptChangingException(Guid orderId) : Exception($"Order {orderId} kept changing while it was being loaded.")
+{
+    public Guid OrderId { get; } = orderId;
+}
+
+/// <remarks>
+/// The loads (<see cref="FindAsync"/>, <see cref="FindOwnedAsync"/>, <see cref="FindByIdempotencyKeyAsync"/>) return a
+/// consistent order or throw <see cref="OrderKeptChangingException"/>. A tracked load needs a unit of work without pending
+/// changes (load first, then change).
+/// </remarks>
 internal interface IOrderStore
 {
     Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken);

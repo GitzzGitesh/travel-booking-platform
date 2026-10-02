@@ -82,6 +82,86 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         }
     }
 
+    // An order is read by separate queries (order, items, timeline). A change committed between them must never give a
+    // torn order (items from after the change on an order row from before it), which made a duplicate checkout answer
+    // order-not-payable: the store loads it again.
+    [Fact]
+    public async Task An_order_changed_while_it_is_being_loaded_is_loaded_again_never_torn()
+    {
+        var orderId = await ReadyOrder(Token());
+        var lookupAt = api.Clock.GetUtcNow().AddMinutes(5);
+        var interceptor = new CommitBeforeItemsQuery(async () =>
+        {
+            using var scope = api.Services.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
+            var order = (await store.FindAsync(orderId, Ct))!;
+            order.RecordBookingLookup(order.Items[0].Id, api.Clock.GetUtcNow(), lookupAt);
+            (await store.TrySaveAsync(Ct)).ShouldBeTrue();
+        });
+        using var services = api.Services.CreateScope();
+        var options = services.ServiceProvider.GetRequiredService<DbContextOptions<OrdersDbContext>>();
+        await using var db = new OrdersDbContext(new DbContextOptionsBuilder<OrdersDbContext>(options).AddInterceptors(interceptor).Options);
+
+        var loaded = (await new SqlOrderStore(db).FindAsync(orderId, Ct))!;
+
+        interceptor.Fired.ShouldBeTrue();
+        var stored = await LoadOrder(orderId);
+        (loaded.Revision, loaded.Items[0].NextBookingLookupAt).ShouldBe((stored.Revision, lookupAt)); // all from after the change
+    }
+
+    [Fact]
+    public async Task An_order_lookup_by_idempotency_key_is_never_torn_either_and_a_load_that_never_settles_gives_up()
+    {
+        var orderId = await ReadyOrder(Token());
+        var stored = await LoadOrder(orderId);
+        var changes = 0;
+        async Task Change()
+        {
+            changes++;
+            using var scope = api.Services.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
+            var order = (await store.FindAsync(orderId, Ct))!;
+            order.RecordBookingLookup(order.Items[0].Id, api.Clock.GetUtcNow(), api.Clock.GetUtcNow().AddMinutes(changes));
+            (await store.TrySaveAsync(Ct)).ShouldBeTrue();
+        }
+
+        using var services = api.Services.CreateScope();
+        var options = services.ServiceProvider.GetRequiredService<DbContextOptions<OrdersDbContext>>();
+        var once = new CommitBeforeItemsQuery(Change);
+        await using (var db = new OrdersDbContext(new DbContextOptionsBuilder<OrdersDbContext>(options).AddInterceptors(once).Options))
+        {
+            var loaded = (await new SqlOrderStore(db).FindByIdempotencyKeyAsync(stored.CustomerId, stored.IdempotencyKey, Ct))!;
+            (loaded.Revision, loaded.Items[0].NextBookingLookupAt).ShouldBe(((await LoadOrder(orderId)).Revision, api.Clock.GetUtcNow().AddMinutes(1)));
+        }
+
+        var always = new CommitBeforeItemsQuery(Change, everyTime: true);
+        await using (var db = new OrdersDbContext(new DbContextOptionsBuilder<OrdersDbContext>(options).AddInterceptors(always).Options))
+        {
+            (await Should.ThrowAsync<OrderKeptChangingException>(() => new SqlOrderStore(db).FindAsync(orderId, Ct))).OrderId.ShouldBe(orderId);
+        }
+
+        changes.ShouldBe(1 + SqlOrderStore.MaxLoadAttempts);
+    }
+
+    // Commits a change just before an items query runs (after the order row was read, before its items): once, or every time.
+    private sealed class CommitBeforeItemsQuery(Func<Task> change, bool everyTime = false) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if ((everyTime || !Fired) && command.CommandText.Contains("[FlightOrderItems]", StringComparison.Ordinal))
+            {
+                Fired = true;
+                await change();
+            }
+
+            return result;
+        }
+    }
+
     [Fact]
     public async Task A_supplier_refusal_charges_nothing_and_releases_the_hold()
     {

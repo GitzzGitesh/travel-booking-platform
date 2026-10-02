@@ -269,6 +269,33 @@ public sealed class AuthorizeCheckoutHandlerTests
     }
 
     [Fact]
+    public async Task An_order_that_cannot_be_read_consistently_is_answered_try_again_and_nothing_is_paid()
+    {
+        _store.FindOwnedKeepsChanging = true;
+
+        (await Handle()).Error.ShouldBeOfType<CheckoutFailure.TryAgain>();
+
+        _payments.Requests.ShouldBeEmpty();
+        _bookings.Booked.ShouldBeEmpty();
+    }
+
+    // Booking started (saved) and the supplier booked, but the outcome's save lost a race and the order could not be read
+    // back: the customer is told the truth (pending), never a server error, and nothing is booked again.
+    [Fact]
+    public async Task A_booking_whose_outcome_cannot_be_read_back_is_pending_not_an_error()
+    {
+        _store.Saves.Enqueue(true); // the refreshed terms
+        _store.Saves.Enqueue(true); // StartBooking
+        _store.SaveSucceeds = false; // the outcome
+        _store.FindKeepsChanging = true;
+
+        var result = (await Handle()).Value;
+
+        result.ShouldBe(new CheckoutResult(_order.Id, CheckoutStatus.BookingPending, _payments.PaymentId));
+        _bookings.Booked.ShouldHaveSingleItem();
+    }
+
+    [Fact]
     public async Task A_concurrent_order_change_before_payment_charges_nothing()
     {
         _store.SaveSucceeds = false;
@@ -510,10 +537,21 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         public bool SaveSucceeds { get; set; } = true;
 
-        public Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken) => Task.FromResult(Orders.SingleOrDefault(o => o.Id == orderId));
+        /// <summary>Answers for the next saves, in order; then <see cref="SaveSucceeds"/>.</summary>
+        public Queue<bool> Saves { get; } = new();
 
-        public Task<Order?> FindOwnedAsync(Guid orderId, string customerId, CancellationToken cancellationToken) =>
-            Task.FromResult(Orders.SingleOrDefault(o => o.Id == orderId && o.CustomerId == customerId));
+        /// <summary>The store cannot read the order consistently (it keeps changing): FindAsync / FindOwnedAsync throw.</summary>
+        public bool FindKeepsChanging { get; set; }
+
+        public bool FindOwnedKeepsChanging { get; set; }
+
+        public Task<Order?> FindAsync(Guid orderId, CancellationToken cancellationToken) => FindKeepsChanging
+            ? throw new OrderKeptChangingException(orderId)
+            : Task.FromResult(Orders.SingleOrDefault(o => o.Id == orderId));
+
+        public Task<Order?> FindOwnedAsync(Guid orderId, string customerId, CancellationToken cancellationToken) => FindOwnedKeepsChanging
+            ? throw new OrderKeptChangingException(orderId)
+            : Task.FromResult(Orders.SingleOrDefault(o => o.Id == orderId && o.CustomerId == customerId));
 
         public Task<Order?> FindByIdempotencyKeyAsync(string customerId, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
 
@@ -521,7 +559,7 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         public Task<bool> TryAddAsync(Order order, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(SaveSucceeds);
+        public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(Saves.TryDequeue(out var answer) ? answer : SaveSucceeds);
 
         public List<IIntegrationEvent> Published { get; } = [];
 
