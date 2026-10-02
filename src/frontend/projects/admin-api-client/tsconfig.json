@@ -1,0 +1,8 @@
+/* Type-checks the generated API client on its own (it has no build step; apps import it from source). */
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

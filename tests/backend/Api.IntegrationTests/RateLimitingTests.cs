@@ -31,6 +31,10 @@ public sealed class RateLimitingTests(WebApplicationFactory<Program> factory) : 
         ["/api/v1/flights/selected-offers"] = RateLimitPolicies.Anonymous,
         ["/api/v1/flights/selected-offers/{selectedOfferId:guid}/revalidations"] = RateLimitPolicies.SupplierCalls,
         ["/api/v1/flights/selected-offers/{selectedOfferId:guid}/price-acceptances"] = RateLimitPolicies.Anonymous,
+
+        // Staff sign-in (ADR 0023): per client, through the admin group. The Development stand-in is mapped only with its setting.
+        ["/api/admin/v1/session/sign-in"] = RateLimitPolicies.Anonymous,
+        ["/api/admin/v1/session/development-sign-in"] = RateLimitPolicies.Anonymous,
     };
 
     [Fact]

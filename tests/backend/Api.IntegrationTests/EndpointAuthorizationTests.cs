@@ -45,7 +45,13 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
 
         // The payment provider's webhook: authenticated by the provider's signature, mapped only when Stripe is enabled.
         "/api/v1/payments/notifications/{providerId}",
+
+        // Staff sign-in (ADR 0023): starts the tenant's sign-in; the Development stand-in exists in Development only.
+        "/api/admin/v1/session/sign-in",
+        "/api/admin/v1/session/development-sign-in",
     ];
+
+    private static readonly string[] _anonymousAdminRoutes = ["/api/admin/v1/session/sign-in", "/api/admin/v1/session/development-sign-in"];
 
     [Theory]
     [InlineData("Development")]
@@ -75,10 +81,35 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
         var admin = endpoints.Where(e => e.RoutePattern.RawText!.StartsWith("/api/admin/", StringComparison.Ordinal)).ToList();
 
         admin.ShouldNotBeEmpty();
-        admin.ShouldAllBe(e => e.Metadata.GetMetadata<IAllowAnonymous>() == null
+        admin.Where(e => !_anonymousAdminRoutes.Contains(e.RoutePattern.RawText)).ShouldAllBe(e => e.Metadata.GetMetadata<IAllowAnonymous>() == null
             && e.Metadata.GetOrderedMetadata<IAuthorizeData>().Any()
             && e.Metadata.GetOrderedMetadata<IAuthorizeData>().All(a => a.Policy != null && a.Policy.StartsWith("staff:")));
         endpoints.Except(admin)
             .ShouldAllBe(e => !e.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(a => a.Policy != null && a.Policy.StartsWith("staff:")));
+    }
+
+    // The Development sign-in stand-in (ADR 0023) needs both the Development environment and the setting, and startup
+    // refuses the setting anywhere else.
+    [Fact]
+    public void Development_sign_in_is_mapped_only_in_development_with_the_setting()
+    {
+        static bool Mapped(WebApplicationFactory<Program> host) => host.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>().Any(e => e.RoutePattern.RawText == "/api/admin/v1/session/development-sign-in");
+
+        using (var withoutSetting = factory.WithWebHostBuilder(b => b.UseEnvironment("Development")))
+        {
+            Mapped(withoutSetting).ShouldBeFalse();
+        }
+
+        using (var enabled = factory.WithWebHostBuilder(b => b.UseEnvironment("Development").UseSetting("Authentication:StaffSession:DevelopmentSignIn", "true")))
+        {
+            Mapped(enabled).ShouldBeTrue();
+        }
+
+        foreach (var environment in new[] { "Staging", "Production" })
+        {
+            using var refused = factory.WithWebHostBuilder(b => b.UseEnvironment(environment).UseSetting("Authentication:StaffSession:DevelopmentSignIn", "true"));
+            Should.Throw<Microsoft.Extensions.Options.OptionsValidationException>(() => refused.CreateClient());
+        }
     }
 }

@@ -14,7 +14,13 @@ Tokens: the Api validates JWTs from both issuers with separate authentication sc
 - Staff actions are audited (`AuditEntries` in the acting module's schema, in the same save).
 - A 403 is the `StaffAuthorizationDenied` security event, and a refused staff token is `StaffTokenRefused`.
 - Audit entries hold the client address (personal data), kept for the security audit period (12 months, Q9).
- Frontend token handling (SPA vs BFF) is to be finalised in ADR 0008. The current lean is BFF-style cookies for `admin-web`.
+ `admin-web` uses a backend-for-frontend in the Api host (ADR 0023): sign-in runs on the server (OpenID Connect, code flow with PKCE), and the browser holds only an HttpOnly, Secure, SameSite=Strict session cookie (`__Host-tb-staff`), never a token.
+  - The session holds the account and sign-in time only. Permissions are mapped again on every request, as for staff tokens.
+  - Lifetimes: 30 minutes idle, 8 hours absolute.
+  - Unsafe requests need the `X-TB-Staff-Csrf` header (a refusal is the `StaffTokenRefused` security event, reason `session-csrf-header-missing`).
+  - A token and a session together are refused as ambiguous.
+  - The Development-only sign-in stand-in is refused at startup in any other environment.
+  - The customer-web token pattern is still open (ADR 0008).
 
 ## Authorization
 - Permission-based: `orders.read`, `orders.read.pii`, `refunds.request`, `refunds.approve`, `pricing.markups.write`, `access.permissions.grant`, …

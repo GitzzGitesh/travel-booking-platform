@@ -14,6 +14,15 @@ public static class StaffIdentity
     /// <summary>The authentication scheme for staff tokens (Entra ID workforce tenant). Customers have their own.</summary>
     public const string Scheme = "Staff";
 
+    /// <summary>The admin-web session cookie (ADR 0023): the same staff mapping as <see cref="Scheme"/>, re-read on every request.</summary>
+    public const string SessionScheme = "StaffSession";
+
+    /// <summary>Required on every unsafe request authenticated by the session cookie (ADR 0023: CSRF).</summary>
+    public const string CsrfHeader = "X-TB-Staff-Csrf";
+
+    /// <summary>The policy that requires a signed-in, mapped staff member, whatever their permissions.</summary>
+    public const string SignedInPolicy = "staff:signed-in";
+
     /// <summary>Our internal staff id. Reserved: a token carrying it is refused.</summary>
     public const string StaffIdClaim = "tb_staff_id";
 
@@ -32,9 +41,21 @@ public static class StaffIdentity
     public static bool HasPermission(this ClaimsPrincipal user, string permission) =>
         Mapped(user)?.Claims.Any(c => c.Type == PermissionClaim && c.Value == permission) == true;
 
+    /// <summary>The mapped staff member's permissions; empty for anyone else.</summary>
+    public static IReadOnlyList<string> Permissions(this ClaimsPrincipal user) =>
+        Mapped(user) is { } mapped ? [.. mapped.Claims.Where(c => c.Type == PermissionClaim).Select(c => c.Value).Order(StringComparer.Ordinal)] : [];
+
+    /// <summary>The workforce account (object id) of the mapped staff member, from the validated token or session.</summary>
+    public static string? AccountObjectId(this ClaimsPrincipal user) =>
+        Mapped(user) is null ? null : Signed(user).SingleOrDefault()?.FindFirst("oid")?.Value;
+
+    // Exactly one staff identity (a token or a session, never both) and exactly one mapping, or nobody.
     private static ClaimsIdentity? Mapped(ClaimsPrincipal user)
     {
         var mapped = user.Identities.Where(i => i.IsAuthenticated && i.AuthenticationType == MappedIdentityType).ToList();
-        return mapped.Count == 1 && user.Identities.Any(i => i.IsAuthenticated && i.AuthenticationType == Scheme) ? mapped[0] : null;
+        return mapped.Count == 1 && Signed(user).Count == 1 ? mapped[0] : null;
     }
+
+    private static List<ClaimsIdentity> Signed(ClaimsPrincipal user) =>
+        [.. user.Identities.Where(i => i.IsAuthenticated && (i.AuthenticationType == Scheme || i.AuthenticationType == SessionScheme))];
 }

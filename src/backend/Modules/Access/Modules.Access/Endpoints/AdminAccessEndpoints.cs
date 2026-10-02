@@ -122,12 +122,10 @@ internal static class AdminAccessEndpoints
         return result.IsSuccess ? TypedResults.Ok(RoleChangeResponse.From(result.Value)) : Failure(result.Error);
     }
 
-    // Our staff id (from the identity only the Access module creates) and the workforce account of the validated staff token.
+    // Our staff id (from the identity only the Access module creates) and the workforce account of the validated staff
+    // token or session.
     private static StaffActor? Actor(ClaimsPrincipal user) =>
-        user.StaffId() is { } staffId
-        && user.Identities.SingleOrDefault(i => i.IsAuthenticated && i.AuthenticationType == StaffIdentity.Scheme)?.FindFirst("oid")?.Value is { Length: > 0 } objectId
-            ? new StaffActor(staffId, objectId)
-            : null;
+        user.StaffId() is { } staffId && user.AccountObjectId() is { Length: > 0 } objectId ? new StaffActor(staffId, objectId) : null;
 
     private static ProblemHttpResult Failure(RoleChangeFailure failure) => failure switch
     {

@@ -14,6 +14,12 @@ Code checks permissions, never role names. A role is a bundle of permissions (`M
 | Privacy | `orders.read`, `personal-data.legal-hold` |
 | Administrator | all, including `access.grants.read`, `access.grants.request` and `access.grants.approve` |
 
+## Signing in (admin-web)
+- Staff sign in through admin-web's **Sign in**. The Api runs the sign-in with the staff tenant and sets a session cookie; the browser never holds a token (ADR 0023).
+- A session ends after 30 minutes without activity, 8 hours after sign-in, or at **Sign out**. Sign-out ends our session only, not the Entra session.
+- A refused sign-in (no MFA, not a staff account) comes back as "Sign-in did not complete". The reason is in the `StaffTokenRefused` security event.
+- **Local development only:** with `Authentication:StaffSession:DevelopmentSignIn` = `true`, `POST /api/admin/v1/session/development-sign-in` with `{ "objectId": "<lowercase GUID>" }` and the header `X-TB-Staff-Csrf: 1` signs in without a tenant. Roles still come from `Access:RoleAssignments`, which is keyed by object id only: signing in as a real colleague's object id gives their configured roles, so use synthetic ids locally. The Api refuses to start with this setting outside Development.
+
 ## Grant or revoke a role
 1. **Request:** `POST /api/admin/v1/access/role-changes` with `{ "objectId": "<the person's Entra object id>", "role": "Operations", "action": "Grant" | "Revoke", "reason": "<ticket reference>" }`.
    - The object id comes from the Entra admin portal (user, then Object ID), as a lowercase GUID.
@@ -30,7 +36,7 @@ Pending requests are listed by `GET /api/admin/v1/access/role-changes` (also `?s
 
 ## Suspected compromise
 1. **First, disable the person's Entra account and revoke their sessions** in the Entra portal. Their tokens stop working at once, whatever roles they hold.
-2. Then request the revocation of their roles here, and have a second administrator approve it.
+2. Then request the revocation of their roles here, and have a second administrator approve it. This also ends what an admin-web session can do: the session keeps the account only, and permissions are read on every request. Disabling the account in Entra does not end a session that is already open (ADR 0023).
 3. If the role comes from configuration, remove it there too.
 
 ## Bootstrap and break-glass

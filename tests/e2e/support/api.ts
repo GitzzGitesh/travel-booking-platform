@@ -19,6 +19,27 @@ export async function routeApiToBackend(page: Page): Promise<void> {
   );
 }
 
+/** The synthetic operations account the E2E Api grants the Operations role (playwright.config.ts). */
+export const e2eOperationsAccount = '0e2e0000-0000-4000-8000-000000000001';
+
+/**
+ * Signs this page's browser in to admin-web with the Api's Development-only stand-in (ADR 0023), from the page itself,
+ * so the HttpOnly session cookie lands exactly as a real sign-in's would.
+ */
+export async function signInStaffForDevelopment(page: Page, objectId: string): Promise<void> {
+  const status = await page.evaluate(async (id) => {
+    const response = await fetch('/api/admin/v1/session/development-sign-in', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-TB-Staff-Csrf': '1' },
+      body: JSON.stringify({ objectId: id }),
+    });
+    return response.status;
+  }, objectId);
+  if (status !== 204) {
+    throw new Error(`Development sign-in failed with ${status}.`);
+  }
+}
+
 /** A date N days from today as yyyy-mm-dd, for date inputs. */
 export function daysFromToday(days: number): string {
   const date = new Date();

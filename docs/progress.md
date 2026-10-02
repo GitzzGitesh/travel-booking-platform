@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-10-01 (Phase 3 complete with mock providers; Phase 4: identity and admin foundation, in progress)_
+_Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identity and admin foundation, in progress)_
 
 ## Current phase: 4 — Identity & admin foundation, in progress (Phase 3, the first vertical slice, is complete with mock providers: row 5 below)
 
@@ -136,8 +136,27 @@ _Last updated: 2026-10-01 (Phase 3 complete with mock providers; Phase 4: identi
   - The request list is cursor-paged.
   - Maker-checker refusals are `RoleChangeRefused` security events.
 - **Runbook:** `staff-access.md`.
-- **Next:** the `admin-web` shell, which needs its token pattern decided (an ADR: BFF lean, ADR 0008).
+- **Next:** the `admin-web` shell (row 9).
 - **Blocked externally:** the staff tenant. |
+| 9 | **admin-web staff session and operations shell** (ADR 0023, Accepted 2026-10-01: option A) | **Done, without a staff tenant.**
+- **Backend-for-frontend in the Api host:** staff sign in with OpenID Connect on the server (code flow, PKCE, query response mode, no tokens saved) into the `__Host-tb-staff` cookie (HttpOnly, Secure, SameSite=Strict; 30 minutes idle, 8 hours absolute).
+  - The session holds the account and sign-in time only. Every request maps the staff member and permissions again, so revocations still apply at once.
+  - Unsafe requests need `X-TB-Staff-Csrf: 1`.
+  - Admin policies accept the staff token or the session, never both.
+  - New package `Microsoft.AspNetCore.Authentication.OpenIdConnect` (Microsoft, MIT), approved with the ADR.
+- **Endpoints:**
+  - `GET /api/admin/v1/session` (`staff:signed-in`)
+  - `GET .../session/sign-in` (anonymous; local return paths only; 503 `staff-sign-in-unavailable` until a tenant is configured)
+  - `POST .../session/sign-out`
+  - `POST .../session/development-sign-in`: Development only, behind `Authentication:StaffSession:DevelopmentSignIn`; startup refuses the setting elsewhere.
+- **Staff API contract:** `openapi.admin-v1.json` (now staff routes only; before, it also listed the customer routes) is enforced like the customer contract. It is generated into `projects/admin-api-client`, which only admin-web may import (boundary check).
+- **admin-web:** sign-in state, navigation by permission, the booking queues (manual review, awaiting supplier confirmation, booking in progress; cursor paging) and the order page with its items and timeline (read-only), with the CSRF header and session-ended handling. Dev proxy to the Api.
+- **Tests:**
+  - Api: `StaffSessionTests` (cookie flags, permissions, CSRF, live grants, ambiguity, sign-out, idle and absolute lifetimes, return paths), plus authorization and contract tests.
+  - Vitest: session, interceptor, shell and queue.
+  - Playwright: sign in, queues, sign out, with axe. CI applies the Orders and Access migrations for it.
+- **Next:** admin-web operations actions (review checks, payment review resolution, legal hold, role grants) on these screens.
+- **Blocked externally:** the staff tenant's app registration (redirect URI `/api/admin/v1/session/callback`, a client credential in Key Vault); the MFA claim shape in ID tokens; the Data Protection key ring and the admin-web CSP and headers (hosting, Q2). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

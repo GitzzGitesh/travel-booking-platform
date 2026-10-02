@@ -7,6 +7,8 @@
   <ItemGroup>
     <!-- Staff bearer-token validation (ADR 0008, ADR 0022): the package already approved for customer tokens. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- Staff sign-in for admin-web (ADR 0023): OpenID Connect, server side, into a session cookie. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <!-- Migrations tooling only (dotnet ef); never flows to consumers. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
