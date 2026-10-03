@@ -27,6 +27,7 @@ internal static class NoticeTemplates
     public const string BookingConfirmed = "booking-confirmed";
     public const string BookingPartiallyConfirmed = "booking-partially-confirmed";
     public const string BookingNotBooked = "booking-not-booked";
+    public const string RefundCompleted = "refund-completed";
 
     /// <summary>Bumped when a template's meaning changes; stored on each notification.</summary>
     public const int Version = 1;
@@ -35,7 +36,7 @@ internal static class NoticeTemplates
 
     private static readonly Dictionary<string, NoticeTexts> _texts = new(StringComparer.Ordinal) { ["en"] = NoticeTexts.English };
 
-    public static bool IsKnown(string kind) => kind is BookingConfirmed or BookingPartiallyConfirmed or BookingNotBooked;
+    public static bool IsKnown(string kind) => kind is BookingConfirmed or BookingPartiallyConfirmed or BookingNotBooked or RefundCompleted;
 
     public static RenderedNotice Render(string kind, string culture, BookingNoticeValues values)
     {
@@ -45,6 +46,7 @@ internal static class NoticeTemplates
             BookingConfirmed => (texts.ConfirmedSubject, texts.ConfirmedIntro),
             BookingPartiallyConfirmed => (texts.PartialSubject, texts.PartialIntro),
             BookingNotBooked => (texts.NotBookedSubject, texts.NotBookedIntro),
+            RefundCompleted => (texts.RefundSubject, texts.RefundIntro),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown notice."),
         };
 
@@ -54,9 +56,10 @@ internal static class NoticeTemplates
             lines.Add((texts.ReferencesLabel, string.Join(", ", values.BookingReferences)));
         }
 
+        var amountLabel = kind is RefundCompleted ? texts.RefundedLabel : texts.ChargedLabel;
         lines.Add(values.ChargedAmount is { } amount && values.ChargedCurrency is { } currency
-            ? (texts.ChargedLabel, $"{amount} {currency}")
-            : (texts.ChargedLabel, texts.NothingCharged));
+            ? (amountLabel, $"{amount} {currency}")
+            : (amountLabel, texts.NothingCharged));
 
         var html = new StringBuilder();
         html.Append("<!DOCTYPE html><html lang=\"").Append(Encode(texts.Language)).Append("\"><head><meta charset=\"utf-8\"><title>")
@@ -95,6 +98,9 @@ internal sealed record NoticeTexts(
     string ReferencesLabel,
     string ChargedLabel,
     string NothingCharged,
+    string RefundSubject,
+    string RefundIntro,
+    string RefundedLabel,
     string Footer)
 {
     public static readonly NoticeTexts English = new(
@@ -109,5 +115,8 @@ internal sealed record NoticeTexts(
         "Booking reference",
         "Charged",
         "Nothing",
+        "Your refund has been sent",
+        "Your refund has been sent to the card you paid with. Your bank may take a few days to show it.",
+        "Refunded",
         "This is an automated message about your order. Your trip details are in your account.");
 }

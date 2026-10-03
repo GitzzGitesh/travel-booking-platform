@@ -41,6 +41,23 @@ internal interface IPaymentAttemptStore
     /// <summary>Attempts that may still hold funds, authorized before <paramref name="authorizedBefore"/>, not yet warned about (ADR 0025).</summary>
     Task<IReadOnlyList<Guid>> FindHoldsToWarnAsync(DateTimeOffset authorizedBefore, int limit, CancellationToken cancellationToken);
 
+    // Refunds (ADR 0027): saved in the same unit of work as the attempt they return money from.
+    void AddRefund(RefundRecord refund);
+
+    Task<RefundRecord?> FindRefundAsync(Guid refundId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<RefundRecord>> FindRefundsAsync(Guid attemptId, CancellationToken cancellationToken);
+
+    /// <summary>The order's captured attempt (at most one per order), if any.</summary>
+    Task<PaymentAttempt?> FindCapturedByOrderAsync(Guid orderId, CancellationToken cancellationToken);
+
+    /// <summary>Refunds to send (Requested) or to look up (Pending, Unknown, or interrupted while refunding), oldest first.</summary>
+    Task<IReadOnlyList<Guid>> FindRefundsToProcessAsync(DateTimeOffset interruptedBefore, int limit, CancellationToken cancellationToken);
+
+    /// <summary>Adds an integration event to the Payments outbox, saved with the change (ADR 0007).</summary>
+    void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
+        where TEvent : BuildingBlocks.Background.IIntegrationEvent;
+
     /// <summary>How many attempts this order has had, whatever their outcome.</summary>
     Task<int> CountForOrderAsync(Guid orderId, CancellationToken cancellationToken);
 
@@ -196,6 +213,16 @@ internal sealed partial class AuthorizeOrderPaymentHandler(
         }
 
         return await BringUpToDateAsync(attempt, correlationId, cancellationToken);
+    }
+
+    public async Task<OrderPaymentBalance?> FindRefundableAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        if (await store.FindCapturedByOrderAsync(orderId, cancellationToken) is not { CaptureAmount: { } captured } attempt)
+        {
+            return null;
+        }
+
+        return new OrderPaymentBalance(attempt.Id, captured, new Money(attempt.RefundedAmountValue, captured.Currency));
     }
 
     public async Task<LiveOrderPayment?> FindLiveAsync(Guid orderId, CancellationToken cancellationToken) =>

@@ -50,6 +50,28 @@ internal sealed class OrderBookingSettledHandler(INotificationStore store, TimeP
 }
 
 /// <summary>
+/// The customer's notice for a completed refund (ADR 0024, ADR 0027): only a refund that succeeded is announced; a failed
+/// one is followed up by operations (alert), never told to the customer as done. Once per event (unique constraint).
+/// </summary>
+internal sealed class PaymentRefundSettledHandler(INotificationStore store, TimeProvider timeProvider) : IIntegrationEventHandler<Payments.Contracts.PaymentRefundSettled>
+{
+    public async Task HandleAsync(Payments.Contracts.PaymentRefundSettled integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!integrationEvent.Succeeded)
+        {
+            return;
+        }
+
+        var values = new BookingNoticeValues(integrationEvent.OrderId, [], integrationEvent.Amount.Amount.ToString(CultureInfo.InvariantCulture),
+            integrationEvent.Amount.Currency.Value);
+        await store.TryAddAsync(
+            Notification.For(NoticeTemplates.RefundCompleted, integrationEvent.OrderId, integrationEvent.EventId, NoticeTemplates.Version, values.ToJson(),
+                NoticeTemplates.DefaultCulture, timeProvider.GetUtcNow()),
+            cancellationToken);
+    }
+}
+
+/// <summary>
 /// Sends due notices (ADR 0024), each on its own: saved as Sending before the provider is called, so a crash leads to
 /// another send later (at least once). Without a configured provider nothing is sent and notices wait, which is safe.
 /// The recipient is read from Customers at this moment and never stored here; an anonymised order is suppressed.

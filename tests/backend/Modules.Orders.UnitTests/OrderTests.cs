@@ -22,6 +22,7 @@ public sealed class OrderTests
         [FlightOrderItemStatus.ManualReview] = [FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation],
         [FlightOrderItemStatus.Confirmed] = [FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.ManualReview],
         [FlightOrderItemStatus.Failed] = [FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.ManualReview],
+        [FlightOrderItemStatus.Cancelled] = [FlightOrderItemStatus.Confirmed], // ADR 0027: cancelled at the supplier after confirmation
     };
 
     [Fact]
@@ -261,6 +262,7 @@ public sealed class OrderTests
         FlightOrderItemStatus.ManualReview => order.RequireManualReview(item, "Mismatch", _system),
         FlightOrderItemStatus.Confirmed => order.Confirm(item, "mock", "ABC234", _system),
         FlightOrderItemStatus.Failed => order.Fail(item, "Rejected", _system),
+        FlightOrderItemStatus.Cancelled => order.CancelConfirmed(item, "DESK-1", _system),
         _ => throw new ArgumentOutOfRangeException(nameof(to)),
     };
 
@@ -281,6 +283,11 @@ public sealed class OrderTests
         }
 
         order.StartBooking("auth-1", _system).IsSuccess.ShouldBeTrue();
+        if (status is FlightOrderItemStatus.Cancelled)
+        {
+            Apply(order, item, FlightOrderItemStatus.Confirmed).IsSuccess.ShouldBeTrue();
+        }
+
         if (status is not FlightOrderItemStatus.Booking)
         {
             Apply(order, item, status).IsSuccess.ShouldBeTrue();

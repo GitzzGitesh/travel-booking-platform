@@ -121,6 +121,57 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                     b.ToTable("JobLeases", "payments");
                 });
 
+            modelBuilder.Entity("TravelBooking.BuildingBlocks.Background.Persistence.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("FailedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NextAttemptAt", "OccurredAt")
+                        .HasFilter("[ProcessedAt] IS NULL AND [FailedAt] IS NULL");
+
+                    b.ToTable("OutboxMessages", "payments");
+                });
+
             modelBuilder.Entity("TravelBooking.Modules.Payments.Application.AttemptLimitTrip", b =>
                 {
                     b.Property<long>("Id")
@@ -267,6 +318,11 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
+                    b.Property<decimal>("RefundedAmountValue")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("RefundedAmount");
+
                     b.Property<string>("ReleaseReason")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -382,6 +438,75 @@ namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
                     b.HasIndex("PaymentAttemptId", "Id");
 
                     b.ToTable("PaymentAttemptEvents", "payments");
+                });
+
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Domain.RefundRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AmountValue")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("Amount");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("Currency")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProviderRefundId")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset?>("SettledAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttemptId");
+
+                    b.HasIndex("Status", "UpdatedAt");
+
+                    b.ToTable("Refunds", "payments", t =>
+                        {
+                            t.HasCheckConstraint("CK_Refunds_Status", "[Status] IN ('Requested', 'Refunding', 'Pending', 'Unknown', 'Succeeded', 'Failed', 'ManualReview')");
+                        });
                 });
 
             modelBuilder.Entity("TravelBooking.Modules.Payments.Domain.PaymentAttemptEvent", b =>

@@ -25,6 +25,9 @@ namespace TravelBooking.Modules.Payments;
 /// </summary>
 public static class PaymentsModule
 {
+    /// <summary>The Payments outbox (refund outcomes, ADR 0027), dispatched by the Worker.</summary>
+    internal const string OutboxJobName = "payments.outbox";
+
     public static IServiceCollection AddPaymentsModule(this IServiceCollection services, IConfiguration configuration)
     {
         services.TryAddSingleton(TimeProvider.System);
@@ -139,6 +142,12 @@ public static class PaymentsModule
         services.AddIntegrationEventHandler<OrderPaymentCaptureRequested, OrderPaymentCaptureRequestedHandler>();
         services.AddBackgroundJob<ProcessPaymentNotificationsJob, PaymentsDbContext>(ProcessPaymentNotificationsJob.Name, TimeSpan.FromSeconds(10));
         services.AddBackgroundJob<WatchExpiringHoldsJob, PaymentsDbContext>(WatchExpiringHoldsJob.Name, TimeSpan.FromMinutes(15));
+
+        // Refunds (ADR 0027): recorded from Orders' approval, sent once under our key, looked up when unknown; their outcome
+        // goes to Orders and the customer's notice through the Payments outbox.
+        services.AddIntegrationEventHandler<OrderRefundRequested, OrderRefundRequestedHandler>();
+        services.AddBackgroundJob<ExecuteRefundsJob, PaymentsDbContext>(ExecuteRefundsJob.Name, TimeSpan.FromSeconds(30));
+        services.AddOutboxDispatcher<PaymentsDbContext>(OutboxJobName, TimeSpan.FromSeconds(5));
         return services;
     }
 }

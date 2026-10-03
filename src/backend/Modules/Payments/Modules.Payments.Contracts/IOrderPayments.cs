@@ -31,6 +31,18 @@ public interface IOrderPayments
     /// if there is none. A query (ADR 0002): Orders never abandons an order while one exists.
     /// </summary>
     Task<LiveOrderPayment?> FindLiveAsync(Guid orderId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// What of the order's payment can still be refunded (ADR 0027): the captured amount and the refunds already made or
+    /// under way (any not failed). Null when nothing was captured. A query, from what is stored.
+    /// </summary>
+    Task<OrderPaymentBalance?> FindRefundableAsync(Guid orderId, CancellationToken cancellationToken);
+}
+
+/// <param name="Refunded">Refunds succeeded, pending or not yet known: only failed refunds are excluded.</param>
+public sealed record OrderPaymentBalance(Guid PaymentId, BuildingBlocks.Money Captured, BuildingBlocks.Money Refunded)
+{
+    public BuildingBlocks.Money Refundable => Captured - Refunded;
 }
 
 /// <param name="Status">Authorized or ActionRequired (releasable), Pending (an outcome or a void still unknown), or ManualReview.</param>

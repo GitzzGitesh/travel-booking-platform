@@ -361,6 +361,33 @@ internal sealed class PaymentAttempt
     /// </summary>
     public void RecordFinding(string reason, PaymentChange change, string? providerReference) => Record(Status, reason, change, providerReference);
 
+    /// <summary>
+    /// What has been reserved for refunds (ADR 0027): every refund that is not failed. Kept on the attempt so that its
+    /// rowversion serialises refunds: two refunds of one payment can never both pass the "within the captured amount" check.
+    /// </summary>
+    public decimal RefundedAmountValue { get; private set; }
+
+    /// <summary>Reserves a refund within what was captured (in its currency), recorded in the history; false if it does not fit.</summary>
+    public bool ReserveRefund(Money amount, Guid refundId, PaymentChange change)
+    {
+        if (Status is not PaymentAttemptStatus.Captured || CaptureAmount is not { } captured || amount.Currency != captured.Currency
+            || amount.Amount <= 0 || RefundedAmountValue + amount.Amount > captured.Amount)
+        {
+            return false;
+        }
+
+        RefundedAmountValue += amount.Amount;
+        Record(Status, $"Refund {refundId:N} of {amount.Amount} {amount.Currency.Value} reserved", change, null);
+        return true;
+    }
+
+    /// <summary>Gives a failed refund's amount back to what can be refunded, recorded in the history.</summary>
+    public void ReleaseRefund(Money amount, Guid refundId, PaymentChange change)
+    {
+        RefundedAmountValue = Math.Max(0, RefundedAmountValue - amount.Amount);
+        Record(Status, $"Refund {refundId:N} failed: {amount.Amount} {amount.Currency.Value} can be refunded again", change, null);
+    }
+
     /// <summary>Records the void's outcome: Voided, Canceled (an unfinished challenge), Expired (the hold had lapsed), VoidUnknown or ManualReview.</summary>
     public Result<PaymentAttemptStatus, PaymentAttemptTransitionError> ResolveVoid(PaymentAttemptStatus to, string reason, PaymentChange change)
     {

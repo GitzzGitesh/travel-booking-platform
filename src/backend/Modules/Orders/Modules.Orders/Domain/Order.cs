@@ -17,6 +17,9 @@ internal enum FlightOrderItemStatus
     ManualReview,
     Confirmed,
     Failed,
+
+    /// <summary>A confirmed booking cancelled at the supplier after the charge (ADR 0027): any refund follows its refund case.</summary>
+    Cancelled,
 }
 
 /// <summary>Whether the supplier has issued the tickets for a confirmed item.</summary>
@@ -46,6 +49,9 @@ internal enum OrderStatus
     PartiallyConfirmed,
     Failed,
     Abandoned,
+
+    /// <summary>Every booked item was cancelled at the supplier afterwards (ADR 0027).</summary>
+    Cancelled,
 }
 
 /// <summary>Who changed what, and when: recorded on every transition, with the request's correlation id.</summary>
@@ -365,6 +371,32 @@ internal sealed class Order
             : null;
 
     /// <summary>
+    /// A confirmed booking cancelled at the supplier after the charge (ADR 0027), with the supplier desk's reference as
+    /// evidence: recorded as a fact, before any refund is decided. Only a confirmed item.
+    /// </summary>
+    public Result<FlightOrderItemStatus, OrderTransitionError> CancelConfirmed(Guid itemId, string deskReference, TransitionContext context) =>
+        string.IsNullOrWhiteSpace(deskReference)
+            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(deskReference)))
+            : Transition(itemId, FlightOrderItemStatus.Cancelled, "Cancelled at the supplier after the booking was confirmed", context, deskReference,
+                FlightOrderItemStatus.Confirmed);
+
+    /// <summary>
+    /// Records a refund step on the timeline (ADR 0027: opened, decided, refunded or failed), on the cancelled items or, for
+    /// a goodwill refund, the first item. Not a status change.
+    /// </summary>
+    public void NoteRefund(IReadOnlyCollection<Guid> itemIds, string reason, TransitionContext context, string? providerReference)
+    {
+        var items = itemIds.Count > 0 ? _items.Where(i => itemIds.Contains(i.Id)).ToList() : _items.Take(1).ToList();
+        foreach (var item in items)
+        {
+            Record(item, item.Status, reason, context, providerReference);
+        }
+    }
+
+    /// <summary>Whether any item of this order was ever in manual review (ADR 0027: its refunds always need a second person).</summary>
+    public bool WasEverInReview => _timeline.Any(e => e.ToStatus == nameof(FlightOrderItemStatus.ManualReview));
+
+    /// <summary>
     /// A staff outcome for an item in review (ADR 0025): the supplier booking was cancelled at the supplier's desk, with
     /// its reference as evidence. Nothing is booked any more, so nothing is charged for it (the hold follows the order's
     /// settlement).
@@ -473,7 +505,13 @@ internal sealed class Order
             return OrderStatus.Failed;
         }
 
-        if (items.Any(s => s is FlightOrderItemStatus.Confirmed) && items.All(s => s is FlightOrderItemStatus.Confirmed or FlightOrderItemStatus.Failed))
+        if (items.Any(s => s is FlightOrderItemStatus.Cancelled) && items.All(s => s is FlightOrderItemStatus.Cancelled or FlightOrderItemStatus.Failed))
+        {
+            return OrderStatus.Cancelled;
+        }
+
+        if (items.Any(s => s is FlightOrderItemStatus.Confirmed)
+            && items.All(s => s is FlightOrderItemStatus.Confirmed or FlightOrderItemStatus.Failed or FlightOrderItemStatus.Cancelled))
         {
             return OrderStatus.PartiallyConfirmed;
         }

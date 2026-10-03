@@ -25,6 +25,7 @@ internal static class TestStaffTokens
     public const string ThirdAdministrator = "0b6a4d1e-0000-4a55-9f86-000000000006";
     public const string Unassigned = "0b6a4d1e-0000-4a55-9f86-000000000005";
     public const string Legal = "0b6a4d1e-0000-4a55-9f86-000000000007";
+    public const string Finance = "0b6a4d1e-0000-4a55-9f86-000000000008";
 
     private static readonly RsaSecurityKey _key = new(RSA.Create(2048)) { KeyId = "staff-test-key" };
 

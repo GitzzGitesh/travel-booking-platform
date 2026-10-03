@@ -18,8 +18,37 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
-        modelBuilder.AddOutbox().AddJobLeases(); // ADR 0007: events for other modules, and the Orders jobs' leases
+        modelBuilder.AddOutbox().AddInbox().AddJobLeases(); // ADR 0007: events for other modules, refund outcomes from Payments, and the jobs' leases
         modelBuilder.AddAuditLog(); // ADR 0022: staff actions on orders, saved with the action
+
+        // ADR 0027: one refund case per refund; its id is Payments' refund id (the provider key).
+        var refund = modelBuilder.Entity<RefundCase>();
+        refund.ToTable("RefundCases", table => table.HasCheckConstraint(
+            "CK_RefundCases_Status", $"[Status] IN ({string.Join(", ", Enum.GetNames<RefundCaseStatus>().Select(name => $"'{name}'"))})"));
+        refund.HasKey(r => r.Id);
+        refund.Property(r => r.Id).ValueGeneratedNever();
+        refund.Property(r => r.Kind).HasConversion<string>().HasMaxLength(20).IsUnicode(false);
+        refund.Property(r => r.ItemIds).HasMaxLength(1000).IsUnicode(false);
+        refund.Property(r => r.AmountValue).HasColumnName("Amount").HasPrecision(19, 4);
+        refund.Property(r => r.CurrencyCode).HasColumnName("Currency").HasMaxLength(3).IsFixedLength().IsUnicode(false);
+        refund.Ignore(r => r.Amount);
+        refund.Property(r => r.SupplierRefundValue).HasColumnName("SupplierRefund").HasPrecision(19, 4);
+        refund.Property(r => r.FeeValue).HasColumnName("Fee").HasPrecision(19, 4);
+        refund.Property(r => r.SupplierReference).HasMaxLength(RefundCase.MaxTextLength);
+        refund.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsUnicode(false);
+        refund.Property(r => r.Reason).HasMaxLength(RefundCase.MaxTextLength);
+        refund.Property(r => r.RequestedBy).HasMaxLength(64).IsUnicode(false);
+        refund.Property(r => r.RequestedByAccount).HasMaxLength(128).IsUnicode(false);
+        refund.Property(r => r.DecidedBy).HasMaxLength(64).IsUnicode(false);
+        refund.Property(r => r.DecisionReason).HasMaxLength(RefundCase.MaxTextLength);
+        refund.Property<byte[]>("RowVersion").IsRowVersion();
+        refund.Property(r => r.IdempotencyKey).HasMaxLength(RefundCase.MaxKeyLength).IsUnicode(false);
+        refund.Property(r => r.RequestFingerprint).HasMaxLength(RefundCase.MaxFingerprintLength).IsUnicode(false);
+        refund.Ignore(r => r.CancelledItemIds);
+        // Idempotency (non-negotiable 4): one case per requester and key, enforced by the database.
+        refund.HasIndex(r => new { r.RequestedBy, r.IdempotencyKey }).IsUnique();
+        refund.HasIndex(r => r.OrderId);
+        refund.HasIndex(r => new { r.Status, r.RequestedAt });
 
         var order = modelBuilder.Entity<Order>();
         order.ToTable("Orders");

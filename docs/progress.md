@@ -191,7 +191,25 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - On approval the purge waits `LegalHoldReleaseGraceDays` (30, pending legal confirmation), and placing the hold again undoes it.
   - Endpoints: `GET .../orders/{id}/legal-hold`, `POST .../orders/{id}/legal-hold/release-requests`, `GET /legal-hold/release-requests`, `POST .../{requestId}/decision`, `POST .../{requestId}/withdrawal`. Refusals are `LegalHoldReleaseRefused` security events. Migration `AddLegalHoldReleaseRequests` (customers).
 - **admin-web:** **Record an outcome** on items in review; a legal-hold panel (state, place, request, approve or reject, withdraw); **Legal-hold releases** for approvers.
-- **Next:** Batch C, cancellations and refunds (ADR 0027).
+- **Next:** row 13. |
+| 13 | **Batch C: cancellations and refunds (ADR 0027)** | **Done, with the mock payment provider.**
+- **Refund cases** (Orders, migration `AddRefundCases`, which also adds the Orders inbox and the item state `Cancelled`): `POST /api/admin/v1/orders/{orderId}/refund-cases` (`refunds.request`).
+  - A **cancellation** records confirmed items as `Cancelled`, with the supplier desk's reference, and computes the refund: the supplier's refund (never more than paid for the items), less the disclosed fee (`Refunds:CancellationFee`, none by default), never more than can still be refunded.
+  - A **goodwill** refund names its amount.
+- **Idempotency:** an `Idempotency-Key` per request; one case per requester and key (unique index). A replay returns the case; the same key for another request is `idempotency-conflict`.
+- **Maker-checker:** `POST /api/admin/v1/refund-cases/{caseId}/decision` by a different person with `refunds.approve` (new **Finance** role); only the requester withdraws.
+  - **Every refund opened by staff needs a second person** (ADR 0027 §5). Expired cases stop holding money back.
+  - Approval publishes `OrderRefundRequested`.
+- **Refund execution** (Payments, migration `AddRefunds`, which also adds the Payments outbox):
+  - One record per case id. The amount is reserved on the payment attempt in the same save (`RefundedAmount`; the attempt's rowversion serialises refunds), and released when a refund fails. Each step goes in the payment's history.
+  - `payments.execute-refunds` sends it once under `{caseId}:refund` and looks unknown or pending outcomes up, never sending again. Still unknown or pending after 24 hours: `RefundUnresolved` and manual review.
+  - `PaymentRefundSettled` goes to Orders (the case becomes `Refunded` or `RefundFailed`) and to Notifications ("Your refund has been sent").
+- **Timeline and audit:** opening, deciding and settling a case are on the order timeline and in the audit log. `orders.watch-refund-cases` raises `RefundCaseOverdue` for an approved case not refunded within `Refunds:ExecutionTargetDays` (7).
+- **Runbook:** `refunds.md`. Failure scenarios F-40, F-41 and F-43 updated.
+- **Next:** Batch D: the admin-web refund screens; the customer's own cancellation request; the notices "cancellation received" and "refund failed"; a staff path to settle a refund in manual review (by a provider lookup).
+- **Pending:**
+  - legal confirmation: consumer cancellation rights and refund timelines per market, and the disclosure of any fee;
+  - the supplier: cancellation through its API (R8). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

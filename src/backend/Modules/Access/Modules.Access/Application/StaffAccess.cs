@@ -20,6 +20,9 @@ internal static class StaffRoles
     /// <summary>Legal: approves the release of legal holds (ADR 0026), separate from the Privacy staff who request it.</summary>
     public const string Legal = "Legal";
 
+    /// <summary>Finance: approves refunds (ADR 0027), separate from the operations staff who propose them.</summary>
+    public const string Finance = "Finance";
+
     public const string Administrator = "Administrator";
 
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> Permissions { get; } = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
@@ -27,9 +30,11 @@ internal static class StaffRoles
         [Operations] =
         [
             StaffPermissions.OrdersRead, StaffPermissions.BookingsReviewResolve, StaffPermissions.PaymentsRead, StaffPermissions.PaymentsReviewResolve,
+            StaffPermissions.RefundsRequest,
         ],
         [Privacy] = [StaffPermissions.OrdersRead, StaffPermissions.PersonalDataLegalHold],
         [Legal] = [StaffPermissions.OrdersRead, StaffPermissions.PersonalDataLegalHoldApprove],
+        [Finance] = [StaffPermissions.OrdersRead, StaffPermissions.PaymentsRead, StaffPermissions.RefundsApprove],
         [Administrator] = StaffPermissions.All,
     };
 
