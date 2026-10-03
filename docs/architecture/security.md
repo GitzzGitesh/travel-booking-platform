@@ -20,7 +20,7 @@ Tokens: the Api validates JWTs from both issuers with separate authentication sc
   - Unsafe requests need the `X-TB-Staff-Csrf` header (a refusal is the `StaffTokenRefused` security event, reason `session-csrf-header-missing`).
   - A token and a session together are refused as ambiguous.
   - The Development-only sign-in stand-in is refused at startup in any other environment.
-  - The customer-web token pattern is still open (ADR 0008).
+  - customer-web uses the same pattern as admin-web (ADR 0028): an HttpOnly session cookie (`__Host-tb-customer`, SameSite=Lax, idle 60 minutes, at most 12 hours) set by the Api after an OpenID Connect sign-in; no token in the browser; the CSRF header `X-TB-Customer-Csrf` on unsafe requests.
 
 ## Authorization
 - Permission-based: `orders.read`, `orders.read.pii`, `refunds.request`, `refunds.approve`, `pricing.markups.write`, `access.permissions.grant`, …

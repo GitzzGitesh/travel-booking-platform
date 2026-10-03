@@ -7,6 +7,8 @@
   <ItemGroup>
     <!-- Customer bearer-token validation (ADR 0008; approved 2026-09-28). -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- The customer-web sign-in (ADR 0028): the package approved for the staff session (ADR 0023). -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <!-- Migrations tooling only (dotnet ef); never flows to consumers. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />

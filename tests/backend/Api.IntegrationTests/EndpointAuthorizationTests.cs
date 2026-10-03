@@ -49,6 +49,10 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
         // Staff sign-in (ADR 0023): starts the tenant's sign-in; the Development stand-in exists in Development only.
         "/api/admin/v1/session/sign-in",
         "/api/admin/v1/session/development-sign-in",
+
+        // Customer sign-in (ADR 0028), likewise.
+        "/api/v1/session/sign-in",
+        "/api/v1/session/development-sign-in",
     ];
 
     private static readonly string[] _anonymousAdminRoutes = ["/api/admin/v1/session/sign-in", "/api/admin/v1/session/development-sign-in"];
@@ -88,27 +92,30 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
             .ShouldAllBe(e => !e.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(a => a.Policy != null && a.Policy.StartsWith("staff:")));
     }
 
-    // The Development sign-in stand-in (ADR 0023) needs both the Development environment and the setting, and startup
-    // refuses the setting anywhere else.
-    [Fact]
-    public void Development_sign_in_is_mapped_only_in_development_with_the_setting()
+    // The Development sign-in stand-ins (ADR 0023, ADR 0028) need both the Development environment and the setting, and
+    // startup refuses the setting anywhere else.
+    [Theory]
+    [InlineData("StaffSession", "/api/admin/v1/session/development-sign-in")]
+    [InlineData("CustomerSession", "/api/v1/session/development-sign-in")]
+    public void Development_sign_in_is_mapped_only_in_development_with_the_setting(string section, string route)
     {
-        static bool Mapped(WebApplicationFactory<Program> host) => host.Services.GetRequiredService<EndpointDataSource>().Endpoints
-            .OfType<RouteEndpoint>().Any(e => e.RoutePattern.RawText == "/api/admin/v1/session/development-sign-in");
+        var setting = $"Authentication:{section}:DevelopmentSignIn";
+        bool Mapped(WebApplicationFactory<Program> host) => host.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>().Any(e => e.RoutePattern.RawText == route);
 
         using (var withoutSetting = factory.WithWebHostBuilder(b => b.UseEnvironment("Development")))
         {
             Mapped(withoutSetting).ShouldBeFalse();
         }
 
-        using (var enabled = factory.WithWebHostBuilder(b => b.UseEnvironment("Development").UseSetting("Authentication:StaffSession:DevelopmentSignIn", "true")))
+        using (var enabled = factory.WithWebHostBuilder(b => b.UseEnvironment("Development").UseSetting(setting, "true")))
         {
             Mapped(enabled).ShouldBeTrue();
         }
 
         foreach (var environment in new[] { "Staging", "Production" })
         {
-            using var refused = factory.WithWebHostBuilder(b => b.UseEnvironment(environment).UseSetting("Authentication:StaffSession:DevelopmentSignIn", "true"));
+            using var refused = factory.WithWebHostBuilder(b => b.UseEnvironment(environment).UseSetting(setting, "true"));
             Should.Throw<Microsoft.Extensions.Options.OptionsValidationException>(() => refused.CreateClient());
         }
     }

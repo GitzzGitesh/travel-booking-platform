@@ -214,8 +214,18 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **Refund review:** `POST /api/admin/v1/payments/refunds/{refundId}/review-resolutions` (`payments.review.resolve`, Operations). A refund in manual review is settled only by a provider lookup by our key: succeeded or failed settles it (a failure releases its amount) and publishes `PaymentRefundSettled`; anything else keeps it in review, with the check in the payment's history. The resolution is tied to the refund's own correlation id. A refund of a payment without a provider id now fails at once (nothing was sent, so nothing to look up) and releases its amount, instead of a review no lookup could settle. Audited (`payments.refund-review.resolve`); it never sends a refund. The staff payment view lists the payment's refunds and the amount refunded or being refunded.
 - **Customer notices:** "Your booking has been cancelled" (new `OrderCancellationRecorded`, published with a cancellation case; it names no amount, since the refund may be nothing or rejected) and "Your refund is delayed" (a failed refund, with its "Refund amount"; never told as sent).
 - **admin-web:** the order page's refund panel (cases; open a cancellation or goodwill case with an `Idempotency-Key` kept across retries; approve, reject, withdraw), the approvers' "Refunds to approve" page (`refunds.approve`), and the payment page's refunds and "Check with the payment provider" for a refund in review.
-- **Next:** the customer's own cancellation request (customer-web, functional only); supplier cancellation through its API stays blocked on R8.
+- **Next:** row 15 (customer sign-in, which the customer's own cancellation request needs); supplier cancellation through its API stays blocked on R8.
 - **Pending:** as row 13. |
+| 15 | **Batch E: customer sign-in for customer-web (ADR 0028)** | **Done; the customer tenant is external.**
+- **Decision (ADR 0028):** the customer-web token pattern left open by ADR 0008 is the same BFF as admin-web (ADR 0023), in the Api host and owned by the Customers module.
+  - `CustomerSignIn` (OpenID Connect, code + PKCE, `Authentication:CustomerSession` from user-secrets or Key Vault).
+  - The cookie `__Host-tb-customer`: HttpOnly, Secure, SameSite=Lax, idle 60 minutes, at most 12 hours. It holds the account only, and our customer id is mapped on every request.
+  - The CSRF header `X-TB-Customer-Csrf`. A token and a session together are refused.
+- **Endpoints:** `GET /api/v1/session`, `GET /session/sign-in` (503 `customer-sign-in-unavailable` until the tenant exists), `POST /session/sign-out`, and the Development-only `POST /session/development-sign-in`.
+  - The `customer` policy and the anonymous-but-acting endpoints (offer selection, revalidation) accept the session; a refused session is never anonymous.
+- **customer-web:** the header's Sign in / Sign out work (no visual change). Signed-in state is read in the browser only (SSR stays signed out). The interceptor adds the CSRF header to unsafe `/api/v1` calls, and a 401 ends the session.
+- **Next:** the booking journey in customer-web: travellers, checkout with the mock payment, order status, then "My trips" and the customer's cancellation request.
+- **Pending (external):** the customer tenant's app registration (redirect URI `/api/v1/session/callback`, client credential in Key Vault); Data Protection keys with hosting (Q2). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.
