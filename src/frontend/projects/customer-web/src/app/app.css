@@ -85,6 +85,7 @@
 
 .primary-nav a,
 .menu-list a,
+.menu-list .link-button,
 .soon-item {
   display: inline-flex;
   align-items: center;
@@ -148,6 +149,7 @@
 }
 
 .menu-list a,
+.menu-list .link-button,
 .menu-list .soon-item {
   width: 100%;
   justify-content: space-between;
@@ -161,6 +163,14 @@
 
 .menu-list .soon-item {
   color: var(--color-muted);
+}
+
+.menu-list .link-button {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 main {

@@ -29,6 +29,14 @@ public static partial class CustomerIdentity
     /// <summary>The authentication scheme for customer tokens (Entra External ID, ADR 0008). Staff get their own scheme.</summary>
     public const string Scheme = "Customer";
 
+    /// <summary>The customer-web session cookie (ADR 0028): the same customer mapping as <see cref="Scheme"/>, re-read on every request.</summary>
+    public const string SessionScheme = "CustomerSession";
+
+    public const string SessionCookieName = "__Host-tb-customer";
+
+    /// <summary>Required on every unsafe request authenticated by the session cookie (ADR 0028: CSRF).</summary>
+    public const string CsrfHeader = "X-TB-Customer-Csrf";
+
     /// <summary>The authorization policy for customer endpoints: a validated customer token mapped to an internal customer.</summary>
     public const string Policy = "customer";
 
@@ -40,17 +48,20 @@ public static partial class CustomerIdentity
 
     /// <summary>
     /// For endpoints open to anonymous callers that act for a signed-in customer when there is one (e.g. selecting a flight):
-    /// no <c>Authorization</c> header is anonymous; a header must be a valid customer token that satisfies
-    /// <see cref="Policy"/>, otherwise the caller is <see cref="OptionalCustomer.Rejected"/> (never silently anonymous).
+    /// neither an <c>Authorization</c> header nor the session cookie is anonymous; otherwise exactly one of them must be a
+    /// valid customer token or session that satisfies <see cref="Policy"/>, or the caller is
+    /// <see cref="OptionalCustomer.Rejected"/> (never silently anonymous, ADR 0028).
     /// </summary>
     public static async Task<OptionalCustomer> AuthenticateOptionalCustomerAsync(this HttpContext http)
     {
-        if (!http.Request.Headers.ContainsKey(HeaderNames.Authorization))
+        var bearer = http.Request.Headers.ContainsKey(HeaderNames.Authorization);
+        var session = http.Request.Cookies.ContainsKey(SessionCookieName);
+        if (!bearer && !session)
         {
             return OptionalCustomer.Anonymous;
         }
 
-        var result = await http.AuthenticateAsync(Scheme);
+        var result = bearer && session ? AuthenticateResult.Fail("Both a token and a session.") : await http.AuthenticateAsync(bearer ? Scheme : SessionScheme);
         if (result.Succeeded
             && (await http.RequestServices.GetRequiredService<IAuthorizationService>().AuthorizeAsync(result.Principal, Policy)).Succeeded
             && result.Principal.CustomerId() is { } customerId)
@@ -73,7 +84,9 @@ public static partial class CustomerIdentity
     public static string? CustomerId(this ClaimsPrincipal user)
     {
         var mapped = user.Identities.Where(i => i.IsAuthenticated && i.AuthenticationType == MappedIdentityType).ToList();
-        return mapped.Count == 1 && user.Identities.Any(i => i.IsAuthenticated && i.AuthenticationType == Scheme)
+        // Exactly one customer identity (a token or a session, never both, ADR 0028) and exactly one mapping, or nobody.
+        var signed = user.Identities.Count(i => i.IsAuthenticated && (i.AuthenticationType == Scheme || i.AuthenticationType == SessionScheme));
+        return mapped.Count == 1 && signed == 1
             ? mapped[0].Claims.SingleOrDefault(c => c.Type == CustomerIdClaim)?.Value
             : null;
     }

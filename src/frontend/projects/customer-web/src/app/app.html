@@ -32,16 +32,15 @@
       <button
         type="button"
         class="btn btn-sm sign-in"
-        aria-disabled="true"
-        aria-describedby="sign-in-note"
+        [disabled]="signingOut()"
+        (click)="session.signedIn() ? signOut() : signIn()"
       >
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="8" r="4" />
           <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
         </svg>
-        Sign in
+        {{ session.signedIn() ? 'Sign out' : 'Sign in' }}
       </button>
-      <span id="sign-in-note" class="visually-hidden">Sign-in is coming soon.</span>
 
       <button
         #menuButton
@@ -95,7 +94,14 @@
         </li>
       }
       <li>
-        <span class="soon-item">Sign in <span class="badge">Soon</span></span>
+        <button
+          type="button"
+          class="link-button"
+          [disabled]="signingOut()"
+          (click)="menu.close(); session.signedIn() ? signOut() : signIn()"
+        >
+          {{ session.signedIn() ? 'Sign out' : 'Sign in' }}
+        </button>
       </li>
     </ul>
   </nav>

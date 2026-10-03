@@ -12,6 +12,7 @@ export type { ContactRequest } from './models/contact-request';
 export type { ContactResponse } from './models/contact-response';
 export type { CreateFlightOrderRequest } from './models/create-flight-order-request';
 export type { CurrentCustomerResponse } from './models/current-customer-response';
+export type { CustomerSessionResponse } from './models/customer-session-response';
 export type { FareAllowance } from './models/fare-allowance';
 export type { FlightFareResponse } from './models/flight-fare-response';
 export type { FlightOfferResponse } from './models/flight-offer-response';

@@ -54,6 +54,8 @@ export default defineConfig({
         ConnectionStrings__Access: process.env['E2E_FLIGHTS_DB'] ?? '',
         ConnectionStrings__Payments: process.env['E2E_FLIGHTS_DB'] ?? '',
         Authentication__StaffSession__DevelopmentSignIn: 'true',
+        // customer-web journeys sign in with the customer stand-in (ADR 0028), as synthetic accounts.
+        Authentication__CustomerSession__DevelopmentSignIn: 'true',
         Access__RoleAssignments__0__ObjectId: '0e2e0000-0000-4000-8000-000000000001',
         Access__RoleAssignments__0__Roles__0: 'Operations',
         Access__RoleAssignments__1__ObjectId: '0e2e0000-0000-4000-8000-000000000002',

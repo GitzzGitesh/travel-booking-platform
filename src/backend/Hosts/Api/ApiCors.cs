@@ -24,6 +24,8 @@ internal static class ApiCors
             .Configure<IOptions<CorsSettings>>((cors, settings) => cors.AddDefaultPolicy(policy => policy
                 .WithOrigins(settings.Value.AllowedOrigins)
                 .WithMethods(HttpMethods.Get, HttpMethods.Post, HttpMethods.Put, HttpMethods.Patch, HttpMethods.Delete)
+                // Invariants for the session cookies (ADR 0023, ADR 0028): never AllowCredentials, and never allow the
+                // CSRF headers (X-TB-Staff-Csrf, X-TB-Customer-Csrf), so no other origin can send them.
                 .WithHeaders("Content-Type", "Authorization", "Idempotency-Key", "If-Match")
                 .WithExposedHeaders("ETag", "Location", "Retry-After")
                 .SetPreflightMaxAge(TimeSpan.FromMinutes(10))));

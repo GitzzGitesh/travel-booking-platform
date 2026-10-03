@@ -26,7 +26,7 @@ Frontend (run in `src/frontend`):
 - Install: `npm ci`
 - Build: `npx ng build customer-web` (SSR + prerender) / `npx ng build admin-web` (SPA), then `npm run check:admin-web-csp`; `npm run check:app-boundaries` (apps never import each other)
 - Unit tests (Vitest): `npx ng test customer-web --watch=false` / `npx ng test admin-web --watch=false`
-- Dev server: `npx ng serve customer-web` / `npx ng serve admin-web`. Both proxy `/api` to the Api on http://localhost:5080 (each app's `proxy.conf.json`), so run the Api too. admin-web signs in through the Api's staff session (ADR 0023); locally, without a tenant, use the Development sign-in in `docs/runbooks/staff-access.md`.
+- Dev server: `npx ng serve customer-web` / `npx ng serve admin-web`. Both proxy `/api` to the Api on http://localhost:5080 (each app's `proxy.conf.json`), so run the Api too. admin-web signs in through the Api's staff session (ADR 0023); locally, without a tenant, use the Development sign-in in `docs/runbooks/staff-access.md`. customer-web signs in through the Api's customer session (ADR 0028); locally, set `Authentication:CustomerSession:DevelopmentSignIn` = `true` and `POST /api/v1/session/development-sign-in` `{ "objectId": "<a new GUID>" }` with the header `X-TB-Customer-Csrf: 1`.
 - API clients: `npm run generate:api-client` after a contract snapshot changes (commit the result). It generates `api-client` (customer) and `admin-api-client` (staff, admin-web only). `npm run check:api-client` type-checks both (ADR 0013)
 
 CI (`.github/workflows/ci.yml`, `codeql.yml`) runs these same backend and frontend steps (including the API-client drift check), an oasdiff breaking-change check on PRs, a gitleaks history scan, and CodeQL on every PR and push to `main`.
