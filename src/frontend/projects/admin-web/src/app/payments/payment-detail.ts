@@ -6,6 +6,7 @@ import {
   Api,
   getPaymentAttemptForOperations,
   resolvePaymentReview,
+  resolveRefundReview,
 } from '@travel-booking/admin-api-client';
 import type { AdminPaymentAttempt } from '@travel-booking/admin-api-client';
 import { describeProblem, problemExtension, problemType } from '../shared/problems';
@@ -14,7 +15,8 @@ import { StaffSession } from '../staff-session';
 
 /**
  * One payment attempt for operations: amounts, provider references and its history (no card data exists). A payment in
- * manual review is settled only by asking the provider (F-26), never by a staff member's say-so.
+ * manual review is settled only by asking the provider (F-26), never by a staff member's say-so; so is a refund in
+ * manual review (ADR 0027).
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -61,6 +63,10 @@ import { StaffSession } from '../staff-session';
             Nothing
           }
         </dd>
+        @if (attempt.refunded; as refunded) {
+          <dt>Refunded or being refunded</dt>
+          <dd>{{ refunded.amount }} {{ refunded.currency }}</dd>
+        }
         <dt>Provider</dt>
         <dd>{{ attempt.providerId ?? '—' }}</dd>
         <dt>Provider payment</dt>
@@ -97,6 +103,55 @@ import { StaffSession } from '../staff-session';
             (submitted)="resolve($event)"
           />
         </section>
+      }
+
+      @if (attempt.refunds.length > 0) {
+        <h2>Refunds</h2>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Requested (UTC)</th>
+                <th scope="col">Refund</th>
+                <th scope="col">Amount</th>
+                <th scope="col">Status</th>
+                <th scope="col">Provider refund</th>
+                <th scope="col">Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (refund of attempt.refunds; track refund.refundId) {
+                <tr>
+                  <td>{{ refund.requestedAt | date: 'yyyy-MM-dd HH:mm' : 'UTC' }}</td>
+                  <td class="mono">{{ refund.refundId }}</td>
+                  <td>{{ refund.amount.amount }} {{ refund.amount.currency }}</td>
+                  <td>{{ refund.status }}</td>
+                  <td class="mono">{{ refund.providerRefundId ?? '—' }}</td>
+                  <td>{{ refund.reason ?? '' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (session.can('payments.review.resolve')) {
+          @for (refund of attempt.refunds; track refund.refundId) {
+            @if (refund.status === 'ManualReview') {
+              <section class="action" [attr.aria-labelledby]="'refund-review-' + refund.refundId">
+                <h2 [id]="'refund-review-' + refund.refundId">Refund in manual review</h2>
+                <p>
+                  Refund <span class="mono">{{ refund.refundId }}</span
+                  >: ask the payment provider for it by our reference. Its answer settles it or
+                  leaves it in review; nothing is refunded again.
+                </p>
+                <adm-reason-form
+                  action="Check with the payment provider"
+                  [busy]="busy()"
+                  (submitted)="resolveRefund(refund.refundId, $event)"
+                />
+              </section>
+            }
+          }
+        }
       }
 
       <h2>History</h2>
@@ -184,6 +239,33 @@ export class PaymentDetail {
             : describeProblem(error, {
                 'payment-not-found': 'This payment attempt was not found.',
               }),
+        error: true,
+      });
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected async resolveRefund(refundId: string, reason: string): Promise<void> {
+    if (this.busy()) {
+      return;
+    }
+    this.busy.set(true);
+    try {
+      const result = await this.api.invoke(resolveRefundReview, { refundId, body: { reason } });
+      this.message.set({
+        text: result.resolved
+          ? `Settled by the provider's answer: the refund is now ${result.status}.`
+          : 'Still in review: the provider did not settle it. The check is recorded in the history.',
+        error: false,
+      });
+      await this.load(this.attemptId(), false);
+    } catch (error) {
+      this.message.set({
+        text:
+          problemType(error) === 'not-in-review'
+            ? `This refund is no longer in manual review (now ${problemExtension(error, 'refundStatus') ?? 'changed'}).`
+            : describeProblem(error, { 'refund-not-found': 'This refund was not found.' }),
         error: true,
       });
     } finally {

@@ -206,10 +206,16 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - `PaymentRefundSettled` goes to Orders (the case becomes `Refunded` or `RefundFailed`) and to Notifications ("Your refund has been sent").
 - **Timeline and audit:** opening, deciding and settling a case are on the order timeline and in the audit log. `orders.watch-refund-cases` raises `RefundCaseOverdue` for an approved case not refunded within `Refunds:ExecutionTargetDays` (7).
 - **Runbook:** `refunds.md`. Failure scenarios F-40, F-41 and F-43 updated.
-- **Next:** Batch D: the admin-web refund screens; the customer's own cancellation request; the notices "cancellation received" and "refund failed"; a staff path to settle a refund in manual review (by a provider lookup).
+- **Next:** Batch D (row 14).
 - **Pending:**
   - legal confirmation: consumer cancellation rights and refund timelines per market, and the disclosure of any fee;
   - the supplier: cancellation through its API (R8). |
+| 14 | **Batch D: refund operations (ADR 0027)** | **Done, with the mock payment provider.**
+- **Refund review:** `POST /api/admin/v1/payments/refunds/{refundId}/review-resolutions` (`payments.review.resolve`, Operations). A refund in manual review is settled only by a provider lookup by our key: succeeded or failed settles it (a failure releases its amount) and publishes `PaymentRefundSettled`; anything else keeps it in review, with the check in the payment's history. The resolution is tied to the refund's own correlation id. A refund of a payment without a provider id now fails at once (nothing was sent, so nothing to look up) and releases its amount, instead of a review no lookup could settle. Audited (`payments.refund-review.resolve`); it never sends a refund. The staff payment view lists the payment's refunds and the amount refunded or being refunded.
+- **Customer notices:** "Your booking has been cancelled" (new `OrderCancellationRecorded`, published with a cancellation case; it names no amount, since the refund may be nothing or rejected) and "Your refund is delayed" (a failed refund, with its "Refund amount"; never told as sent).
+- **admin-web:** the order page's refund panel (cases; open a cancellation or goodwill case with an `Idempotency-Key` kept across retries; approve, reject, withdraw), the approvers' "Refunds to approve" page (`refunds.approve`), and the payment page's refunds and "Check with the payment provider" for a refund in review.
+- **Next:** the customer's own cancellation request (customer-web, functional only); supplier cancellation through its API stays blocked on R8.
+- **Pending:** as row 13. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

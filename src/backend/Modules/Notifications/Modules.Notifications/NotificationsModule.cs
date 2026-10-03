@@ -36,6 +36,7 @@ public static class NotificationsModule
     {
         services.AddIntegrationEventHandler<OrderBookingSettled, OrderBookingSettledHandler>();
         services.AddIntegrationEventHandler<Payments.Contracts.PaymentRefundSettled, PaymentRefundSettledHandler>();
+        services.AddIntegrationEventHandler<OrderCancellationRecorded, OrderCancellationRecordedHandler>();
         services.AddBackgroundJob<SendNotificationsJob, NotificationsDbContext>(SendNotificationsJob.Name, TimeSpan.FromSeconds(30));
         return services;
     }

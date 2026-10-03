@@ -3,6 +3,7 @@
 
 import { AdminAmount } from '../models/admin-amount';
 import { AdminPaymentEvent } from '../models/admin-payment-event';
+import { AdminRefund } from '../models/admin-refund';
 export interface AdminPaymentAttempt {
   amount: AdminAmount;
   attemptId: string;
@@ -17,6 +18,8 @@ export interface AdminPaymentAttempt {
   orderId: string;
   providerId: (string | null);
   providerPaymentId: (string | null);
+  refunded: (null | AdminAmount);
+  refunds: Array<AdminRefund>;
   releaseRequestedAt: (string | null);
   status: string;
 }

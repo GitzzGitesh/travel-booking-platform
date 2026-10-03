@@ -45,5 +45,11 @@ export const routes: Routes = [
     canActivate: [staffWith('personal-data.legal-hold.approve')],
     loadComponent: () => import('./legal/legal-hold-releases').then((m) => m.LegalHoldReleases),
   },
+  {
+    path: 'refund-cases',
+    title: 'Refunds to approve · Travel booking operations',
+    canActivate: [staffWith('refunds.approve')],
+    loadComponent: () => import('./refunds/refund-approvals').then((m) => m.RefundApprovals),
+  },
   { path: '**', redirectTo: '' },
 ];

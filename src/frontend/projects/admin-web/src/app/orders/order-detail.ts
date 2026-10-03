@@ -16,6 +16,7 @@ import { describeProblem, problemExtension, problemType } from '../shared/proble
 import { ReasonForm } from '../shared/reason-form';
 import { StaffSession } from '../staff-session';
 import { LegalHoldPanel } from './legal-hold-panel';
+import { RefundPanel } from './refund-panel';
 import { ReviewOutcomeForm } from './review-outcome-form';
 
 /**
@@ -24,7 +25,7 @@ import { ReviewOutcomeForm } from './review-outcome-form';
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, LegalHoldPanel, ReasonForm, ReviewOutcomeForm, RouterLink],
+  imports: [DatePipe, LegalHoldPanel, ReasonForm, RefundPanel, ReviewOutcomeForm, RouterLink],
   selector: 'adm-order-detail',
   template: `
     <p><a routerLink="/orders">Back to the booking queues</a></p>
@@ -121,6 +122,10 @@ import { ReviewOutcomeForm } from './review-outcome-form';
             </section>
           }
         }
+      }
+
+      @if (session.can('refunds.request') || session.can('refunds.approve')) {
+        <adm-refund-panel [orderId]="orderId()" [items]="detail.order.items" (changed)="reload()" />
       }
 
       @if (
@@ -227,6 +232,19 @@ export class OrderDetail {
               'order-item-not-found': 'This order item was not found.',
             }),
     );
+  }
+
+  /** A refund case was opened or decided: items may now be cancelled and the timeline has new entries. */
+  protected async reload(): Promise<void> {
+    // Read again in place: the panel stays (with its message); on failure the order shown stays until the next load.
+    try {
+      this.detail.set(await this.api.invoke(getOrderForOperations, { orderId: this.orderId() }));
+    } catch {
+      this.message.set({
+        text: 'The order could not be read again. Reload the page.',
+        error: true,
+      });
+    }
   }
 
   // One action at a time; the outcome is announced, and the order is read again (its timeline shows the change).

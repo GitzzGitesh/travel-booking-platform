@@ -28,6 +28,8 @@ internal static class NoticeTemplates
     public const string BookingPartiallyConfirmed = "booking-partially-confirmed";
     public const string BookingNotBooked = "booking-not-booked";
     public const string RefundCompleted = "refund-completed";
+    public const string BookingCancelled = "booking-cancelled";
+    public const string RefundDelayed = "refund-delayed";
 
     /// <summary>Bumped when a template's meaning changes; stored on each notification.</summary>
     public const int Version = 1;
@@ -36,7 +38,7 @@ internal static class NoticeTemplates
 
     private static readonly Dictionary<string, NoticeTexts> _texts = new(StringComparer.Ordinal) { ["en"] = NoticeTexts.English };
 
-    public static bool IsKnown(string kind) => kind is BookingConfirmed or BookingPartiallyConfirmed or BookingNotBooked or RefundCompleted;
+    public static bool IsKnown(string kind) => kind is BookingConfirmed or BookingPartiallyConfirmed or BookingNotBooked or RefundCompleted or BookingCancelled or RefundDelayed;
 
     public static RenderedNotice Render(string kind, string culture, BookingNoticeValues values)
     {
@@ -47,6 +49,8 @@ internal static class NoticeTemplates
             BookingPartiallyConfirmed => (texts.PartialSubject, texts.PartialIntro),
             BookingNotBooked => (texts.NotBookedSubject, texts.NotBookedIntro),
             RefundCompleted => (texts.RefundSubject, texts.RefundIntro),
+            BookingCancelled => (texts.CancelledSubject, texts.CancelledIntro),
+            RefundDelayed => (texts.RefundDelayedSubject, texts.RefundDelayedIntro),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown notice."),
         };
 
@@ -56,10 +60,20 @@ internal static class NoticeTemplates
             lines.Add((texts.ReferencesLabel, string.Join(", ", values.BookingReferences)));
         }
 
-        var amountLabel = kind is RefundCompleted ? texts.RefundedLabel : texts.ChargedLabel;
-        lines.Add(values.ChargedAmount is { } amount && values.ChargedCurrency is { } currency
-            ? (amountLabel, $"{amount} {currency}")
-            : (amountLabel, texts.NothingCharged));
+        // A cancellation promises no amount: the refund, if any, still needs a second person's approval (ADR 0027).
+        var amountLabel = kind switch
+        {
+            RefundCompleted => texts.RefundedLabel,
+            RefundDelayed => texts.RefundAmountLabel,
+            BookingCancelled => null,
+            _ => texts.ChargedLabel,
+        };
+        if (amountLabel is not null)
+        {
+            lines.Add(values.ChargedAmount is { } amount && values.ChargedCurrency is { } currency
+                ? (amountLabel, $"{amount} {currency}")
+                : (amountLabel, texts.NothingCharged));
+        }
 
         var html = new StringBuilder();
         html.Append("<!DOCTYPE html><html lang=\"").Append(Encode(texts.Language)).Append("\"><head><meta charset=\"utf-8\"><title>")
@@ -101,6 +115,11 @@ internal sealed record NoticeTexts(
     string RefundSubject,
     string RefundIntro,
     string RefundedLabel,
+    string CancelledSubject,
+    string CancelledIntro,
+    string RefundAmountLabel,
+    string RefundDelayedSubject,
+    string RefundDelayedIntro,
     string Footer)
 {
     public static readonly NoticeTexts English = new(
@@ -118,5 +137,10 @@ internal sealed record NoticeTexts(
         "Your refund has been sent",
         "Your refund has been sent to the card you paid with. Your bank may take a few days to show it.",
         "Refunded",
+        "Your booking has been cancelled",
+        "Your booking has been cancelled. If a refund is due, our team checks it first and sends it to the card you paid with; we will email you when it is sent.",
+        "Refund amount",
+        "Your refund is delayed",
+        "We could not complete your refund yet. Our team is looking into it and will contact you; you do not need to do anything.",
         "This is an automated message about your order. Your trip details are in your account.");
 }

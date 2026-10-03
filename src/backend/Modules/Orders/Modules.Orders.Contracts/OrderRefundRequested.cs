@@ -20,3 +20,11 @@ public enum RefundCaseKind
 /// </summary>
 public sealed record OrderRefundRequested(
     Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid PaymentId, Guid RefundId, Money Amount, string? CorrelationId) : IIntegrationEvent;
+
+/// <summary>
+/// Confirmed bookings of the order were cancelled at the supplier (ADR 0027), recorded with their refund case: published in
+/// the same save, for the customer's notice. <paramref name="ExpectedRefund"/> is the refund the server computed: not a
+/// promise (it still needs a second person's approval; zero when nothing is refunded), so it is never told to the customer.
+/// </summary>
+public sealed record OrderCancellationRecorded(
+    Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid RefundCaseId, Money ExpectedRefund, string? CorrelationId) : IIntegrationEvent;

@@ -68,6 +68,7 @@ public static class PaymentsModule
 
         // The way out of ManualReview (an operations action; its admin endpoint comes with staff identity).
         services.AddScoped<ResolvePaymentReviewHandler>();
+        services.AddScoped<ResolveRefundReviewHandler>();
         services.AddScoped<PaymentAttemptReviewList>();
         services.AddValidation(); // the request types in this module's Endpoints namespace (ADR 0003)
         services.AddScoped<ReceivePaymentNotificationHandler>();
@@ -101,6 +102,17 @@ public static class PaymentsModule
 
         group.MapPost("/{attemptId:guid}/review-resolutions", AdminPaymentEndpoints.Resolve)
             .WithName("ResolvePaymentReview")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PaymentsReviewResolve))
+            .RequireRateLimiting(RateLimitPolicies.SupplierCalls) // every resolution is a provider lookup
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
+        group.MapPost("/refunds/{refundId:guid}/review-resolutions", AdminPaymentEndpoints.ResolveRefund)
+            .WithName("ResolveRefundReview")
             .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.PaymentsReviewResolve))
             .RequireRateLimiting(RateLimitPolicies.SupplierCalls) // every resolution is a provider lookup
             .ProducesValidationProblem()

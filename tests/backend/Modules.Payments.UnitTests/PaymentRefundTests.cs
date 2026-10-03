@@ -162,6 +162,109 @@ public sealed class PaymentRefundTests
         _store.Published.ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task A_refund_in_review_is_settled_only_by_a_lookup_and_published_once()
+    {
+        var refund = await RefundInReview(120m);
+        _provider.OnRefundLookup = key => new RefundLookup(Refund(key, RefundStatus.Pending));
+
+        (await Resolve(refund.Id)).ShouldBe((RefundReviewOutcome.StillNeedsReview, RefundRecordStatus.ManualReview)); // proves nothing yet
+        _store.Published.ShouldBeEmpty();
+
+        _provider.OnRefundLookup = key => new RefundLookup(Refund(key, RefundStatus.Succeeded));
+        (await Resolve(refund.Id)).ShouldBe((RefundReviewOutcome.Resolved, RefundRecordStatus.Succeeded));
+        (await Resolve(refund.Id)).ShouldBe((RefundReviewOutcome.NotInReview, RefundRecordStatus.Succeeded)); // settled once
+
+        _provider.RefundsSent.Count.ShouldBe(1); // a resolution never sends a refund
+        _store.Published.OfType<PaymentRefundSettled>().ShouldHaveSingleItem().Succeeded.ShouldBeTrue();
+        _captured.RefundedAmountValue.ShouldBe(120m);
+        _store.AuditEntries.Count.ShouldBe(2);
+        _store.AuditEntries.ShouldAllBe(e => e.Action == ResolveRefundReviewHandler.Action && e.Target == $"refund:{refund.Id}");
+    }
+
+    [Fact]
+    public async Task A_refund_in_review_that_failed_gives_its_amount_back()
+    {
+        var refund = await RefundInReview(120m);
+        _provider.OnRefundLookup = key => new RefundLookup(Refund(key, RefundStatus.Failed));
+
+        (await Resolve(refund.Id)).ShouldBe((RefundReviewOutcome.Resolved, RefundRecordStatus.Failed));
+
+        _captured.RefundedAmountValue.ShouldBe(0m);
+        _store.Published.OfType<PaymentRefundSettled>().ShouldHaveSingleItem().Succeeded.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("", "TICKET-1")]
+    [InlineData("staff-1", "x")]
+    public async Task A_resolution_without_a_person_or_a_reason_is_refused(string staffId, string reason)
+    {
+        var refund = await RefundInReview(120m);
+
+        (await Resolve(refund.Id, staffId, reason)).Outcome.ShouldBe(RefundReviewOutcome.Invalid);
+        (await Resolve(Guid.NewGuid())).Outcome.ShouldBe(RefundReviewOutcome.NotFound);
+        _provider.RefundLookups.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_lookup_that_proves_nothing_keeps_the_refund_in_review_and_publishes_nothing()
+    {
+        var refund = await RefundInReview(120m);
+        _provider.OnRefundLookup = _ => new RefundLookup(null); // not found: proves nothing
+
+        (await Resolve(refund.Id)).Outcome.ShouldBe(RefundReviewOutcome.StillNeedsReview);
+
+        _store.Published.ShouldBeEmpty();
+        _captured.RefundedAmountValue.ShouldBe(120m); // still held until it is settled
+        _captured.Events.ShouldContain(e => e.Reason.Contains("still in review"));
+    }
+
+    [Fact]
+    public async Task After_a_failed_refund_is_settled_its_amount_can_be_refunded_again()
+    {
+        var refund = await RefundInReview(270m);
+        _provider.OnRefundLookup = key => new RefundLookup(Refund(key, RefundStatus.Failed));
+        await Resolve(refund.Id);
+
+        await Handler().HandleAsync(Requested(270m), Ct);
+
+        _store.Refunds[1].Status.ShouldBe(RefundRecordStatus.Requested); // accepted: the whole capture is refundable again
+        _captured.RefundedAmountValue.ShouldBe(270m);
+    }
+
+    [Fact]
+    public async Task A_refund_of_a_payment_without_a_provider_id_fails_at_once_and_gives_its_amount_back()
+    {
+        var unknown = PaymentAttempt.Start(Guid.NewGuid(), "cust-1", "key-3", Money(100m), Change());
+        unknown.Resolve(PaymentAttemptStatus.Authorized, "authorized", Change());
+        unknown.RequestCapture(Money(100m), Change());
+        unknown.BeginCapture(Change());
+        unknown.ResolveCapture(PaymentAttemptStatus.Captured, "captured", Change());
+        _store.Attempts.Add(unknown);
+        await Handler().HandleAsync(new OrderRefundRequested(Guid.NewGuid(), _now, unknown.OrderId, unknown.Id, Guid.NewGuid(), Money(40m), "trace-1"), Ct);
+
+        await Job().RunOnceAsync(Ct);
+
+        _provider.RefundsSent.ShouldBeEmpty();
+        _store.Refunds.Single().Status.ShouldBe(RefundRecordStatus.Failed); // never a review no lookup could settle
+        unknown.RefundedAmountValue.ShouldBe(0m);
+        _store.Published.OfType<PaymentRefundSettled>().ShouldHaveSingleItem().Succeeded.ShouldBeFalse();
+    }
+
+    private async Task<RefundRecord> RefundInReview(decimal amount)
+    {
+        await Handler().HandleAsync(Requested(amount), Ct);
+        _provider.OnRefund = _ => Result<PaymentRefund, ProviderError>.Failure(new ProviderError(ProviderErrorKind.IdempotencyConflict, "stub"));
+        await Job().RunOnceAsync(Ct);
+        var refund = _store.Refunds.Single();
+        refund.Status.ShouldBe(RefundRecordStatus.ManualReview);
+        return refund;
+    }
+
+    private Task<(RefundReviewOutcome Outcome, RefundRecordStatus? Status)> Resolve(Guid refundId, string staffId = "staff-1", string reason = "TICKET-42") =>
+        new ResolveRefundReviewHandler(_store, new PaymentOperations(_provider, _clock, NullLogger<PaymentOperations>.Instance), _clock)
+            .HandleAsync(refundId, staffId, reason, new TravelBooking.BuildingBlocks.Audit.AuditSource("trace-1", null, null), Ct);
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static Money Money(decimal amount) => new(amount, _xts);

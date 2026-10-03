@@ -50,22 +50,34 @@ internal sealed class OrderBookingSettledHandler(INotificationStore store, TimeP
 }
 
 /// <summary>
-/// The customer's notice for a completed refund (ADR 0024, ADR 0027): only a refund that succeeded is announced; a failed
-/// one is followed up by operations (alert), never told to the customer as done. Once per event (unique constraint).
+/// The customer's notice for a refund's outcome (ADR 0024, ADR 0027): sent, or delayed (a failed refund is followed up by
+/// operations and never told to the customer as done). Once per event (unique constraint).
 /// </summary>
 internal sealed class PaymentRefundSettledHandler(INotificationStore store, TimeProvider timeProvider) : IIntegrationEventHandler<Payments.Contracts.PaymentRefundSettled>
 {
     public async Task HandleAsync(Payments.Contracts.PaymentRefundSettled integrationEvent, CancellationToken cancellationToken)
     {
-        if (!integrationEvent.Succeeded)
-        {
-            return;
-        }
-
+        // A failed refund is never told as done: the customer hears it is delayed, while operations follow it up (alert).
         var values = new BookingNoticeValues(integrationEvent.OrderId, [], integrationEvent.Amount.Amount.ToString(CultureInfo.InvariantCulture),
             integrationEvent.Amount.Currency.Value);
         await store.TryAddAsync(
-            Notification.For(NoticeTemplates.RefundCompleted, integrationEvent.OrderId, integrationEvent.EventId, NoticeTemplates.Version, values.ToJson(),
+            Notification.For(integrationEvent.Succeeded ? NoticeTemplates.RefundCompleted : NoticeTemplates.RefundDelayed, integrationEvent.OrderId,
+                integrationEvent.EventId, NoticeTemplates.Version, values.ToJson(), NoticeTemplates.DefaultCulture, timeProvider.GetUtcNow()),
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// The customer's notice that bookings were cancelled (ADR 0027). It names no refund amount: the refund, if any, still
+/// needs a second person's approval and may be nothing (fee, supplier refund) or rejected.
+/// </summary>
+internal sealed class OrderCancellationRecordedHandler(INotificationStore store, TimeProvider timeProvider) : IIntegrationEventHandler<OrderCancellationRecorded>
+{
+    public async Task HandleAsync(OrderCancellationRecorded integrationEvent, CancellationToken cancellationToken)
+    {
+        var values = new BookingNoticeValues(integrationEvent.OrderId, [], null, null); // no amount promised before approval
+        await store.TryAddAsync(
+            Notification.For(NoticeTemplates.BookingCancelled, integrationEvent.OrderId, integrationEvent.EventId, NoticeTemplates.Version, values.ToJson(),
                 NoticeTemplates.DefaultCulture, timeProvider.GetUtcNow()),
             cancellationToken);
     }

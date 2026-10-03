@@ -25,6 +25,8 @@ export type { GetPaymentAttemptForOperations$Params as GetPaymentAttemptForOpera
 export { getPaymentAttemptForOperations as getPaymentAttemptForOperations } from './fn/payments-staff/get-payment-attempt-for-operations';
 export type { ResolvePaymentReview$Params as ResolvePaymentReview$Params } from './fn/payments-staff/resolve-payment-review';
 export { resolvePaymentReview as resolvePaymentReview } from './fn/payments-staff/resolve-payment-review';
+export type { ResolveRefundReview$Params as ResolveRefundReview$Params } from './fn/payments-staff/resolve-refund-review';
+export { resolveRefundReview as resolveRefundReview } from './fn/payments-staff/resolve-refund-review';
 export type { GetLegalHold$Params as GetLegalHold$Params } from './fn/personal-data-staff/get-legal-hold';
 export { getLegalHold as getLegalHold } from './fn/personal-data-staff/get-legal-hold';
 export type { SetLegalHold$Params as SetLegalHold$Params } from './fn/personal-data-staff/set-legal-hold';
