@@ -154,7 +154,12 @@ public sealed class OrderTravellerEndpointTests(SqlApiFactory api) : IClassFixtu
             set.Travellers[0].Kind.ShouldBe(PassengerKind.Adult);
         }
 
-        (await Hold(held.Id, false)).ShouldBe(LegalHoldOutcome.Applied);
+        // ADR 0026: released only when a different person approves; then the purge waits the grace period.
+        (await Hold(held.Id, false)).ShouldBe(LegalHoldOutcome.ReleaseNeedsApproval);
+        await ReleaseWithApproval(held.Id);
+        await Purge();
+        (await CountDocuments(held.Id)).ShouldBe(1); // still within the grace period
+        api.Clock.Advance(TimeSpan.FromDays(31));
         await Purge();
         (await CountDocuments(held.Id)).ShouldBe(0);
         (await Send(HttpMethod.Get, Travellers(held.Id), token)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -296,6 +301,19 @@ public sealed class OrderTravellerEndpointTests(SqlApiFactory api) : IClassFixtu
         using var scope = api.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<LegalHoldHandler>()
             .HandleAsync(new LegalHoldRequest(orderId, hold, "ops-1", "disputed payment"), Ct);
+    }
+
+    private async Task ReleaseWithApproval(Guid orderId)
+    {
+        using var scope = api.Services.CreateScope();
+        var releases = scope.ServiceProvider.GetRequiredService<LegalHoldReleaseHandler>();
+        var source = new TravelBooking.BuildingBlocks.Audit.AuditSource("trace-1", null, null);
+        var (requested, request) = await releases.RequestAsync(orderId, "CASE-1 closed", new LegalHoldActor("privacy-1", "account-privacy"), source, Ct);
+        requested.ShouldBe(LegalHoldReleaseOutcome.Done);
+        using var decisionScope = api.Services.CreateScope();
+        (await decisionScope.ServiceProvider.GetRequiredService<LegalHoldReleaseHandler>()
+            .DecideAsync(request!.Id, approve: true, "CASE-1 checked", new LegalHoldActor("legal-1", "account-legal"), isChecker: true, source, Ct)).Outcome
+            .ShouldBe(LegalHoldReleaseOutcome.Done);
     }
 
     private Task Purge() => Run(PurgePersonalDataJob.Name);

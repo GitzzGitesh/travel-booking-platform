@@ -72,6 +72,8 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         builder.UseSetting("Access:RoleAssignments:3:Roles:0", "Administrator");
         builder.UseSetting("Access:RoleAssignments:4:ObjectId", TestStaffTokens.ThirdAdministrator);
         builder.UseSetting("Access:RoleAssignments:4:Roles:0", "Administrator");
+        builder.UseSetting("Access:RoleAssignments:5:ObjectId", TestStaffTokens.Legal);
+        builder.UseSetting("Access:RoleAssignments:5:Roles:0", "Legal");
         // Many tests here pay as the same customer: the per-customer attempt limit is tested on its own (unit, and
         // OrderPaymentAuthorizationTests for the per-order limit), so it does not cap unrelated tests.
         builder.UseSetting("Payments:AttemptLimits:MaxAttemptsPerCustomerPerDay", "10000");

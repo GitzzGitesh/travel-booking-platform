@@ -1,5 +1,6 @@
 using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Audit;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 
 namespace TravelBooking.Modules.Orders.Application;
@@ -22,6 +23,9 @@ internal enum BookingReviewFailure
 
     /// <summary>The order changed at the same time: nothing was saved; check again.</summary>
     Conflict,
+
+    /// <summary>No supplier booking was ever seen under our reference for this item: there is nothing to accept.</summary>
+    NoSupplierBookingSeen,
 }
 
 /// <param name="Resolved">The check settled the item (Confirmed or Failed); false when it stays in review.</param>
@@ -74,6 +78,78 @@ internal sealed class ResolveBookingReviewHandler(IOrderStore store, FlightBooki
         return Failure(BookingReviewFailure.Conflict);
     }
 
+    public const string OutcomeAction = "bookings.review.outcome";
+
+    /// <summary>
+    /// A staff outcome for a booking in review (ADR 0025): cancelled at the supplier's desk (with its reference as
+    /// evidence), or accepted as booked (only a booking seen under our reference, with the person's confirmation that its
+    /// travellers and flights are the customer's at no more than the agreed price). The item's state, the payment's
+    /// settlement (outbox), the customer's notice, the timeline and the audit entry are saved together. Never books.
+    /// </summary>
+    public async Task<Result<BookingReviewResult, BookingReviewFailure>> RecordOutcomeAsync(RecordBookingReviewOutcome command, CancellationToken cancellationToken)
+    {
+        if (!command.IsValid())
+        {
+            return Failure(BookingReviewFailure.InvalidRequest);
+        }
+
+        if (await store.FindAsync(command.OrderId, cancellationToken) is not { } order
+            || order.Items.SingleOrDefault(i => i.Id == command.ItemId) is not { } item)
+        {
+            return Failure(BookingReviewFailure.NotFound);
+        }
+
+        if (item.Status is not FlightOrderItemStatus.ManualReview)
+        {
+            return Result<BookingReviewResult, BookingReviewFailure>.Success(
+                new BookingReviewResult(order.Id, item.Id, item.Status, item.Status is FlightOrderItemStatus.Confirmed or FlightOrderItemStatus.Failed, AlreadySettled: true));
+        }
+
+        var context = new TransitionContext(timeProvider.GetUtcNow(), $"staff:{command.StaffId}", command.Source.CorrelationId);
+        var applied = command.Outcome is BookingReviewOutcome.CancelledAtSupplier
+            ? order.CancelledAtSupplier(item.Id, command.SupplierReference!, context)
+            : order.AcceptAsBooked(item.Id, context);
+        if (!applied.IsSuccess)
+        {
+            // No booking was ever seen under our reference: nothing to accept or cancel (a supplier lookup decides instead).
+            return Failure(BookingReviewFailure.NoSupplierBookingSeen);
+        }
+
+        var seen = order.MismatchedBooking(item.Id) is { } supplierBooking ? $"{supplierBooking.ProviderId}:{supplierBooking.Locator}" : "none";
+
+        booking.SettleAfterReviewOutcome(order, context);
+        store.Audit(AuditEntry.For(command.Source, context.At, context.Actor, OutcomeAction, $"order-item:{item.Id}",
+            $"{FlightOrderItemStatus.ManualReview}",
+            $"{item.Status} ({command.Outcome}; seen booking {seen}{(command.SupplierReference is { } desk ? $"; supplier reference {desk}" : "; same travellers and flights, price not above agreed: confirmed")}); {command.Reason}"));
+        if (await store.TrySaveAsync(cancellationToken))
+        {
+            return Result<BookingReviewResult, BookingReviewFailure>.Success(new BookingReviewResult(order.Id, item.Id, item.Status, Resolved: true));
+        }
+
+        store.Audit(AuditEntry.For(command.Source, context.At, context.Actor, OutcomeAction, $"order-item:{item.Id}",
+            $"{FlightOrderItemStatus.ManualReview}", $"not saved: the order changed at the same time; {command.Reason}"));
+        await store.TrySaveAsync(cancellationToken);
+        return Failure(BookingReviewFailure.Conflict);
+    }
+
     private static Result<BookingReviewResult, BookingReviewFailure> Failure(BookingReviewFailure failure) =>
         Result<BookingReviewResult, BookingReviewFailure>.Failure(failure);
+}
+
+/// <summary>
+/// A staff outcome for a booking in review (ADR 0025). <paramref name="SupplierReference"/> is the supplier desk's
+/// cancellation reference (required to record a cancellation). Accepting needs the person's two confirmations.
+/// </summary>
+internal sealed record RecordBookingReviewOutcome(
+    Guid OrderId, Guid ItemId, BookingReviewOutcome Outcome, string? SupplierReference, bool SameTravellersAndFlights, bool PriceNotAboveAgreed,
+    string StaffId, string Reason, AuditSource Source)
+{
+    public bool IsValid() =>
+        AuditReasons.IsValid(Reason) && StaffId is { Length: > 0 and <= 64 }
+        && Outcome switch
+        {
+            BookingReviewOutcome.CancelledAtSupplier => AuditReasons.IsValid(SupplierReference),
+            BookingReviewOutcome.AcceptAsBooked => SameTravellersAndFlights && PriceNotAboveAgreed,
+            _ => false,
+        };
 }

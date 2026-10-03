@@ -37,6 +37,8 @@ internal static class AdminLegalHoldEndpoints
                 TypedResults.Ok(new LegalHoldStateResponse(orderId, request.Hold.Value, outcome is LegalHoldOutcome.Applied)),
             LegalHoldOutcome.NotFound => Problem(StatusCodes.Status404NotFound, "personal-data-not-found", "No personal data is kept for this order."),
             LegalHoldOutcome.Anonymised => Problem(StatusCodes.Status409Conflict, "personal-data-anonymised", "This order's personal data is already anonymised: nothing is left to hold."),
+            LegalHoldOutcome.ReleaseNeedsApproval => Problem(StatusCodes.Status409Conflict, "release-requires-approval",
+                "Releasing a legal hold needs a second person's approval: request the release instead (ADR 0026)."),
             LegalHoldOutcome.Conflict => Problem(StatusCodes.Status409Conflict, "concurrency-conflict", "The data changed at the same time. Try again."),
             _ => Problem(StatusCodes.Status400BadRequest, "invalid-request", "Give a case or ticket reference (3 to 200 letters, digits, spaces or . _ : / # -)."),
         };

@@ -29,13 +29,19 @@ All queries are read-only.
 Check that the Worker is running with the Customers connection string. A failing run leaves everything as it was, and the next run catches up, because the purge is idempotent. There is no manual purge: fix the Worker.
 
 ### Legal hold (litigation, dispute, authority request)
-Holds are placed on instruction from legal only, with a ticket reference as the reason (never personal data). A held set is neither purged nor changed. Releasing a hold lets the next purge run apply any overdue retention.
+Holds are placed on instruction from legal only, with a ticket reference as the reason (never personal data). A held set is neither purged nor changed.
 
-**Place or release:** `PUT /api/admin/v1/orders/{orderId}/legal-hold` with `{ "hold": true|false, "reason": "<case or ticket reference>" }`.
+**Place:** `PUT /api/admin/v1/orders/{orderId}/legal-hold` with `{ "hold": true, "reason": "<case or ticket reference>" }` (admin-web: **Legal hold** on the order page).
 - It needs the `personal-data.legal-hold` permission (the Privacy role).
-- It is recorded as a retention event and in the audit log, in the same save.
-- Repeating the same request changes nothing.
-- Never edit `LegalHold` in the database: that skips the record.
+- It is recorded as a retention event and in the audit log, in the same save. Repeating it changes nothing.
+
+**Release (ADR 0026, maker-checker):** never one person's step (`hold: false` is refused with `release-requires-approval`).
+1. A Privacy staff member requests it: `POST /api/admin/v1/orders/{orderId}/legal-hold/release-requests` with a case reference. The hold stays in force. One pending request per order.
+2. A **different** person with `personal-data.legal-hold.approve` (the Legal role, or an administrator) decides: `POST /api/admin/v1/legal-hold/release-requests/{requestId}/decision` with `{ "approve": true|false, "reason": ... }`. Their list is `GET /api/admin/v1/legal-hold/release-requests` (admin-web: **Legal-hold releases**). Nobody approves their own request (by staff id or account); a request older than 7 days can only be rejected.
+3. Only the requester may withdraw it: `POST .../release-requests/{requestId}/withdrawal`.
+4. On approval the hold is released, and the purge waits until after `Customers:Retention:LegalHoldReleaseGraceDays` (30 days by default, **pending legal confirmation**). To undo a mistaken release, place the hold again within that period.
+
+`GET /api/admin/v1/orders/{orderId}/legal-hold` shows the hold, a pending request and the purge date. Never edit `LegalHold`, `PurgeNotBefore` or `LegalHoldReleaseRequests` in the database: that skips maker-checker and the record.
 
 The review list for repeated payment-limit refusals (Q10) is `GET /api/admin/v1/payments/attempt-limit-reviews` (`payments.read`).
 

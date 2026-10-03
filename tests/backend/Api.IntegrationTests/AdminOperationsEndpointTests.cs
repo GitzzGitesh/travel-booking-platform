@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -32,6 +33,10 @@ public sealed class AdminOperationsEndpointTests(SqlApiFactory api) : IClassFixt
     [InlineData("GET", "/api/admin/v1/payments/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11", TestStaffTokens.Operations)]
     [InlineData("POST", "/api/admin/v1/payments/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/review-resolutions", TestStaffTokens.Operations)]
     [InlineData("PUT", "/api/admin/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/legal-hold", TestStaffTokens.Privacy)]
+    [InlineData("POST", "/api/admin/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/legal-hold/release-requests", TestStaffTokens.Privacy)]
+    [InlineData("POST", "/api/admin/v1/legal-hold/release-requests/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/withdrawal", TestStaffTokens.Privacy)]
+    [InlineData("POST", "/api/admin/v1/legal-hold/release-requests/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/decision", TestStaffTokens.Legal)]
+    [InlineData("GET", "/api/admin/v1/legal-hold/release-requests", TestStaffTokens.Legal)]
     public async Task Each_endpoint_needs_a_staff_member_with_MFA_and_its_own_permission(string method, string url, string allowed)
     {
         object? body = method switch { "POST" => new { reason = "TICKET-1" }, "PUT" => new { hold = true, reason = "CASE-1" }, _ => null };
@@ -103,27 +108,72 @@ public sealed class AdminOperationsEndpointTests(SqlApiFactory api) : IClassFixt
     // ---------- Legal hold (Q9) ----------
 
     [Fact]
-    public async Task A_legal_hold_is_placed_and_released_by_privacy_staff_recorded_and_audited_and_a_repeat_changes_nothing()
+    public async Task A_legal_hold_is_placed_in_one_step_but_released_only_when_a_different_person_approves_it()
     {
         var orderId = await OrderWithTravellers();
         var url = $"/api/admin/v1/orders/{orderId}/legal-hold";
 
         using var placed = await Send(HttpMethod.Put, url, Staff(TestStaffTokens.Privacy), new { hold = true, reason = "CASE-2026-17" });
         using var again = await Send(HttpMethod.Put, url, Staff(TestStaffTokens.Privacy), new { hold = true, reason = "CASE-2026-17" });
-        (await TravellersHeld(orderId)).ShouldBeTrue();
-        using var released = await Send(HttpMethod.Put, url, Staff(TestStaffTokens.Privacy), new { hold = false, reason = "CASE-2026-17 closed" });
-
         (await Read(placed)).GetProperty("changed").GetBoolean().ShouldBeTrue();
         (await Read(again)).GetProperty("changed").GetBoolean().ShouldBeFalse();
-        (await Read(released)).GetProperty("held").GetBoolean().ShouldBeFalse();
+
+        // ADR 0026: no direct release; a request (the hold stays), then a different person with the approve permission.
+        using var direct = await Send(HttpMethod.Put, url, Staff(TestStaffTokens.Privacy), new { hold = false, reason = "CASE-2026-17 closed" });
+        (await Problem(direct)).ShouldBe((HttpStatusCode.Conflict, "release-requires-approval"));
+        using var requested = await Send(HttpMethod.Post, $"{url}/release-requests", Staff(TestStaffTokens.Privacy), new { reason = "CASE-2026-17 closed" });
+        requested.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var requestId = (await Read(requested)).GetProperty("requestId").GetGuid();
+        using var duplicate = await Send(HttpMethod.Post, $"{url}/release-requests", Staff(TestStaffTokens.Privacy), new { reason = "CASE-2026-17 closed" });
+        (await Problem(duplicate)).ShouldBe((HttpStatusCode.Conflict, "release-pending"));
+        (await TravellersHeld(orderId)).ShouldBeTrue();
+
+        var decision = $"/api/admin/v1/legal-hold/release-requests/{requestId}/decision";
+        using var byRequesterRole = await Send(HttpMethod.Post, decision, Staff(TestStaffTokens.Privacy), new { approve = true, reason = "CASE-2026-17" });
+        byRequesterRole.StatusCode.ShouldBe(HttpStatusCode.Forbidden); // Privacy requests; it never approves
+        using var legalRequests = await Send(HttpMethod.Post, $"{url}/release-requests", Staff(TestStaffTokens.Legal), new { reason = "CASE-2026-17" });
+        legalRequests.StatusCode.ShouldBe(HttpStatusCode.Forbidden); // Legal approves; it never requests
+        using var approved = await Send(HttpMethod.Post, decision, Staff(TestStaffTokens.Legal), new { approve = true, reason = "CASE-2026-17 checked" });
+        (await Read(approved)).GetProperty("status").GetString().ShouldBe("Approved");
         (await TravellersHeld(orderId)).ShouldBeFalse();
+
+        using var unassignedStatus = await Send(HttpMethod.Get, url, Staff(TestStaffTokens.Unassigned));
+        unassignedStatus.StatusCode.ShouldBe(HttpStatusCode.Forbidden); // orders.read only
+        using var status = await Send(HttpMethod.Get, url, Staff(TestStaffTokens.Operations));
+        var state = await Read(status);
+        state.GetProperty("held").GetBoolean().ShouldBeFalse();
+        DateOnly.Parse(state.GetProperty("purgeNotBefore").GetString()!, CultureInfo.InvariantCulture)
+            .ShouldBe(DateOnly.FromDateTime(api.Clock.GetUtcNow().UtcDateTime).AddDays(30)); // the grace period before any purge
+
         using var scope = api.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CustomersDbContext>();
         var target = $"order:{orderId}";
         (await db.Set<AuditEntry>().AsNoTracking().Where(a => a.Target == target).Select(a => a.Action).ToListAsync(Ct))
-            .ShouldBe(["personal-data.legal-hold", "personal-data.legal-hold"]);
+            .ShouldBe(["personal-data.legal-hold", "personal-data.legal-hold.release-request", "personal-data.legal-hold.release-approve"], ignoreOrder: true);
         (await db.Set<RetentionEvent>().AsNoTracking().Where(e => e.OrderId == orderId).Select(e => e.Actor).ToListAsync(Ct))
             .ShouldAllBe(actor => actor.StartsWith("staff:"));
+    }
+
+    [Fact]
+    public async Task Nobody_approves_their_own_release_and_only_the_requester_withdraws_it()
+    {
+        var orderId = await OrderWithTravellers();
+        var url = $"/api/admin/v1/orders/{orderId}/legal-hold";
+        (await Send(HttpMethod.Put, url, Staff(TestStaffTokens.Privacy), new { hold = true, reason = "CASE-31" })).Dispose();
+        using var requested = await Send(HttpMethod.Post, $"{url}/release-requests", Staff(TestStaffTokens.Administrator), new { reason = "CASE-31 closed" });
+        var requestId = (await Read(requested)).GetProperty("requestId").GetGuid();
+        var release = $"/api/admin/v1/legal-hold/release-requests/{requestId}";
+
+        using var selfApproval = await Send(HttpMethod.Post, $"{release}/decision", Staff(TestStaffTokens.Administrator), new { approve = true, reason = "CASE-31" });
+        using var othersWithdrawal = await Send(HttpMethod.Post, $"{release}/withdrawal", Staff(TestStaffTokens.Privacy), new { reason = "CASE-31" });
+        (await Problem(selfApproval)).ShouldBe((HttpStatusCode.Forbidden, "self-approval-not-allowed"));
+        (await Problem(othersWithdrawal)).ShouldBe((HttpStatusCode.Forbidden, "withdrawal-requester-only"));
+        using var pending = await Send(HttpMethod.Get, "/api/admin/v1/legal-hold/release-requests", Staff(TestStaffTokens.SecondAdministrator));
+        (await Read(pending)).EnumerateArray().ShouldContain(r => r.GetProperty("requestId").GetGuid() == requestId);
+
+        using var withdrawn = await Send(HttpMethod.Post, $"{release}/withdrawal", Staff(TestStaffTokens.Administrator), new { reason = "CASE-31 not needed" });
+        (await Read(withdrawn)).GetProperty("status").GetString().ShouldBe("Rejected");
+        (await TravellersHeld(orderId)).ShouldBeTrue();
     }
 
     [Fact]

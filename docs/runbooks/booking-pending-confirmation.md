@@ -25,7 +25,12 @@ All queries are read-only.
   - absent after the consistency window: Failed, then released;
   - anything else: it stays in review, with the check on the timeline.
 
-  The payment's settlement and the audit entry are saved with it. A booking that exists but not as agreed stays in review: escalate it to the supplier desk. **Deadline:** the payment hold lapses about 7 days after authorization (`payments.PaymentAttempts.CreatedAt`). A confirmed booking must be charged before then.
+  The payment's settlement and the audit entry are saved with it. A booking that exists but not as agreed stays in review: escalate it to the supplier desk, then **record the outcome** (ADR 0025): `POST /api/admin/v1/orders/{orderId}/items/{itemId}/review-outcomes` (admin-web: **Record an outcome** on the order page), with a ticket reference:
+  - `CancelledAtSupplier` with the desk's cancellation reference (`supplierReference`), only for a booking seen not as agreed: the item is Failed, nothing is charged for it, and the hold follows the order's settlement. Record any supplier fee on the ticket for finance.
+  - `AcceptAsBooked`, only after comparing the supplier's booking with the order: `sameTravellersAndFlights` and `priceNotAboveAgreed` must both be true. The item is confirmed under the seen supplier reference, and the agreed price is charged, never more. A higher supplier price is never absorbed today (`Orders:Review:AbsorbIncreaseUpTo` is none): cancel it at the supplier instead. Both are refused (`no-supplier-booking-seen`) when no booking was seen under our reference: such an item (outcome unknown) leaves review only through the supplier check, never by a statement that releases the hold.
+  - The customer gets the matching notice (ADR 0024).
+
+  **Deadline:** the payment hold lapses about 7 days after authorization (`payments.PaymentAttempts.CreatedAt`). A confirmed booking must be charged before then.
 - **`BookingFoundAfterFailure`:** the customer is booked, but the hold may already be released. Check `payments.PaymentAttempts`, and escalate to payments operations at once: re-authorize, or cancel the booking with the supplier within its free period.
 
 ## Do NOT

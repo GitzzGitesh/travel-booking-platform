@@ -89,24 +89,39 @@ describe('OrderDetail', () => {
     expect(form.querySelector('input')?.getAttribute('aria-invalid')).toBe('true');
   });
 
-  it('places a legal hold with a case reference', async () => {
-    const { fixture, element } = await render(['orders.read', 'personal-data.legal-hold']);
-    const forms = element
-      .querySelector('#legal-hold')!
-      .closest('section')!
-      .querySelectorAll('form');
+  it('records a cancellation at the supplier with its reference, and never an incomplete acceptance', async () => {
+    const { fixture, element } = await render(['orders.read', 'bookings.review.resolve']);
+    const form = element.querySelector('adm-review-outcome-form form') as HTMLFormElement;
 
-    fillAndSubmit(forms[0], { reason: 'CASE-7' });
+    fillAndSubmit(form, { supplierReference: 'DESK-9', reason: 'TICKET-44' });
     await Promise.resolve();
-    const hold = http.expectOne(`/api/admin/v1/orders/${orderId}/legal-hold`);
-    expect(hold.request.method).toBe('PUT');
-    expect(hold.request.body).toEqual({ hold: true, reason: 'CASE-7' });
-    hold.flush({ orderId, held: true, changed: true });
+    const outcome = http.expectOne(`/api/admin/v1/orders/${orderId}/items/i1/review-outcomes`);
+    expect(outcome.request.body).toEqual({
+      outcome: 'CancelledAtSupplier',
+      supplierReference: 'DESK-9',
+      reason: 'TICKET-44',
+      sameTravellersAndFlights: false,
+      priceNotAboveAgreed: false,
+    });
+    outcome.flush({ orderId, itemId: 'i1', itemStatus: 'Failed', resolved: true });
     await settle(fixture);
-    http.expectOne(`/api/admin/v1/orders/${orderId}`).flush(detail('ManualReview'));
+    http.expectOne(`/api/admin/v1/orders/${orderId}`).flush(detail('Failed'));
+    await settle(fixture);
+    expect(element.querySelector('[role="status"]')?.textContent).toContain('now Failed');
+  });
+
+  it('accepts only with both confirmations', async () => {
+    const { fixture, element } = await render(['orders.read', 'bookings.review.resolve']);
+    const form = element.querySelector('adm-review-outcome-form form') as HTMLFormElement;
+    (form.querySelectorAll('input[type="radio"]')[1] as HTMLInputElement).dispatchEvent(
+      new Event('change'),
+    );
     await settle(fixture);
 
-    expect(element.querySelector('[role="status"]')?.textContent).toContain('under a legal hold');
+    fillAndSubmit(form, { reason: 'TICKET-45' }); // nothing confirmed: not sent
+    await settle(fixture);
+
+    expect(form.textContent).toContain('Accept only when both are true');
   });
 
   it('offers only what the permissions allow', async () => {

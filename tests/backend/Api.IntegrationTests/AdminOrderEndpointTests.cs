@@ -34,6 +34,7 @@ public sealed class AdminOrderEndpointTests(SqlApiFactory api) : IClassFixture<S
     [InlineData("GET", "")]
     [InlineData("GET", "/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11")]
     [InlineData("POST", "/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/items/0b6a4d1e-2c3b-4a55-9f86-2f6d3a0b1c22/review-checks")]
+    [InlineData("POST", "/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/items/0b6a4d1e-2c3b-4a55-9f86-2f6d3a0b1c22/review-outcomes")]
     public async Task Only_a_staff_member_with_MFA_and_the_permission_may_use_each_admin_endpoint(string method, string path)
     {
         var url = _orders + path;
@@ -213,6 +214,94 @@ public sealed class AdminOrderEndpointTests(SqlApiFactory api) : IClassFixture<S
         (await AuditEntries(itemId)).Count.ShouldBe(2);
     }
 
+    // ---------- Manual review: a person's outcome (ADR 0025) ----------
+
+    [Fact]
+    public async Task A_booking_cancelled_at_the_supplier_charges_nothing_releases_the_hold_and_tells_the_customer()
+    {
+        var orderId = await OrderInReview(MockBookingScenarios.TimeoutBookedFamilyName, seenBooking: "mock:WRONG1");
+        var itemId = (await LoadOrder(orderId)).Items[0].Id;
+
+        using var noEvidence = await Outcome(orderId, itemId, new { outcome = "CancelledAtSupplier", reason = "TICKET-401" });
+        noEvidence.StatusCode.ShouldBe(HttpStatusCode.BadRequest); // the supplier desk's reference is the evidence
+        using var cancelled = await Outcome(orderId, itemId, new { outcome = "CancelledAtSupplier", supplierReference = "DESK-CXL-77", reason = "TICKET-401" });
+
+        (await Read(cancelled)).GetProperty("itemStatus").GetString().ShouldBe("Failed");
+        var order = await LoadOrder(orderId);
+        order.Timeline[^2].ProviderReference.ShouldBe("DESK-CXL-77");
+        (await CountOutbox(orderId, "OrderPaymentReleaseRequested")).ShouldBe(1);
+        (await CountOutbox(orderId, "OrderPaymentCaptureRequested")).ShouldBe(0);
+        (await CountOutbox(orderId, "OrderBookingSettled")).ShouldBe(1);
+        var audit = (await AuditEntries(itemId)).ShouldHaveSingleItem();
+        (audit.Action, audit.After).ShouldBe(("bookings.review.outcome", "Failed (CancelledAtSupplier; seen booking mock:WRONG1; supplier reference DESK-CXL-77); TICKET-401"));
+        using var again = await Outcome(orderId, itemId, new { outcome = "CancelledAtSupplier", supplierReference = "DESK-CXL-77", reason = "TICKET-401" });
+        (await Problem(again)).ShouldBe((HttpStatusCode.Conflict, "not-in-review"));
+    }
+
+    [Fact]
+    public async Task A_booking_seen_not_as_agreed_is_accepted_only_with_both_confirmations_and_charges_the_agreed_price()
+    {
+        var orderId = await OrderInReview(MockBookingScenarios.TimeoutBookedFamilyName, seenBooking: "mock:SEEN42");
+        var itemId = (await LoadOrder(orderId)).Items[0].Id;
+
+        using var unconfirmed = await Outcome(orderId, itemId, new { outcome = "AcceptAsBooked", sameTravellersAndFlights = true, reason = "TICKET-402" });
+        unconfirmed.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        using var accepted = await Outcome(orderId, itemId,
+            new { outcome = "AcceptAsBooked", sameTravellersAndFlights = true, priceNotAboveAgreed = true, reason = "TICKET-402" });
+
+        (await Read(accepted)).GetProperty("itemStatus").GetString().ShouldBe("Confirmed");
+        var order = await LoadOrder(orderId);
+        (order.Items[0].ProviderId, order.Items[0].SupplierLocator).ShouldBe(("mock", "SEEN42"));
+        (await CountOutbox(orderId, "OrderPaymentCaptureRequested")).ShouldBe(1); // the agreed price, never more
+    }
+
+    [Fact]
+    public async Task Nothing_is_accepted_when_no_supplier_booking_was_ever_seen()
+    {
+        var orderId = await OrderInReview(MockBookingScenarios.TimeoutBookedFamilyName); // unknown, not a mismatch
+        var itemId = (await LoadOrder(orderId)).Items[0].Id;
+
+        using var accepted = await Outcome(orderId, itemId,
+            new { outcome = "AcceptAsBooked", sameTravellersAndFlights = true, priceNotAboveAgreed = true, reason = "TICKET-403" });
+        using var withoutPermission = await Send(HttpMethod.Post, $"{_orders}/{orderId}/items/{itemId}/review-outcomes", TestStaffTokens.For(TestStaffTokens.Privacy),
+            new { outcome = "CancelledAtSupplier", supplierReference = "DESK-1", reason = "TICKET-403" });
+
+        using var cancelled = await Outcome(orderId, itemId, new { outcome = "CancelledAtSupplier", supplierReference = "DESK-2", reason = "TICKET-403" });
+
+        (await Problem(accepted)).ShouldBe((HttpStatusCode.Conflict, "no-supplier-booking-seen"));
+        (await Problem(cancelled)).ShouldBe((HttpStatusCode.Conflict, "no-supplier-booking-seen")); // only a lookup releases this hold
+        (await CountOutbox(orderId, "OrderPaymentReleaseRequested")).ShouldBe(0);
+        withoutPermission.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await LoadOrder(orderId)).Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+    }
+
+    // Concurrency (testing rules): outcomes recorded at the same moment settle the payment exactly once.
+    [Fact]
+    public async Task Parallel_outcomes_charge_once_and_notify_once()
+    {
+        var orderId = await OrderInReview(MockBookingScenarios.TimeoutBookedFamilyName, seenBooking: "mock:PAR77");
+        var itemId = (await LoadOrder(orderId)).Items[0].Id;
+        var accept = new { outcome = "AcceptAsBooked", sameTravellersAndFlights = true, priceNotAboveAgreed = true, reason = "TICKET-404" };
+
+        var responses = await Task.WhenAll(
+            Outcome(orderId, itemId, accept), Outcome(orderId, itemId, accept),
+            Outcome(orderId, itemId, new { outcome = "CancelledAtSupplier", supplierReference = "DESK-404", reason = "TICKET-404" }),
+            Check(orderId, itemId, "TICKET-404"));
+
+        responses.Count(r => r.StatusCode == HttpStatusCode.OK).ShouldBeGreaterThanOrEqualTo(1);
+        responses.ShouldAllBe(r => r.StatusCode == HttpStatusCode.OK || r.StatusCode == HttpStatusCode.Conflict);
+        var settled = (await CountOutbox(orderId, "OrderPaymentCaptureRequested")) + (await CountOutbox(orderId, "OrderPaymentReleaseRequested"));
+        settled.ShouldBe(1);
+        (await CountOutbox(orderId, "OrderBookingSettled")).ShouldBe(1);
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    private Task<HttpResponseMessage> Outcome(Guid orderId, Guid itemId, object body) =>
+        Send(HttpMethod.Post, $"{_orders}/{orderId}/items/{itemId}/review-outcomes", Staff(), body);
+
     [Fact]
     public async Task Only_items_in_review_can_be_checked_and_a_reason_is_required()
     {
@@ -270,7 +359,8 @@ public sealed class AdminOrderEndpointTests(SqlApiFactory api) : IClassFixture<S
     }
 
     // A booked checkout whose outcome was unknown, then put in manual review (as reconciliation does after its limit).
-    private async Task<Guid> OrderInReview(string surname)
+    // seenBooking: the "provider:locator" of a supplier booking seen not as agreed (a mismatch), as booking records it.
+    private async Task<Guid> OrderInReview(string surname, string? seenBooking = null)
     {
         var token = TestCustomerTokens.For($"object-{Guid.NewGuid():N}", DateTimeOffset.UtcNow);
         using var client = api.CreateClient();
@@ -294,8 +384,8 @@ public sealed class AdminOrderEndpointTests(SqlApiFactory api) : IClassFixture<S
         using var scope = api.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
         var order = await db.Orders.Include(o => o.Items).Include(o => o.Timeline).SingleAsync(o => o.Id == orderId, Ct);
-        order.RequireManualReview(order.Items[0].Id, "Booking still unknown after its limit (test)", new TransitionContext(api.Clock.GetUtcNow(), "system:test"))
-            .IsSuccess.ShouldBeTrue();
+        order.RequireManualReview(order.Items[0].Id, seenBooking is null ? "Booking still unknown after its limit (test)" : "Not as agreed (test)",
+            new TransitionContext(api.Clock.GetUtcNow(), "system:test"), seenBooking).IsSuccess.ShouldBeTrue();
         await db.SaveChangesAsync(Ct);
         return orderId;
     }

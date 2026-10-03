@@ -179,11 +179,19 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - The `payments.watch-expiring-holds` job raises `PaymentHoldExpiring` once per held attempt, `Payments:Holds:WarningBefore` (48 hours) before `Lifetime` (7 days; a placeholder until the provider confirms it).
   - The staff payment API and page show "Hold lapses" (additive `authorizedAt`, `holdExpiresAt`).
 - **Runbook:** `customer-notices-and-hold-deadlines.md`.
-- **Next:** Batch B, the ADR 0025 review outcomes and the ADR 0026 legal-hold release maker-checker.
+- **Next:** row 12.
 - **Blocked externally:**
   - the ACS Email resource, its sending limits, and the sending domain's DNS (SPF, DKIM, DMARC);
   - the support reply-to address (Q12);
   - the real hold lifetime (payment provider). |
+| 12 | **Batch B: booking review outcomes (ADR 0025) and legal-hold release maker-checker (ADR 0026)** | **Done, without a staff tenant.**
+- **Review outcomes:** `POST /api/admin/v1/orders/{orderId}/items/{itemId}/review-outcomes` (`bookings.review.resolve`). `CancelledAtSupplier` with the desk's reference (only for a booking seen not as agreed) fails the item, so nothing is charged for it. `AcceptAsBooked` works only for a booking seen not as agreed, with both confirmations, and confirms it under the seen reference at the agreed price. The payment settlement, the customer notice, the timeline and the audit entry are saved together. A repeat is `not-in-review`, and accepting without a seen booking is `no-supplier-booking-seen`.
+- **Legal-hold release:** placing stays one step; `hold: false` is refused (`release-requires-approval`).
+  - Privacy requests a release (one pending per order). A different person with the new `personal-data.legal-hold.approve` (new **Legal** role, and administrators) approves or rejects it; nobody approves their own (staff id or account), and requests expire after 7 days. Only the requester withdraws.
+  - On approval the purge waits `LegalHoldReleaseGraceDays` (30, pending legal confirmation), and placing the hold again undoes it.
+  - Endpoints: `GET .../orders/{id}/legal-hold`, `POST .../orders/{id}/legal-hold/release-requests`, `GET /legal-hold/release-requests`, `POST .../{requestId}/decision`, `POST .../{requestId}/withdrawal`. Refusals are `LegalHoldReleaseRefused` security events. Migration `AddLegalHoldReleaseRequests` (customers).
+- **admin-web:** **Record an outcome** on items in review; a legal-hold panel (state, place, request, approve or reject, withdraw); **Legal-hold releases** for approvers.
+- **Next:** Batch C, cancellations and refunds (ADR 0027).
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

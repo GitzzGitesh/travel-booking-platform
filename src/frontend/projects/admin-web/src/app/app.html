@@ -22,6 +22,16 @@
             >
           </li>
         }
+        @if (session.can('personal-data.legal-hold.approve')) {
+          <li>
+            <a
+              routerLink="/legal-hold-releases"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              >Legal-hold releases</a
+            >
+          </li>
+        }
         @if (session.can('access.grants.read')) {
           <li>
             <a routerLink="/access" routerLinkActive="active" ariaCurrentWhenActive="page"
