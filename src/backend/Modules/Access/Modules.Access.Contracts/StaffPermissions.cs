@@ -26,6 +26,12 @@ public static class StaffPermissions
     /// <summary>Approve or reject another staff member's request to release a legal hold (checker, ADR 0026): never one's own.</summary>
     public const string PersonalDataLegalHoldApprove = "personal-data.legal-hold.approve";
 
+    /// <summary>Record a cancellation done at the supplier, or propose a refund (maker, ADR 0027).</summary>
+    public const string RefundsRequest = "refunds.request";
+
+    /// <summary>Approve or reject another staff member's refund (checker, ADR 0027): never one's own.</summary>
+    public const string RefundsApprove = "refunds.approve";
+
     /// <summary>See role change requests and active role grants.</summary>
     public const string AccessGrantsRead = "access.grants.read";
 
@@ -38,6 +44,7 @@ public static class StaffPermissions
     public static IReadOnlyList<string> All { get; } =
     [
         OrdersRead, BookingsReviewResolve, PaymentsRead, PaymentsReviewResolve, PersonalDataLegalHold, PersonalDataLegalHoldApprove,
+        RefundsRequest, RefundsApprove,
         AccessGrantsRead, AccessGrantsRequest, AccessGrantsApprove,
     ];
 }

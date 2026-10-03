@@ -54,10 +54,11 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             await db.SaveChangesAsync(cancellationToken);
             return true;
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.InnerException is SqlException { Number: var number } && _uniqueViolations.Contains(number))
         {
             // Forget this unit of work (its changes and outbox rows), so the next read sees the order as stored, not as
-            // this request had changed it.
+            // this request had changed it. A unique violation (e.g. a refund case's idempotency key) is a concurrent repeat.
             db.ChangeTracker.Clear();
             return false;
         }
@@ -148,4 +149,33 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
 
     private Task<byte[]?> RowVersion(Guid orderId, CancellationToken cancellationToken) =>
         db.Orders.AsNoTracking().Where(o => o.Id == orderId).Select(o => EF.Property<byte[]?>(o, "RowVersion")).SingleOrDefaultAsync(cancellationToken);
+}
+
+internal sealed class SqlRefundCaseStore(OrdersDbContext db) : IRefundCaseStore
+{
+    public void Add(RefundCase refundCase) => db.Set<RefundCase>().Add(refundCase);
+
+    public Task<RefundCase?> FindAsync(Guid caseId, CancellationToken cancellationToken) =>
+        db.Set<RefundCase>().SingleOrDefaultAsync(r => r.Id == caseId, cancellationToken);
+
+    public async Task<IReadOnlyList<RefundCase>> FindForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        await db.Set<RefundCase>().AsNoTracking().Where(r => r.OrderId == orderId).OrderBy(r => r.RequestedAt).ToListAsync(cancellationToken);
+
+    public Task<RefundCase?> FindByKeyAsync(string staffId, string idempotencyKey, CancellationToken cancellationToken) =>
+        db.Set<RefundCase>().AsNoTracking().SingleOrDefaultAsync(r => r.RequestedBy == staffId && r.IdempotencyKey == idempotencyKey, cancellationToken);
+
+    public async Task<IReadOnlyList<RefundCase>> FindOverdueAsync(DateTimeOffset decidedBefore, int limit, CancellationToken cancellationToken) =>
+        await db.Set<RefundCase>()
+            .Where(r => r.Status == RefundCaseStatus.Approved && r.DecidedAt <= decidedBefore && r.OverdueAlertedAt == null)
+            .OrderBy(r => r.DecidedAt).Take(limit).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<RefundCase>> FindPendingAsync(int limit, CancellationToken cancellationToken) =>
+        await db.Set<RefundCase>().AsNoTracking().Where(r => r.Status == RefundCaseStatus.PendingApproval)
+            .OrderBy(r => r.RequestedAt).Take(limit).ToListAsync(cancellationToken);
+
+    public Task<bool> HasConsumedAsync(Guid messageId, string handler, CancellationToken cancellationToken) =>
+        db.Set<InboxMessage>().AnyAsync(m => m.MessageId == messageId && m.Handler == handler, cancellationToken);
+
+    public void MarkConsumed(Guid messageId, string handler, DateTimeOffset at) =>
+        db.Set<InboxMessage>().Add(InboxMessage.For(messageId, handler, at));
 }

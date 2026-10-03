@@ -376,7 +376,8 @@ internal sealed class AuthorizeCheckoutHandler(
     /// <summary>Where the booking stands, for the customer: confirmed, still being settled, or not made.</summary>
     private static CheckoutResult Booking(Order order, Guid paymentId) => new(order.Id, order.Status switch
     {
-        OrderStatus.Confirmed or OrderStatus.PartiallyConfirmed => CheckoutStatus.Booked,
+        // A replay after a later cancellation: the checkout itself did book (the cancellation is on the order).
+        OrderStatus.Confirmed or OrderStatus.PartiallyConfirmed or OrderStatus.Cancelled => CheckoutStatus.Booked,
         OrderStatus.Failed => CheckoutStatus.BookingFailed,
         _ => CheckoutStatus.BookingPending,
     }, paymentId);

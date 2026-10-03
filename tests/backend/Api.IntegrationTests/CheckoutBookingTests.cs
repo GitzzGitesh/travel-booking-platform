@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Integrations.Flights.Mock;
@@ -249,6 +250,189 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         var notice = await NoticeFor(order);
         (notice.Status.ToString(), notice.Attempts).ShouldBe((expected, 1));
         EmailsAbout(order).ShouldBeEmpty();
+    }
+
+    // ---------- Cancellations and refunds (ADR 0027) ----------
+
+    [Fact]
+    public async Task A_cancellation_is_refunded_once_after_a_second_person_approves_it_and_the_customer_is_told()
+    {
+        var (order, price) = await CapturedOrder();
+        var item = (await LoadOrder(order)).Items[0].Id;
+
+        using var opened = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations), new
+        {
+            kind = "Cancellation",
+            itemIds = new[] { item },
+            supplierReference = "DESK-CXL-9",
+            supplierRefund = price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            reason = "TICKET-501",
+        }, NewKey());
+        opened.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var refundCase = await Read(opened);
+        var caseId = refundCase.GetProperty("caseId").GetGuid();
+        (refundCase.GetProperty("status").GetString(), refundCase.GetProperty("amount").GetProperty("amount").GetString())
+            .ShouldBe(("PendingApproval", price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture))); // computed by the server
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Cancelled); // the cancellation is a fact at once
+        await Run("orders.outbox");
+        (await CountRefunds(order)).ShouldBe(0); // nothing refunded before approval
+
+        using var byOpener = await Send(HttpMethod.Post, $"/api/admin/v1/refund-cases/{caseId}/decision", Staff(TestStaffTokens.Operations), new { approve = true, reason = "TICKET-501" });
+        byOpener.StatusCode.ShouldBe(HttpStatusCode.Forbidden); // Operations opens; it never approves
+        using var approved = await Send(HttpMethod.Post, $"/api/admin/v1/refund-cases/{caseId}/decision", Staff(TestStaffTokens.Finance), new { approve = true, reason = "TICKET-501 checked" });
+        (await Read(approved)).GetProperty("status").GetString().ShouldBe("Approved");
+
+        await Run("orders.outbox");
+        await Run("orders.outbox");
+        await Run(ExecuteRefundsJob.Name);
+        await Run(ExecuteRefundsJob.Name);
+        await Run("payments.outbox");
+        await Run(SendNotificationsJob.Name);
+
+        (await CountRefunds(order)).ShouldBe(1); // once
+        using var cases = await Send(HttpMethod.Get, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations));
+        (await Read(cases)).EnumerateArray().Single().GetProperty("status").GetString().ShouldBe("Refunded");
+        var email = EmailsAbout(order).Single(m => m.Subject == "Your refund has been sent");
+        email.TextBody.ShouldContain($"Refunded: {price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)} {price.Currency.Value}");
+    }
+
+    [Fact]
+    public async Task A_goodwill_refund_never_exceeds_what_can_be_refunded_and_its_opener_cannot_approve_it()
+    {
+        var (order, price) = await CapturedOrder();
+        var url = $"/api/admin/v1/orders/{order}/refund-cases";
+
+        using var tooMuch = await Send(HttpMethod.Post, url, Staff(TestStaffTokens.Administrator),
+            new { kind = "Goodwill", amount = (price.Amount + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), reason = "TICKET-502" }, NewKey());
+        using var goodwill = await Send(HttpMethod.Post, url, Staff(TestStaffTokens.Administrator), new { kind = "Goodwill", amount = "10", reason = "TICKET-502" }, NewKey());
+        var caseId = (await Read(goodwill)).GetProperty("caseId").GetGuid();
+        using var self = await Send(HttpMethod.Post, $"/api/admin/v1/refund-cases/{caseId}/decision", Staff(TestStaffTokens.Administrator), new { approve = true, reason = "TICKET-502" });
+        using var otherWithdraws = await Send(HttpMethod.Post, $"/api/admin/v1/refund-cases/{caseId}/withdrawal", Staff(TestStaffTokens.Operations), new { reason = "TICKET-502" });
+
+        (await Problem(tooMuch)).ShouldBe((HttpStatusCode.Conflict, "exceeds-refundable"));
+        (await Problem(self)).ShouldBe((HttpStatusCode.Forbidden, "self-approval-not-allowed"));
+        (await Problem(otherWithdraws)).ShouldBe((HttpStatusCode.Forbidden, "withdrawal-requester-only"));
+    }
+
+    [Fact]
+    public async Task Nothing_is_refunded_for_an_order_that_was_never_charged()
+    {
+        var order = await ReadyOrder(Token());
+
+        using var refused = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations),
+            new { kind = "Goodwill", amount = "10", reason = "TICKET-503" }, NewKey());
+
+        (await Problem(refused)).ShouldBe((HttpStatusCode.Conflict, "not-captured"));
+    }
+
+    // Idempotency (non-negotiable 4): one case per requester and key, also for requests sent at the same moment; the
+    // same key for another request is refused. Without a key nothing is opened.
+    [Fact]
+    public async Task A_repeated_refund_request_opens_one_case_and_a_reused_key_is_refused()
+    {
+        var (order, _) = await CapturedOrder();
+        var url = $"/api/admin/v1/orders/{order}/refund-cases";
+        var key = NewKey();
+        var goodwill = new { kind = "Goodwill", amount = "10", reason = "TICKET-504" };
+
+        var parallel = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => Send(HttpMethod.Post, url, Staff(TestStaffTokens.Operations), goodwill, key)));
+        using var replay = await Send(HttpMethod.Post, url, Staff(TestStaffTokens.Operations), goodwill, key);
+        using var reused = await Send(HttpMethod.Post, url, Staff(TestStaffTokens.Operations), new { kind = "Goodwill", amount = "11", reason = "TICKET-504" }, key);
+        using var withoutKey = await Send(HttpMethod.Post, url, Staff(TestStaffTokens.Operations), goodwill);
+
+        parallel.Select(r => r.StatusCode).ShouldAllBe(code => code == HttpStatusCode.Created || code == HttpStatusCode.OK);
+        replay.StatusCode.ShouldBe(HttpStatusCode.OK);
+        parallel.Select(r => Read(r).Result.GetProperty("caseId").GetGuid()).Distinct().ShouldHaveSingleItem()
+            .ShouldBe((await Read(replay)).GetProperty("caseId").GetGuid());
+        (await Problem(reused)).ShouldBe((HttpStatusCode.Conflict, "idempotency-conflict"));
+        withoutKey.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        foreach (var response in parallel)
+        {
+            response.Dispose();
+        }
+    }
+
+    // Concurrency (testing rules): approvals at the same moment request one refund; refunds that together exceed the
+    // charge never refund more than it; one item cancelled twice at once is one case.
+    [Fact]
+    public async Task Parallel_approvals_refund_once_and_parallel_refunds_never_exceed_the_charge()
+    {
+        var (order, price) = await CapturedOrder();
+        var url = $"/api/admin/v1/orders/{order}/refund-cases";
+        var share = decimal.Round(price.Amount * 0.6m, 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var opened = await Task.WhenAll(
+            Send(HttpMethod.Post, url, Staff(TestStaffTokens.Operations), new { kind = "Goodwill", amount = share, reason = "TICKET-505" }, NewKey()),
+            Send(HttpMethod.Post, url, Staff(TestStaffTokens.Operations), new { kind = "Goodwill", amount = share, reason = "TICKET-505" }, NewKey()));
+        var caseIds = opened.Where(r => r.StatusCode == HttpStatusCode.Created).Select(r => Read(r).Result.GetProperty("caseId").GetGuid()).ToList();
+        caseIds.ShouldNotBeEmpty();
+
+        foreach (var caseId in caseIds)
+        {
+            var decisions = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ =>
+                Send(HttpMethod.Post, $"/api/admin/v1/refund-cases/{caseId}/decision", Staff(TestStaffTokens.Finance), new { approve = true, reason = "TICKET-505" })));
+            decisions.Count(d => d.StatusCode == HttpStatusCode.OK).ShouldBe(1); // the others: already decided, or a conflict
+        }
+
+        await Run("orders.outbox");
+        await Run(ExecuteRefundsJob.Name);
+        await Run("payments.outbox");
+        await Run("orders.outbox");
+
+        (await CountOutbox(order, "OrderRefundRequested")).ShouldBe(caseIds.Count); // one per approved case
+        using var scope = api.Services.CreateScope();
+        var refunds = await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Set<RefundRecord>().AsNoTracking()
+            .Where(r => r.OrderId == order).ToListAsync(Ct);
+        refunds.Count.ShouldBe(caseIds.Count);
+        refunds.Where(r => r.Status != RefundRecordStatus.Failed).Sum(r => r.AmountValue).ShouldBeLessThanOrEqualTo(price.Amount);
+        foreach (var response in opened)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task One_item_cancelled_twice_at_once_opens_one_case()
+    {
+        var (order, price) = await CapturedOrder();
+        var item = (await LoadOrder(order)).Items[0].Id;
+        var cancel = new
+        {
+            kind = "Cancellation",
+            itemIds = new[] { item },
+            supplierReference = "DESK-CXL-10",
+            supplierRefund = price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            reason = "TICKET-506",
+        };
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ =>
+            Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations), cancel, NewKey())));
+
+        responses.Count(r => r.StatusCode == HttpStatusCode.Created).ShouldBe(1);
+        using var cases = await Send(HttpMethod.Get, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations));
+        (await Read(cases)).GetArrayLength().ShouldBe(1);
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    private async Task<(Guid Order, Money Price)> CapturedOrder()
+    {
+        var token = Token();
+        var order = await ReadyOrder(token, email: $"booker-{Guid.NewGuid():N}@example.com");
+        (await Checkout(token, order, NewKey())).Dispose();
+        await Run("orders.outbox");
+        await Run(ReconcilePaymentAttemptsJob.Name);
+        (await PaymentOf(order)).Status.ShouldBe(PaymentAttemptStatus.Captured);
+        return (order, (await LoadOrder(order)).Items[0].AgreedPrice);
+    }
+
+    private static string Staff(string objectId) => TestStaffTokens.For(objectId);
+
+    private async Task<int> CountRefunds(Guid orderId)
+    {
+        using var scope = api.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Set<RefundRecord>().CountAsync(r => r.OrderId == orderId, Ct);
     }
 
     [Fact]

@@ -525,6 +525,8 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         public Task<LiveOrderPayment?> FindLiveAsync(Guid orderId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task<OrderPaymentBalance?> FindRefundableAsync(Guid orderId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<OrderPaymentResult?> ResumeAsync(Guid orderId, string customerId, string idempotencyKey, string? correlationId, CancellationToken cancellationToken)
         {
             if (!Resumable)

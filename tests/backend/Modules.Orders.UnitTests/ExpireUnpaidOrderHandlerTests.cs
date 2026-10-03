@@ -129,6 +129,8 @@ public sealed class ExpireUnpaidOrderHandlerTests
 
         public int Queries { get; private set; }
 
+        public Task<OrderPaymentBalance?> FindRefundableAsync(Guid orderId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<LiveOrderPayment?> FindLiveAsync(Guid orderId, CancellationToken cancellationToken)
         {
             Queries++;

@@ -46,6 +46,12 @@ public static class OrdersModule
                 sql.EnableRetryOnFailure();
             }));
         services.AddScoped<IOrderStore, SqlOrderStore>();
+        services.AddScoped<IRefundCaseStore, SqlRefundCaseStore>();
+        services.AddScoped<RefundCaseHandler>();
+        services.AddOptions<RefundOptions>()
+            .Bind(configuration.GetSection(RefundOptions.SectionName))
+            .Validate(o => o.IsValid(), "Refunds: fees must not be negative, and ExecutionTargetDays must be positive.")
+            .ValidateOnStart();
         services.AddValidation(); // the request types in this module's Endpoints namespace (ADR 0003)
         return services;
     }
@@ -124,6 +130,44 @@ public static class OrdersModule
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // ADR 0027: cancellations and refunds; a refund is approved by a different person (maker-checker).
+        group.MapPost("/{orderId:guid}/refund-cases", AdminRefundEndpoints.Open)
+            .WithName("OpenRefundCase")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.RefundsRequest))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+        group.MapGet("/{orderId:guid}/refund-cases", AdminRefundEndpoints.ForOrder)
+            .WithName("ListOrderRefundCases")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.OrdersRead))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        var refunds = endpoints.MapGroup("/refund-cases").WithTags("Refunds (staff)");
+        refunds.MapGet("/", AdminRefundEndpoints.Pending)
+            .WithName("ListPendingRefundCases")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.RefundsApprove))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+        refunds.MapPost("/{caseId:guid}/decision", AdminRefundEndpoints.Decide)
+            .WithName("DecideRefundCase")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.RefundsApprove))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+        refunds.MapPost("/{caseId:guid}/withdrawal", AdminRefundEndpoints.Withdraw)
+            .WithName("WithdrawRefundCase")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.RefundsRequest))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
         return endpoints;
     }
 
@@ -137,6 +181,8 @@ public static class OrdersModule
         services.AddBackgroundJob<ReconcileBookingsJob, OrdersDbContext>(ReconcileBookingsJob.Name, TimeSpan.FromSeconds(30));
         services.AddOutboxDispatcher<OrdersDbContext>(OrdersOutboxJobName, TimeSpan.FromSeconds(5));
         services.AddBackgroundJob<ExpireUnpaidOrdersJob, OrdersDbContext>(ExpireUnpaidOrdersJob.Name, TimeSpan.FromMinutes(1));
+        services.AddIntegrationEventHandler<TravelBooking.Modules.Payments.Contracts.PaymentRefundSettled, PaymentRefundSettledHandler>(); // ADR 0027
+        services.AddBackgroundJob<WatchRefundCasesJob, OrdersDbContext>(WatchRefundCasesJob.Name, TimeSpan.FromHours(1));
         return services;
     }
 

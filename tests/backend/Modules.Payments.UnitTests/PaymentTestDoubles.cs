@@ -97,6 +97,29 @@ internal sealed class FakeStore : IPaymentAttemptStore
     public Task<PaymentAttempt?> FindLiveByOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
         Task.FromResult(Attempts.SingleOrDefault(a => a.OrderId == orderId && PaymentAttempt.LiveStatuses.Contains(a.Status)));
 
+    public List<RefundRecord> Refunds { get; } = [];
+
+    public List<TravelBooking.BuildingBlocks.Background.IIntegrationEvent> Published { get; } = [];
+
+    public void AddRefund(RefundRecord refund) => Refunds.Add(refund);
+
+    public Task<RefundRecord?> FindRefundAsync(Guid refundId, CancellationToken cancellationToken) => Task.FromResult(Refunds.SingleOrDefault(r => r.Id == refundId));
+
+    public Task<IReadOnlyList<RefundRecord>> FindRefundsAsync(Guid attemptId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<RefundRecord>>([.. Refunds.Where(r => r.AttemptId == attemptId)]);
+
+    public Task<PaymentAttempt?> FindCapturedByOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        Task.FromResult(Attempts.FirstOrDefault(a => a.OrderId == orderId && a.Status == PaymentAttemptStatus.Captured));
+
+    public Task<IReadOnlyList<Guid>> FindRefundsToProcessAsync(DateTimeOffset interruptedBefore, int limit, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Guid>>([.. Refunds
+            .Where(r => r.Status is RefundRecordStatus.Requested or RefundRecordStatus.Pending or RefundRecordStatus.Unknown
+                || (r.Status is RefundRecordStatus.Refunding && r.UpdatedAt <= interruptedBefore))
+            .OrderBy(r => r.UpdatedAt).Select(r => r.Id).Take(limit)]);
+
+    public void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
+        where TEvent : TravelBooking.BuildingBlocks.Background.IIntegrationEvent => Published.Add(integrationEvent);
+
     public Task<IReadOnlyList<Guid>> FindHoldsToWarnAsync(DateTimeOffset authorizedBefore, int limit, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<Guid>>([.. Attempts
             .Where(a => a.MayHoldFunds && a.HoldStartedAt <= authorizedBefore && a.HoldWarningRaisedAt is null)
@@ -167,7 +190,23 @@ internal sealed class ScriptedProvider : IPaymentProvider
         return Task.FromResult(OnCapture(details));
     }
 
-    public Task<Result<PaymentRefund, ProviderError>> RefundAsync(RefundDetails details, CancellationToken cancellationToken) => throw new NotSupportedException();
+    public Func<RefundDetails, Result<PaymentRefund, ProviderError>> OnRefund { get; set; } = _ => throw new InvalidOperationException("No refund expected.");
 
-    public Task<Result<RefundLookup, ProviderError>> RetrieveRefundAsync(PaymentReference reference, OperationKey key, CancellationToken cancellationToken) => throw new NotSupportedException();
+    public Func<OperationKey, RefundLookup> OnRefundLookup { get; set; } = _ => throw new InvalidOperationException("No refund lookup expected.");
+
+    public List<RefundDetails> RefundsSent { get; } = [];
+
+    public int RefundLookups { get; private set; }
+
+    public Task<Result<PaymentRefund, ProviderError>> RefundAsync(RefundDetails details, CancellationToken cancellationToken)
+    {
+        RefundsSent.Add(details);
+        return Task.FromResult(OnRefund(details));
+    }
+
+    public Task<Result<RefundLookup, ProviderError>> RetrieveRefundAsync(PaymentReference reference, OperationKey key, CancellationToken cancellationToken)
+    {
+        RefundLookups++;
+        return Task.FromResult(Result<RefundLookup, ProviderError>.Success(OnRefundLookup(key)));
+    }
 }

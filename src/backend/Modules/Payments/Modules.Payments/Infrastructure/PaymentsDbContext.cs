@@ -22,7 +22,7 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
-        modelBuilder.AddInbox().AddJobLeases(); // ADR 0007: consumed events, and the reconciliation job's lease
+        modelBuilder.AddInbox().AddOutbox().AddJobLeases(); // ADR 0007: consumed and published events (refund outcomes), and the jobs' leases
         modelBuilder.AddAuditLog(); // ADR 0022: staff actions on payments, saved with the action
 
         var attempt = modelBuilder.Entity<PaymentAttempt>();
@@ -52,6 +52,7 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         attempt.Property(a => a.ProviderId).HasMaxLength(50);
         attempt.Property(a => a.ProviderPaymentId).HasMaxLength(255);
         attempt.Property(a => a.ReleaseReason).HasMaxLength(PaymentAttempt.MaxReleaseReasonLength);
+        attempt.Property(a => a.RefundedAmountValue).HasColumnName("RefundedAmount").HasPrecision(19, 4);
         // The hold-expiry watch (ADR 0025): attempts not yet warned about, by authorization time.
         attempt.HasIndex(a => new { a.Status, a.AuthorizedAt, a.CreatedAt })
             .HasDatabaseName("IX_PaymentAttempts_HoldsToWarn")
@@ -103,6 +104,23 @@ internal sealed class PaymentsDbContext(DbContextOptions<PaymentsDbContext> opti
         trip.HasIndex(t => t.At);
 
         // Provider notifications (webhooks): one row per provider event (deduplication by a unique constraint).
+        // ADR 0027: one record per refund (Orders' refund id), separate from the attempt it returns money from.
+        var refund = modelBuilder.Entity<RefundRecord>();
+        refund.ToTable("Refunds", table => table.HasCheckConstraint(
+            "CK_Refunds_Status", $"[Status] IN ({string.Join(", ", Enum.GetNames<RefundRecordStatus>().Select(name => $"'{name}'"))})"));
+        refund.HasKey(r => r.Id);
+        refund.Property(r => r.Id).ValueGeneratedNever();
+        refund.Property(r => r.AmountValue).HasColumnName("Amount").HasPrecision(19, 4);
+        refund.Property(r => r.CurrencyCode).HasColumnName("Currency").HasMaxLength(3).IsFixedLength().IsUnicode(false);
+        refund.Ignore(r => r.Amount);
+        refund.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsUnicode(false);
+        refund.Property(r => r.ProviderRefundId).HasMaxLength(255);
+        refund.Property(r => r.Reason).HasMaxLength(RefundRecord.MaxReasonLength);
+        refund.Property(r => r.CorrelationId).HasMaxLength(64).IsUnicode(false);
+        refund.Property<byte[]>("RowVersion").IsRowVersion();
+        refund.HasIndex(r => r.AttemptId);
+        refund.HasIndex(r => new { r.Status, r.UpdatedAt });
+
         var notification = modelBuilder.Entity<PaymentNotificationRecord>();
         notification.ToTable("PaymentNotifications");
         notification.HasKey(n => n.Id);

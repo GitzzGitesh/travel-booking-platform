@@ -4,21 +4,24 @@ using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using TravelBooking.Modules.Orders.Infrastructure;
+using TravelBooking.Modules.Payments.Infrastructure;
 
 #nullable disable
 
-namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
+namespace TravelBooking.Modules.Payments.Infrastructure.Migrations
 {
-    [DbContext(typeof(OrdersDbContext))]
-    partial class OrdersDbContextModelSnapshot : ModelSnapshot
+    [DbContext(typeof(PaymentsDbContext))]
+    [Migration("20261003061345_AddRefunds")]
+    partial class AddRefunds
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("orders")
+                .HasDefaultSchema("payments")
                 .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
@@ -80,7 +83,7 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                     b.HasIndex("Target", "At");
 
-                    b.ToTable("AuditEntries", "orders");
+                    b.ToTable("AuditEntries", "payments");
                 });
 
             modelBuilder.Entity("TravelBooking.BuildingBlocks.Background.Persistence.InboxMessage", b =>
@@ -98,7 +101,7 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                     b.HasKey("MessageId", "Handler");
 
-                    b.ToTable("InboxMessages", "orders");
+                    b.ToTable("InboxMessages", "payments");
                 });
 
             modelBuilder.Entity("TravelBooking.BuildingBlocks.Background.Persistence.JobLease", b =>
@@ -118,7 +121,7 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                     b.HasKey("Name");
 
-                    b.ToTable("JobLeases", "orders");
+                    b.ToTable("JobLeases", "payments");
                 });
 
             modelBuilder.Entity("TravelBooking.BuildingBlocks.Background.Persistence.OutboxMessage", b =>
@@ -169,93 +172,18 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                     b.HasIndex("NextAttemptAt", "OccurredAt")
                         .HasFilter("[ProcessedAt] IS NULL AND [FailedAt] IS NULL");
 
-                    b.ToTable("OutboxMessages", "orders");
+                    b.ToTable("OutboxMessages", "payments");
                 });
 
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.FlightOrderItem", b =>
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Application.AttemptLimitTrip", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
 
-                    b.Property<Guid?>("AcceptedPriceQuoteId")
-                        .HasColumnType("uniqueidentifier");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("BookingLookups")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset?>("BookingStartedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset?>("NextBookingLookupAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset>("OfferExpiresAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("OrderId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset?>("PriceAcceptedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("ProviderId")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<Guid>("SelectedOfferId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<string>("SupplierLocator")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Ticketing")
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.ComplexProperty(typeof(Dictionary<string, object>), "AgreedPrice", "TravelBooking.Modules.Orders.Domain.FlightOrderItem.AgreedPrice#Money", b1 =>
-                        {
-                            b1.IsRequired();
-
-                            b1.Property<decimal>("Amount")
-                                .HasPrecision(19, 4)
-                                .HasColumnType("decimal(19,4)")
-                                .HasColumnName("AgreedAmount");
-
-                            b1.Property<string>("Currency")
-                                .IsRequired()
-                                .HasColumnType("char(3)")
-                                .HasColumnName("AgreedCurrency");
-                        });
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrderId");
-
-                    b.HasIndex("SelectedOfferId")
-                        .IsUnique();
-
-                    b.HasIndex("Status", "NextBookingLookupAt");
-
-                    b.HasIndex("Status", "OfferExpiresAt");
-
-                    b.ToTable("FlightOrderItems", "orders", t =>
-                        {
-                            t.HasCheckConstraint("CK_FlightOrderItems_Status", "[Status] IN ('Draft', 'AwaitingPayment', 'Abandoned', 'Booking', 'PendingConfirmation', 'ManualReview', 'Confirmed', 'Failed', 'Cancelled')");
-                        });
-                });
-
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.Order", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
+                    b.Property<DateTimeOffset>("At")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CustomerId")
@@ -269,11 +197,140 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(100)");
 
-                    b.Property<string>("PaymentAuthorizationId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTimeOffset?>("PaymentSettlementRequestedAt")
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.HasIndex("CustomerId", "At");
+
+                    b.HasIndex("CustomerId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("AttemptLimitTrips", "payments");
+                });
+
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Application.PaymentNotificationRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("EventType")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset?>("OccurredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProviderId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ProviderPaymentId")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProcessedAt", "ReceivedAt");
+
+                    b.HasIndex("ProviderId", "EventId")
+                        .IsUnique();
+
+                    b.ToTable("PaymentNotifications", "payments");
+                });
+
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Domain.PaymentAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AuthorizedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("CaptureAmountValue")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("CaptureAmount");
+
+                    b.Property<DateTimeOffset?>("CaptureRequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CustomerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DeclineReason")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTimeOffset?>("HoldWarningRaisedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProviderId")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ProviderPaymentId")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<decimal>("RefundedAmountValue")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("RefundedAmount");
+
+                    b.Property<string>("ReleaseReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("ReleaseRequestedAt")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<int>("Revision")
@@ -284,18 +341,61 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int>("VoidGeneration")
+                        .HasColumnType("int");
+
+                    b.ComplexProperty(typeof(Dictionary<string, object>), "Amount", "TravelBooking.Modules.Payments.Domain.PaymentAttempt.Amount#Money", b1 =>
+                        {
+                            b1.IsRequired();
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(19, 4)
+                                .HasColumnType("decimal(19,4)")
+                                .HasColumnName("Amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasColumnType("char(3)")
+                                .HasColumnName("Currency");
+                        });
+
                     b.HasKey("Id");
 
-                    b.HasIndex("CustomerId", "IdempotencyKey")
+                    b.HasIndex("OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PaymentAttempts_OrderId_Live")
+                        .HasFilter("[Status] IN ('Authorizing', 'ActionRequired', 'AuthorizationUnknown', 'Authorized', 'ManualReview', 'Voiding', 'VoidUnknown')");
+
+                    b.HasIndex("CustomerId", "CreatedAt");
+
+                    b.HasIndex("OrderId", "IdempotencyKey")
                         .IsUnique();
 
-                    b.ToTable("Orders", "orders");
+                    b.HasIndex("ProviderId", "ProviderPaymentId")
+                        .IsUnique()
+                        .HasFilter("[ProviderPaymentId] IS NOT NULL");
+
+                    b.HasIndex("Status", "UpdatedAt");
+
+                    b.HasIndex("Status", "AuthorizedAt", "CreatedAt")
+                        .HasDatabaseName("IX_PaymentAttempts_HoldsToWarn")
+                        .HasFilter("[HoldWarningRaisedAt] IS NULL AND [Status] IN ('Authorized','Capturing','CaptureUnknown','ManualReview','Voiding','VoidUnknown')");
+
+                    b.ToTable("PaymentAttempts", "payments", t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentAttempts_Status", "[Status] IN ('Authorizing', 'ActionRequired', 'AuthorizationUnknown', 'Authorized', 'Declined', 'Canceled', 'Expired', 'Failed', 'ManualReview', 'Voiding', 'VoidUnknown', 'Voided', 'Capturing', 'CaptureUnknown', 'Captured')");
+                        });
                 });
 
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.OrderTimelineEntry", b =>
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Domain.PaymentAttemptEvent", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -305,8 +405,8 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                     b.Property<string>("Actor")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<DateTimeOffset>("At")
                         .HasColumnType("datetimeoffset");
@@ -319,15 +419,12 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
-                    b.Property<Guid?>("ItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("OrderId")
+                    b.Property<Guid>("PaymentAttemptId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ProviderReference")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("Reason")
                         .IsRequired()
@@ -341,12 +438,12 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrderId", "Id");
+                    b.HasIndex("PaymentAttemptId", "Id");
 
-                    b.ToTable("OrderTimeline", "orders");
+                    b.ToTable("PaymentAttemptEvents", "payments");
                 });
 
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.RefundCase", b =>
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Domain.RefundRecord", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
@@ -356,6 +453,14 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .HasColumnType("decimal(19,4)")
                         .HasColumnName("Amount");
 
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<string>("CurrencyCode")
                         .IsRequired()
                         .HasMaxLength(3)
@@ -364,75 +469,19 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .HasColumnName("Currency")
                         .IsFixedLength();
 
-                    b.Property<DateTimeOffset?>("DecidedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("DecidedBy")
-                        .HasMaxLength(64)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(64)");
-
-                    b.Property<string>("DecisionReason")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<decimal>("FeeValue")
-                        .HasPrecision(19, 4)
-                        .HasColumnType("decimal(19,4)")
-                        .HasColumnName("Fee");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("ItemIds")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(1000)");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(20)");
-
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTimeOffset?>("OverdueAlertedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("PaymentId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("ProviderRefundId")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("RequestFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(1200)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(1200)");
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<DateTimeOffset>("RequestedAt")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("RequestedBy")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(64)");
-
-                    b.Property<string>("RequestedByAccount")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(128)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -448,88 +497,33 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(20)");
 
-                    b.Property<string>("SupplierReference")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<decimal?>("SupplierRefundValue")
-                        .HasPrecision(19, 4)
-                        .HasColumnType("decimal(19,4)")
-                        .HasColumnName("SupplierRefund");
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrderId");
+                    b.HasIndex("AttemptId");
 
-                    b.HasIndex("RequestedBy", "IdempotencyKey")
-                        .IsUnique();
+                    b.HasIndex("Status", "UpdatedAt");
 
-                    b.HasIndex("Status", "RequestedAt");
-
-                    b.ToTable("RefundCases", "orders", t =>
+                    b.ToTable("Refunds", "payments", t =>
                         {
-                            t.HasCheckConstraint("CK_RefundCases_Status", "[Status] IN ('PendingApproval', 'Approved', 'Rejected', 'Refunded', 'RefundFailed', 'NoRefund')");
+                            t.HasCheckConstraint("CK_Refunds_Status", "[Status] IN ('Requested', 'Refunding', 'Pending', 'Unknown', 'Succeeded', 'Failed', 'ManualReview')");
                         });
                 });
 
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.FlightOrderItem", b =>
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Domain.PaymentAttemptEvent", b =>
                 {
-                    b.HasOne("TravelBooking.Modules.Orders.Domain.Order", null)
-                        .WithMany("Items")
-                        .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.OwnsOne("TravelBooking.Modules.Orders.Domain.TravellerNeeds", "TravellerNeeds", b1 =>
-                        {
-                            b1.Property<Guid>("FlightOrderItemId")
-                                .HasColumnType("uniqueidentifier");
-
-                            b1.Property<int>("Adults")
-                                .HasColumnType("int")
-                                .HasColumnName("TravellerAdults");
-
-                            b1.Property<int>("Children")
-                                .HasColumnType("int")
-                                .HasColumnName("TravellerChildren");
-
-                            b1.Property<bool>("DocumentsRequired")
-                                .HasColumnType("bit")
-                                .HasColumnName("DocumentsRequired");
-
-                            b1.Property<int>("Infants")
-                                .HasColumnType("int")
-                                .HasColumnName("TravellerInfants");
-
-                            b1.Property<DateOnly>("LastTravelDate")
-                                .HasColumnType("date")
-                                .HasColumnName("LastTravelDate");
-
-                            b1.HasKey("FlightOrderItemId");
-
-                            b1.ToTable("FlightOrderItems", "orders");
-
-                            b1.WithOwner()
-                                .HasForeignKey("FlightOrderItemId");
-                        });
-
-                    b.Navigation("TravellerNeeds");
-                });
-
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.OrderTimelineEntry", b =>
-                {
-                    b.HasOne("TravelBooking.Modules.Orders.Domain.Order", null)
-                        .WithMany("Timeline")
-                        .HasForeignKey("OrderId")
+                    b.HasOne("TravelBooking.Modules.Payments.Domain.PaymentAttempt", null)
+                        .WithMany("Events")
+                        .HasForeignKey("PaymentAttemptId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.Order", b =>
+            modelBuilder.Entity("TravelBooking.Modules.Payments.Domain.PaymentAttempt", b =>
                 {
-                    b.Navigation("Items");
-
-                    b.Navigation("Timeline");
+                    b.Navigation("Events");
                 });
 #pragma warning restore 612, 618
         }

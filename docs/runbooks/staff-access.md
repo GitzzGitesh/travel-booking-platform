@@ -10,9 +10,10 @@ Code checks permissions, never role names. A role is a bundle of permissions (`M
 
 | Role | Permissions |
 |---|---|
-| Operations | `orders.read`, `bookings.review.resolve`, `payments.read`, `payments.review.resolve` |
+| Operations | `orders.read`, `bookings.review.resolve`, `payments.read`, `payments.review.resolve`, `refunds.request` |
 | Privacy | `orders.read`, `personal-data.legal-hold` (place a hold, request its release) |
 | Legal | `orders.read`, `personal-data.legal-hold.approve` (approve or reject a release, ADR 0026) |
+| Finance | `orders.read`, `payments.read`, `refunds.approve` (approve or reject a refund, ADR 0027) |
 | Administrator | all, including `access.grants.read`, `access.grants.request` and `access.grants.approve` |
 
 ## Signing in (admin-web)

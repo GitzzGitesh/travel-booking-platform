@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Domain;
@@ -66,6 +67,30 @@ internal sealed class SqlPaymentAttemptStore(PaymentsDbContext db) : IPaymentAtt
             .Select(a => a.Id)
             .Take(limit)
             .ToListAsync(cancellationToken);
+
+    public void AddRefund(RefundRecord refund) => db.Set<RefundRecord>().Add(refund);
+
+    public Task<RefundRecord?> FindRefundAsync(Guid refundId, CancellationToken cancellationToken) =>
+        db.Set<RefundRecord>().SingleOrDefaultAsync(r => r.Id == refundId, cancellationToken);
+
+    public async Task<IReadOnlyList<RefundRecord>> FindRefundsAsync(Guid attemptId, CancellationToken cancellationToken) =>
+        await db.Set<RefundRecord>().AsNoTracking().Where(r => r.AttemptId == attemptId).OrderBy(r => r.RequestedAt).ToListAsync(cancellationToken);
+
+    public Task<PaymentAttempt?> FindCapturedByOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        db.PaymentAttempts.AsNoTracking().FirstOrDefaultAsync(a => a.OrderId == orderId && a.Status == PaymentAttemptStatus.Captured, cancellationToken);
+
+    public async Task<IReadOnlyList<Guid>> FindRefundsToProcessAsync(DateTimeOffset interruptedBefore, int limit, CancellationToken cancellationToken) =>
+        await db.Set<RefundRecord>().AsNoTracking()
+            .Where(r => r.Status == RefundRecordStatus.Requested || r.Status == RefundRecordStatus.Pending || r.Status == RefundRecordStatus.Unknown
+                || (r.Status == RefundRecordStatus.Refunding && r.UpdatedAt <= interruptedBefore))
+            .OrderBy(r => r.UpdatedAt)
+            .Select(r => r.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    public void Publish<TEvent>(TEvent integrationEvent, string? correlationId)
+        where TEvent : IIntegrationEvent =>
+        db.Set<OutboxMessage>().Add(OutboxMessage.From(integrationEvent, correlationId));
 
     public async Task<IReadOnlyList<Guid>> FindHoldsToWarnAsync(DateTimeOffset authorizedBefore, int limit, CancellationToken cancellationToken) =>
         await db.PaymentAttempts.AsNoTracking()
