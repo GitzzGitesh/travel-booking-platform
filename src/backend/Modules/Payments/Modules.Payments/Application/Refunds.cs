@@ -125,7 +125,8 @@ internal sealed partial class ExecuteRefundsJob(
         {
             if (attempt.ProviderId is null || attempt.ProviderPaymentId is null)
             {
-                // Never sent without the provider's payment id; a person settles it (never silent).
+                // Never sent without the provider's payment id: nothing was refunded, which proves it failed (its amount is
+                // released and the outcome told), never a review that no lookup could ever settle.
                 await RecordAsync(refunds, refund, attempt, new PaymentOutcome.Unknown(ProviderErrorKind.InvalidRequest), cancellationToken, "the payment has no provider id");
                 return;
             }
@@ -158,7 +159,7 @@ internal sealed partial class ExecuteRefundsJob(
         var unresolved = now - refund.RequestedAt >= RefundRecord.UnresolvedAfter;
         var (status, reason, providerRefundId) = outcome switch
         {
-            _ when cause is not null => (RefundRecordStatus.ManualReview, $"Not sent: {cause}", null),
+            _ when cause is not null => (RefundRecordStatus.Failed, $"Not sent: {cause}", null),
             PaymentOutcome.RefundSucceeded succeeded => (RefundRecordStatus.Succeeded, "Refunded", succeeded.Refund.Refund.Value),
             PaymentOutcome.RefundFailed failed => (RefundRecordStatus.Failed, "The provider could not return the money", failed.Refund.Refund.Value),
             // Still pending after its limit goes to a person too (ADR 0027 §6): never forgotten at the provider.
@@ -214,4 +215,83 @@ internal sealed partial class ExecuteRefundsJob(
     [LoggerMessage(Level = LogLevel.Error, EventName = "RefundFailed",
         Message = "Alert: refund {RefundId} for order {OrderId} failed: {Reason}")]
     private static partial void LogFailed(ILogger logger, Guid refundId, Guid orderId, string reason);
+}
+
+internal enum RefundReviewOutcome
+{
+    Resolved,
+    StillNeedsReview,
+    NotInReview,
+    NotFound,
+    Invalid,
+}
+
+/// <summary>
+/// The way out of a refund's manual review (ADR 0027): never someone's statement, only what a lookup by our key shows.
+/// Succeeded or failed settles it (a failure gives its amount back to what can be refunded) and is published to Orders and
+/// the customer's notice in the same save; anything else (still pending, not found, not as expected) keeps it in review,
+/// with the check recorded. Audited either way.
+/// </summary>
+internal sealed class ResolveRefundReviewHandler(IPaymentAttemptStore store, PaymentOperations operations, TimeProvider timeProvider)
+{
+    public const string Action = "payments.refund-review.resolve";
+
+    public async Task<(RefundReviewOutcome Outcome, RefundRecordStatus? Status)> HandleAsync(
+        Guid refundId, string staffId, string reason, BuildingBlocks.Audit.AuditSource source, CancellationToken cancellationToken)
+    {
+        if (staffId is not { Length: > 0 and <= ResolvePaymentReviewHandler.MaxOperatorIdLength } || !BuildingBlocks.Audit.AuditReasons.IsValid(reason))
+        {
+            return (RefundReviewOutcome.Invalid, null);
+        }
+
+        if (await store.FindRefundAsync(refundId, cancellationToken) is not { } refund
+            || await store.FindAsync(refund.AttemptId, cancellationToken) is not { } attempt)
+        {
+            return (RefundReviewOutcome.NotFound, null);
+        }
+
+        if (refund.Status is not RefundRecordStatus.ManualReview)
+        {
+            return (RefundReviewOutcome.NotInReview, refund.Status);
+        }
+
+        var outcome = await operations.ReconcileRefundAsync(new PaymentReference(attempt.Reference), new OperationKey(refund.Key), refund.Amount, cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        var change = new PaymentChange(now, $"staff:{staffId}", source.CorrelationId);
+        var (status, providerRefundId) = outcome switch
+        {
+            PaymentOutcome.RefundSucceeded succeeded => (RefundRecordStatus.Succeeded, succeeded.Refund.Refund.Value),
+            PaymentOutcome.RefundFailed failed => (RefundRecordStatus.Failed, failed.Refund.Refund.Value),
+            _ => ((RefundRecordStatus?)null, (string?)null),
+        };
+
+        var found = $"the provider reports {outcome.GetType().Name}";
+        if (status is { } final && refund.Record(final, $"Review resolved by operator ({reason}); {found}", now, providerRefundId))
+        {
+            if (final is RefundRecordStatus.Failed)
+            {
+                attempt.ReleaseRefund(refund.Amount, refund.Id, change);
+            }
+            else
+            {
+                attempt.RecordFinding($"Refund {refund.Id:N} of {refund.AmountValue} {refund.CurrencyCode} succeeded (review resolved)", change, providerRefundId);
+            }
+
+            store.Publish(new PaymentRefundSettled(Guid.NewGuid(), now, refund.OrderId, refund.AttemptId, refund.Id, refund.Amount,
+                final is RefundRecordStatus.Succeeded, refund.CorrelationId), refund.CorrelationId); // tied to the refund's own trace
+        }
+        else
+        {
+            attempt.RecordFinding($"Refund {refund.Id:N} checked by operator ({reason}); {found}: still in review", change, null);
+        }
+
+        store.Audit(BuildingBlocks.Audit.AuditEntry.For(source, now, change.Actor, Action, $"refund:{refund.Id}", nameof(RefundRecordStatus.ManualReview),
+            $"{refund.Status}; {reason}"));
+        if (!await store.TrySaveAsync(cancellationToken))
+        {
+            return (RefundReviewOutcome.StillNeedsReview, (await store.FindRefundAsync(refundId, cancellationToken))?.Status);
+        }
+
+        return (refund.Status is RefundRecordStatus.ManualReview ? RefundReviewOutcome.StillNeedsReview : RefundReviewOutcome.Resolved, refund.Status);
+    }
 }

@@ -28,8 +28,26 @@ internal static class AdminPaymentEndpoints
     public static async Task<Results<Ok<AdminPaymentAttempt>, ProblemHttpResult>> Get(
         Guid attemptId, IPaymentAttemptStore store, Microsoft.Extensions.Options.IOptions<PaymentHoldOptions> holds, CancellationToken cancellationToken) =>
         await store.FindAsync(attemptId, cancellationToken) is { } attempt
-            ? TypedResults.Ok(AdminPaymentAttempt.From(attempt, holds.Value))
+            ? TypedResults.Ok(AdminPaymentAttempt.From(attempt, holds.Value, await store.FindRefundsAsync(attempt.Id, cancellationToken)))
             : TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, type: "payment-not-found", title: "This payment attempt was not found.");
+
+    // ADR 0027: a refund in manual review is settled only by a lookup by our key, never by someone's statement.
+    public static async Task<Results<Ok<RefundReviewResolutionResponse>, ProblemHttpResult>> ResolveRefund(
+        Guid refundId, PaymentReviewResolutionRequest request, ClaimsPrincipal user, HttpContext http, ResolveRefundReviewHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var (outcome, status) = await handler.HandleAsync(refundId, user.StaffId()!, request.Reason!, AuditSources.From(http), cancellationToken);
+        return outcome switch
+        {
+            RefundReviewOutcome.Resolved or RefundReviewOutcome.StillNeedsReview =>
+                TypedResults.Ok(new RefundReviewResolutionResponse(refundId, status?.ToString(), outcome is RefundReviewOutcome.Resolved)),
+            RefundReviewOutcome.NotInReview => TypedResults.Problem(statusCode: StatusCodes.Status409Conflict, type: "not-in-review",
+                title: "This refund is not in manual review.", extensions: new Dictionary<string, object?> { ["refundStatus"] = status?.ToString() }),
+            RefundReviewOutcome.NotFound => TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, type: "refund-not-found", title: "This refund was not found."),
+            _ => TypedResults.Problem(statusCode: StatusCodes.Status400BadRequest, type: "invalid-request",
+                title: "Give a ticket reference (3 to 200 letters, digits, spaces or . _ : / # -)."),
+        };
+    }
 
     // The attempt is looked up with the provider by our reference and moves only to what the provider holds.
     public static async Task<Results<Ok<PaymentReviewResolutionResponse>, ProblemHttpResult>> Resolve(
@@ -59,15 +77,25 @@ internal static class AdminPaymentEndpoints
 /// <param name="Resolved">The review was settled by the provider's answer; false when it stays in review (the check is recorded).</param>
 internal sealed record PaymentReviewResolutionResponse(Guid AttemptId, string? Status, bool Resolved);
 
+/// <param name="Resolved">The refund's review was settled by the provider's answer; false when it stays in review.</param>
+internal sealed record RefundReviewResolutionResponse(Guid RefundId, string? Status, bool Resolved);
+
+/// <summary>One refund of the payment (ADR 0027), as stored: our id (the refund case), amount, status and the provider's refund id.</summary>
+internal sealed record AdminRefund(Guid RefundId, AdminAmount Amount, string Status, string? Reason, string? ProviderRefundId, DateTimeOffset RequestedAt, DateTimeOffset? SettledAt)
+{
+    public static AdminRefund From(RefundRecord r) =>
+        new(r.Id, AdminAmount.From(r.Amount), r.Status.ToString(), r.Reason, r.ProviderRefundId, r.RequestedAt, r.SettledAt);
+}
+
 /// <param name="CustomerId">Our internal customer id (opaque).</param>
 internal sealed record AttemptLimitReviewEntry(string CustomerId, int Refusals);
 
 internal sealed record AdminPaymentAttempt(
     Guid AttemptId, Guid OrderId, string CustomerId, string Status, AdminAmount Amount, string? ProviderId, string? ProviderPaymentId, string? DeclineReason,
     DateTimeOffset CreatedAt, DateTimeOffset? ReleaseRequestedAt, DateTimeOffset? CaptureRequestedAt, AdminAmount? CaptureAmount, IReadOnlyList<AdminPaymentEvent> History,
-    DateTimeOffset? AuthorizedAt, DateTimeOffset? HoldExpiresAt)
+    DateTimeOffset? AuthorizedAt, DateTimeOffset? HoldExpiresAt, AdminAmount? Refunded, IReadOnlyList<AdminRefund> Refunds)
 {
-    public static AdminPaymentAttempt From(PaymentAttempt attempt, PaymentHoldOptions holds) => new(
+    public static AdminPaymentAttempt From(PaymentAttempt attempt, PaymentHoldOptions holds, IReadOnlyList<RefundRecord> refunds) => new(
         attempt.Id,
         attempt.OrderId,
         attempt.CustomerId,
@@ -82,7 +110,9 @@ internal sealed record AdminPaymentAttempt(
         attempt.CaptureAmount is { } capture ? AdminAmount.From(capture) : null,
         [.. attempt.Events.OrderBy(e => e.At).ThenBy(e => e.Id).Select(e => new AdminPaymentEvent(e.At, e.Actor, e.FromStatus, e.ToStatus, e.Reason, e.CorrelationId, e.ProviderReference))],
         attempt.AuthorizedAt,
-        attempt.MayHoldFunds ? holds.ExpiresAt(attempt) : null); // only while funds may be held: the deadline to settle by
+        attempt.MayHoldFunds ? holds.ExpiresAt(attempt) : null, // only while funds may be held: the deadline to settle by
+        attempt.CaptureAmount is { } captured ? AdminAmount.From(new BuildingBlocks.Money(attempt.RefundedAmountValue, captured.Currency)) : null,
+        [.. refunds.Select(AdminRefund.From)]);
 }
 
 internal sealed record AdminAmount(string Amount, string Currency)

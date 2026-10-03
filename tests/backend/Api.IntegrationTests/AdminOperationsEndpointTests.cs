@@ -32,6 +32,7 @@ public sealed class AdminOperationsEndpointTests(SqlApiFactory api) : IClassFixt
     [InlineData("GET", "/api/admin/v1/payments/attempt-limit-reviews", TestStaffTokens.Operations)]
     [InlineData("GET", "/api/admin/v1/payments/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11", TestStaffTokens.Operations)]
     [InlineData("POST", "/api/admin/v1/payments/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/review-resolutions", TestStaffTokens.Operations)]
+    [InlineData("POST", "/api/admin/v1/payments/refunds/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/review-resolutions", TestStaffTokens.Operations)]
     [InlineData("PUT", "/api/admin/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/legal-hold", TestStaffTokens.Privacy)]
     [InlineData("POST", "/api/admin/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/legal-hold/release-requests", TestStaffTokens.Privacy)]
     [InlineData("POST", "/api/admin/v1/legal-hold/release-requests/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/withdrawal", TestStaffTokens.Privacy)]

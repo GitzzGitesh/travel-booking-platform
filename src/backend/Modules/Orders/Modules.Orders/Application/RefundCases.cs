@@ -201,6 +201,10 @@ internal sealed partial class RefundCaseHandler(
         cases.Add(refundCase);
         order.NoteRefund(command.ItemIds, $"Refund case {refundCase.Id:N} opened: {refundCase.Kind}, {amount.Amount} {amount.Currency.Value} ({refundCase.Status})",
             context, command.SupplierReference);
+        if (command.Kind is RefundCaseKind.Cancellation)
+        {
+            orders.Publish(new OrderCancellationRecorded(Guid.NewGuid(), now, order.Id, refundCase.Id, amount, command.Source.CorrelationId), command.Source.CorrelationId);
+        }
 
         orders.Audit(AuditEntry.For(command.Source, now, staff, OpenAction, $"refund-case:{refundCase.Id}", null,
             $"{refundCase.Kind} {amount.Amount} {amount.Currency.Value} ({refundCase.Status}; supplier refund {supplierRefund?.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}, fee {fee.Amount}, items {refundCase.ItemIds}, supplier reference {command.SupplierReference ?? "-"}); {command.Reason}"));

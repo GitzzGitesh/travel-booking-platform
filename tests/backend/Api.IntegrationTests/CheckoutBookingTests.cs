@@ -294,6 +294,95 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         (await Read(cases)).EnumerateArray().Single().GetProperty("status").GetString().ShouldBe("Refunded");
         var email = EmailsAbout(order).Single(m => m.Subject == "Your refund has been sent");
         email.TextBody.ShouldContain($"Refunded: {price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)} {price.Currency.Value}");
+        var cancelled = EmailsAbout(order).Single(m => m.Subject == "Your booking has been cancelled"); // once, when the cancellation was recorded
+        cancelled.TextBody.ShouldContain("If a refund is due");
+        cancelled.TextBody.ShouldNotContain(price.Currency.Value); // no amount promised before a second person approves it
+    }
+
+    [Fact]
+    public async Task A_refund_that_failed_is_told_to_the_customer_as_delayed_never_as_sent()
+    {
+        var (order, price) = await CapturedOrder();
+        var settled = new TravelBooking.Modules.Payments.Contracts.PaymentRefundSettled(Guid.NewGuid(), api.Clock.GetUtcNow(), order, Guid.NewGuid(), Guid.NewGuid(),
+            new Money(10m, price.Currency), Succeeded: false, "trace-refund-failed");
+        using (var scope = api.Services.CreateScope())
+        {
+            var handler = scope.ServiceProvider.GetServices<IIntegrationEventHandler<TravelBooking.Modules.Payments.Contracts.PaymentRefundSettled>>()
+                .Single(h => h is TravelBooking.Modules.Notifications.Application.PaymentRefundSettledHandler);
+            await handler.HandleAsync(settled, Ct);
+            await handler.HandleAsync(settled, Ct); // delivered twice: one notice
+        }
+
+        await Run(SendNotificationsJob.Name);
+
+        EmailsAbout(order).ShouldNotContain(m => m.Subject == "Your refund has been sent");
+        var delayed = EmailsAbout(order).Single(m => m.Subject == "Your refund is delayed").TextBody;
+        delayed.ShouldContain($"Refund amount: 10 {price.Currency.Value}");
+        delayed.ShouldNotContain("Refunded:");
+    }
+
+    [Fact]
+    public async Task A_refund_in_review_is_checked_with_the_provider_in_parallel_safely_and_never_sent_again()
+    {
+        var (order, _) = await CapturedOrder(MockPaymentMethods.RefundPending);
+        var refundId = await ApprovedGoodwill(order, "10");
+        await Run(ExecuteRefundsJob.Name); // sent once: pending at the provider
+        api.Clock.Advance(RefundRecord.UnresolvedAfter);
+        await Run(ExecuteRefundsJob.Name); // still pending after its limit: a person decides
+        (await RefundOf(refundId)).Status.ShouldBe(RefundRecordStatus.ManualReview);
+
+        var url = $"/api/admin/v1/payments/refunds/{refundId}/review-resolutions";
+        var responses = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ =>
+            Send(HttpMethod.Post, url, Staff(TestStaffTokens.Operations), new { reason = "TICKET-601" })));
+        foreach (var response in responses)
+        {
+            using (response)
+            {
+                response.StatusCode.ShouldBe(HttpStatusCode.OK);
+                var body = await Read(response);
+                (body.GetProperty("resolved").GetBoolean(), body.GetProperty("status").GetString()).ShouldBe((false, "ManualReview"));
+            }
+        }
+
+        using var missing = await Send(HttpMethod.Post, $"/api/admin/v1/payments/refunds/{Guid.NewGuid()}/review-resolutions",
+            Staff(TestStaffTokens.Operations), new { reason = "TICKET-601" });
+        missing.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await RefundOf(refundId)).Status.ShouldBe(RefundRecordStatus.ManualReview); // the provider still says pending
+        (await CountRefunds(order)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_refund_that_is_not_in_review_says_where_it_stands()
+    {
+        var (order, _) = await CapturedOrder();
+        var refundId = await ApprovedGoodwill(order, "10");
+        await Run(ExecuteRefundsJob.Name);
+
+        using var settled = await Send(HttpMethod.Post, $"/api/admin/v1/payments/refunds/{refundId}/review-resolutions",
+            Staff(TestStaffTokens.Operations), new { reason = "TICKET-602" });
+
+        settled.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var problem = await Read(settled);
+        (problem.GetProperty("type").GetString(), problem.GetProperty("refundStatus").GetString()).ShouldBe(("not-in-review", "Succeeded"));
+    }
+
+    // A goodwill case opened by Operations and approved by Finance, delivered to Payments: its id is the refund's.
+    private async Task<Guid> ApprovedGoodwill(Guid order, string amount)
+    {
+        using var opened = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations),
+            new { kind = "Goodwill", amount, reason = "TICKET-600" }, NewKey());
+        var caseId = (await Read(opened)).GetProperty("caseId").GetGuid();
+        using var approved = await Send(HttpMethod.Post, $"/api/admin/v1/refund-cases/{caseId}/decision", Staff(TestStaffTokens.Finance),
+            new { approve = true, reason = "TICKET-600 checked" });
+        approved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await Run("orders.outbox");
+        return caseId;
+    }
+
+    private async Task<RefundRecord> RefundOf(Guid refundId)
+    {
+        using var scope = api.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Set<RefundRecord>().AsNoTracking().SingleAsync(r => r.Id == refundId, Ct);
     }
 
     [Fact]
@@ -416,11 +505,11 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         }
     }
 
-    private async Task<(Guid Order, Money Price)> CapturedOrder()
+    private async Task<(Guid Order, Money Price)> CapturedOrder(string paymentMethod = MockPaymentMethods.Approved)
     {
         var token = Token();
         var order = await ReadyOrder(token, email: $"booker-{Guid.NewGuid():N}@example.com");
-        (await Checkout(token, order, NewKey())).Dispose();
+        (await Checkout(token, order, NewKey(), paymentMethod)).Dispose();
         await Run("orders.outbox");
         await Run(ReconcilePaymentAttemptsJob.Name);
         (await PaymentOf(order)).Status.ShouldBe(PaymentAttemptStatus.Captured);
