@@ -333,8 +333,33 @@
                               Price confirmed with the airline:
                               {{ formatMoney(check.confirmed.totalPrice) }}.
                             </p>
-                            @if (!session.signedIn()) {
-                              <p class="note" id="sign-in-to-book">Sign in to book this flight.</p>
+                            @if (session.signedIn()) {
+                              <button
+                                type="button"
+                                class="btn btn-primary"
+                                [disabled]="booking().kind === 'creating'"
+                                (click)="book()"
+                              >
+                                {{
+                                  booking().kind === 'creating'
+                                    ? 'Starting your booking…'
+                                    : 'Continue to booking'
+                                }}
+                              </button>
+                              @if (booking(); as booking) {
+                                @if (booking.kind === 'error') {
+                                  <p class="alert alert-error" role="alert">
+                                    {{ booking.message }}
+                                  </p>
+                                }
+                              }
+                            } @else {
+                              <p class="note" id="sign-in-to-book">
+                                Sign in to book this flight, then select it again.
+                              </p>
+                              <button type="button" class="btn btn-outline" (click)="signIn()">
+                                Sign in
+                              </button>
                             }
                           }
                           @default {

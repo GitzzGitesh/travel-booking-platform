@@ -1,0 +1,64 @@
+/* Functional layout only, from the existing tokens and classes (the visual design is frozen). */
+.booking {
+  display: grid;
+  gap: var(--space-4);
+  padding-block: var(--space-6);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: var(--space-4);
+}
+
+.summary dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.reference {
+  letter-spacing: 0.08em;
+}
+
+.step {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.traveller {
+  padding: var(--space-4);
+}
+
+.traveller legend {
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3);
+}
+
+.grid label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.grid input,
+.grid select {
+  min-height: var(--tap);
+  padding-inline: var(--space-3);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.grid [aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.step > .btn {
+  justify-self: start;
+}

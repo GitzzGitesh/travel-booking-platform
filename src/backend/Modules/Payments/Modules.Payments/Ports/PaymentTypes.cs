@@ -236,3 +236,22 @@ internal static class StringSplitting
         }
     }
 }
+
+/// <summary>How customers enter a payment method (ADR 0006: card entry in the provider's own component, never ours).</summary>
+public enum PaymentEntryMode
+{
+    /// <summary>No way to pay yet: checkout is not offered.</summary>
+    Unavailable,
+
+    /// <summary>A test provider: the customer picks one of its named test methods (Development and Staging only).</summary>
+    Test,
+}
+
+/// <summary>One test payment method: the provider's own token (never a card number) and what it does.</summary>
+public sealed record TestPaymentMethod(string Token, string Label);
+
+/// <summary>What customer-web offers for entering a payment method, as the provider declares it.</summary>
+public sealed record PaymentEntry(PaymentEntryMode Mode, IReadOnlyList<TestPaymentMethod> TestMethods)
+{
+    public static PaymentEntry Unavailable { get; } = new(PaymentEntryMode.Unavailable, []);
+}

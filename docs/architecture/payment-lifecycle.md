@@ -110,6 +110,25 @@ Invariants:
 4. The challenge's result is never taken from the browser. It is learnt from a lookup: when the customer repeats the step with the same key, when reconciliation runs, or when a notification prompts one. With the provider's payment id known, the lookup reads the payment directly, which is consistent at once.
 5. An abandoned challenge stays ActionRequired (never paid). When the order's offer expires, the release request cancels it (payment-hold-release runbook).
 
+**How customer-web learns to collect a payment method.** Each adapter declares it on the port (`IPaymentProvider.Entry`), and customer-web reads it from `GET /api/v1/payments/entry` (signed-in customers).
+- The default is **Unavailable** (fail closed): customer-web offers no payment.
+- The mock (Development and Staging only) declares **Test**, with named test methods (its own tokens, never card numbers): approved, declined, and a slow answer that is then approved (PaymentPending, repeated with the same key).
+- Stripe stays Unavailable until ADR 0006 is accepted and the Payment Element is built; it will then declare its mode and publishable key.
+
+**customer-web checkout keys.** One `Idempotency-Key` per payment attempt, generated in the browser with its payment method and kept in session storage until the outcome is final, so a reload resumes the same attempt.
+- **Kept (the same attempt):**
+  - while the payment is pending;
+  - after a network error with an unknown outcome or a `try-again`;
+  - after `payment-in-progress`;
+  - after ActionRequired: the challenge continues the same attempt, and the server holds back any other attempt while it is live.
+- **Replaced (another attempt is a new payment):**
+  - after a decline or a failed payment (F-20);
+  - after a booking that was not made, or `order-not-bookable`;
+  - after a price change: the new price is accepted on the booking page first (F-01);
+  - after an expired, sold-out or unbookable offer, `order-not-payable`, or `idempotency-conflict`.
+
+Order creation uses `order-{selectedOfferId}` as its key: one order per selection, so a repeated click returns the same order.
+
 ## Webhook handling (notifications)
 1. The `Api` receives `POST /api/v1/payments/notifications/{providerId}`. The route is anonymous (the provider's signature authenticates it) and mapped only when the composed provider sends notifications. The adapter **verifies the signature over the raw body**, including its age (replay tolerance). A rejection is a 400 and a security event, and nothing is stored.
 2. A verified notification is stored as one row in `payments.PaymentNotifications`, unique on (provider, event id), so a duplicate is acknowledged and changes nothing. Only the event id, the kind, our reference and the provider's payment id are kept, not the raw event (personal data, Q9). This deviates from the booking rules and is still to be confirmed (ADR 0006, decision 4). Event types the core does not use are acknowledged and not stored. The endpoint answers 200 quickly.

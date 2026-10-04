@@ -5,6 +5,36 @@
     "version": "v1"
   },
   "paths": {
+    "/api/v1/payments/entry": {
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "operationId": "GetPaymentEntry",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentEntryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/flights/searches": {
       "post": {
         "tags": [
@@ -1777,6 +1807,24 @@
           "Infant"
         ]
       },
+      "PaymentEntryResponse": {
+        "required": [
+          "mode",
+          "testMethods"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "testMethods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TestPaymentMethodResponse"
+            }
+          }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -1975,6 +2023,21 @@
               "string"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "TestPaymentMethodResponse": {
+        "required": [
+          "token",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
           }
         }
       },
@@ -2186,6 +2249,9 @@
     }
   },
   "tags": [
+    {
+      "name": "Payments"
+    },
     {
       "name": "Flights"
     },

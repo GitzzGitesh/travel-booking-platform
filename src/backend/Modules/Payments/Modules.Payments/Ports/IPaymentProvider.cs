@@ -33,6 +33,12 @@ public interface IPaymentProvider
     TimeSpan MinimumNotFoundWindow => TimeSpan.Zero;
 
     /// <summary>
+    /// How customer-web collects a payment method for this provider (never card data on our servers). Default: not
+    /// available (fail closed), until the provider's browser component exists.
+    /// </summary>
+    PaymentEntry Entry => PaymentEntry.Unavailable;
+
+    /// <summary>
     /// Holds the amount (manual capture). The payment comes back Authorized, RequiresAction (a customer challenge), or
     /// Declined. A declined reference is final: another attempt uses a new reference.
     /// </summary>

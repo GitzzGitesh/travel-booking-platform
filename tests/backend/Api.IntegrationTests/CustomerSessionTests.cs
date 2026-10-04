@@ -180,6 +180,21 @@ public sealed class CustomerSessionTests(SqlApiFactory api) : IClassFixture<SqlA
     }
 
     [Fact]
+    public async Task A_signed_in_customer_learns_how_to_pay_from_the_provider_and_only_ever_test_tokens_from_the_mock()
+    {
+        using var host = Host();
+        using var client = Client(host);
+        (await client.GetAsync("/api/v1/payments/entry", Ct)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await SignIn(client, NewAccount())).Dispose();
+
+        var entry = await client.GetFromJsonAsync<JsonElement>("/api/v1/payments/entry", Ct);
+
+        entry.GetProperty("mode").GetString().ShouldBe("Test");
+        entry.GetProperty("testMethods").EnumerateArray().Select(m => m.GetProperty("token").GetString())
+            .ShouldBe(["pm_mock_approved", "pm_mock_declined", "pm_mock_timeout_authorized"]);
+    }
+
+    [Fact]
     public async Task Sign_out_ends_the_session()
     {
         using var host = Host();
