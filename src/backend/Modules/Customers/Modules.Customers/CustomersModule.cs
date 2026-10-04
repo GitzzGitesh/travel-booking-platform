@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using TravelBooking.BuildingBlocks.Background.Persistence;
@@ -101,16 +103,21 @@ public static class CustomersModule
                     AuthenticationType = CustomerIdentity.Scheme,
                 };
                 options.Events = new JwtBearerEvents { OnTokenValidated = MapToCustomerAsync };
-            });
+            })
+            .AddCustomerSession(services, configuration); // customer-web (ADR 0028)
 
         services.AddAuthorization(options => options.AddPolicy(CustomerIdentity.Policy, policy =>
         {
-            policy.AddAuthenticationSchemes(CustomerIdentity.Scheme)
+            // A customer token or the customer-web session (ADR 0028), never both at once (CustomerIdentity refuses an
+            // ambiguous customer identity). The scope check applies to tokens: the session has no scope.
+            policy.AddAuthenticationSchemes(CustomerIdentity.Scheme, CustomerIdentity.SessionScheme)
                 .RequireAuthenticatedUser()
                 .RequireAssertion(context => context.User.CustomerId() is not null);
             if (requiredScope is not null)
             {
-                policy.RequireAssertion(context => context.User.FindFirstValue("scp")?.Split(' ').Contains(requiredScope, StringComparer.Ordinal) == true);
+                policy.RequireAssertion(context =>
+                    !context.User.Identities.Any(i => i.IsAuthenticated && i.AuthenticationType == CustomerIdentity.Scheme)
+                    || context.User.FindFirstValue("scp")?.Split(' ').Contains(requiredScope, StringComparer.Ordinal) == true);
             }
         }));
         return services;
@@ -212,6 +219,8 @@ public static class CustomersModule
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
+        MapSessionEndpoints(endpoints);
+
         endpoints.MapGroup("/customers").WithTags("Customers")
             .MapGet("/me", CurrentCustomerEndpoint.Handle)
             .WithName("GetCurrentCustomer")
@@ -220,15 +229,51 @@ public static class CustomersModule
         return endpoints;
     }
 
+    // The customer-web session (ADR 0028). Sign-in is anonymous by nature; everything else needs a signed-in customer.
+    private static void MapSessionEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        var session = endpoints.MapGroup("/session").WithTags("Customer session");
+
+        session.MapGet("/", CustomerSessionEndpoints.Current)
+            .WithName("GetCustomerSession")
+            .RequireAuthorization(CustomerIdentity.Policy)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        session.MapGet("/sign-in", CustomerSessionEndpoints.SignIn)
+            .WithName("SignInCustomer")
+            .AllowAnonymous()
+            .Produces(StatusCodes.Status302Found)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        session.MapPost("/sign-out", (Delegate)CustomerSessionEndpoints.SignOut)
+            .WithName("SignOutCustomer")
+            .RequireAuthorization(CustomerIdentity.Policy)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        var services = endpoints.ServiceProvider;
+        if (services.GetRequiredService<IHostEnvironment>().IsDevelopment()
+            && services.GetRequiredService<IOptions<CustomerSessionOptions>>().Value.DevelopmentSignIn)
+        {
+            session.MapPost("/development-sign-in", CustomerSessionEndpoints.DevelopmentSignIn)
+                .WithName("SignInCustomerForDevelopment")
+                .AllowAnonymous()
+                .ProducesValidationProblem()
+                .ProducesProblem(StatusCodes.Status400BadRequest);
+        }
+    }
+
+    // Only we issue the internal customer id: a token or session that carries the claim in any spelling is refused.
+    internal static bool HasReservedClaims(ClaimsPrincipal principal) =>
+        principal.Claims.Any(c => string.Equals(c.Type, CustomerIdentity.CustomerIdClaim, StringComparison.OrdinalIgnoreCase))
+        || principal.Identities.Any(i => string.Equals(i.AuthenticationType, CustomerIdentity.MappedIdentityType, StringComparison.OrdinalIgnoreCase));
+
     // After the token's signature, issuer, audience and lifetime are validated: map the account to our customer. The
     // issuer and the user object id are read from the validated token itself, never by a (case-insensitive) claim lookup.
     private static async Task MapToCustomerAsync(TokenValidatedContext context)
     {
         var principal = context.Principal!;
 
-        // Only we issue the internal customer id: a token that carries the claim in any spelling is refused.
-        if (principal.Claims.Any(c => string.Equals(c.Type, CustomerIdentity.CustomerIdClaim, StringComparison.OrdinalIgnoreCase))
-            || principal.Identities.Any(i => string.Equals(i.AuthenticationType, CustomerIdentity.MappedIdentityType, StringComparison.OrdinalIgnoreCase)))
+        if (HasReservedClaims(principal))
         {
             context.Fail("The token carries a reserved claim.");
             return;

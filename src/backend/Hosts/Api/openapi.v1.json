@@ -640,6 +640,91 @@
         }
       }
     },
+    "/api/v1/session": {
+      "get": {
+        "tags": [
+          "Customer session"
+        ],
+        "operationId": "GetCustomerSession",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerSessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/session/sign-in": {
+      "get": {
+        "tags": [
+          "Customer session"
+        ],
+        "operationId": "SignInCustomer",
+        "parameters": [
+          {
+            "name": "returnUrl",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found"
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/session/sign-out": {
+      "post": {
+        "tags": [
+          "Customer session"
+        ],
+        "operationId": "SignOutCustomer",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/customers/me": {
       "get": {
         "tags": [
@@ -1185,6 +1270,17 @@
         }
       },
       "CurrentCustomerResponse": {
+        "required": [
+          "customerId"
+        ],
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomerSessionResponse": {
         "required": [
           "customerId"
         ],
@@ -2095,6 +2191,9 @@
     },
     {
       "name": "Travellers"
+    },
+    {
+      "name": "Customer session"
     },
     {
       "name": "Customers"

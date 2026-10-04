@@ -15,6 +15,12 @@ export type { SaveOrderTravellers$Params as SaveOrderTravellers$Params } from '.
 export { saveOrderTravellers as saveOrderTravellers } from './fn/travellers/save-order-travellers';
 export type { SaveTravelDocument$Params as SaveTravelDocument$Params } from './fn/travellers/save-travel-document';
 export { saveTravelDocument as saveTravelDocument } from './fn/travellers/save-travel-document';
+export type { GetCustomerSession$Params as GetCustomerSession$Params } from './fn/customer-session/get-customer-session';
+export { getCustomerSession as getCustomerSession } from './fn/customer-session/get-customer-session';
+export type { SignInCustomer$Params as SignInCustomer$Params } from './fn/customer-session/sign-in-customer';
+export { signInCustomer as signInCustomer } from './fn/customer-session/sign-in-customer';
+export type { SignOutCustomer$Params as SignOutCustomer$Params } from './fn/customer-session/sign-out-customer';
+export { signOutCustomer as signOutCustomer } from './fn/customer-session/sign-out-customer';
 export type { GetCurrentCustomer$Params as GetCurrentCustomer$Params } from './fn/customers/get-current-customer';
 export { getCurrentCustomer as getCurrentCustomer } from './fn/customers/get-current-customer';
 export type { CreateFlightOrder$Params as CreateFlightOrder$Params } from './fn/orders/create-flight-order';
