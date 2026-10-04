@@ -58,6 +58,12 @@ internal static partial class CustomerSessions
 
     public const string CallbackPath = "/api/v1/session/callback";
 
+    /// <summary>
+    /// A hint for customer-web, readable by script: "a session may exist, ask for it". It carries no credential and
+    /// proves nothing (the server never reads it); it spares every anonymous page view a session request.
+    /// </summary>
+    public const string HintCookieName = "tb-customer-hint";
+
     /// <summary>The issuer of the Development sign-in stand-in: never a tenant's, so never a real customer.</summary>
     public const string DevelopmentIssuer = "urn:travel-booking:development-customer-sign-in";
 
@@ -97,6 +103,17 @@ internal static partial class CustomerSessions
             options.Events = new CookieAuthenticationEvents
             {
                 OnValidatePrincipal = ValidateSessionAsync,
+                OnSignedIn = context =>
+                {
+                    context.Response.Cookies.Append(HintCookieName, "1", HintCookie());
+                    return Task.CompletedTask;
+                },
+                // Signing out, or a refused session (which signs out): the hint goes too.
+                OnSigningOut = context =>
+                {
+                    context.Response.Cookies.Delete(HintCookieName, HintCookie());
+                    return Task.CompletedTask;
+                },
                 // An API: no redirects to a login page, just the status.
                 OnRedirectToLogin = context => Status(context, StatusCodes.Status401Unauthorized),
                 OnRedirectToAccessDenied = context => Status(context, StatusCodes.Status403Forbidden),
@@ -227,6 +244,9 @@ internal static partial class CustomerSessions
         context.ReplacePrincipal(new ClaimsPrincipal(
             [identity, new ClaimsIdentity([new Claim(CustomerIdentity.CustomerIdClaim, customerId)], CustomerIdentity.MappedIdentityType)]));
     }
+
+    private static CookieOptions HintCookie() =>
+        new() { HttpOnly = false, Secure = true, SameSite = SameSiteMode.Lax, Path = "/", IsEssential = true };
 
     public static bool HasCsrfHeader(HttpRequest request) =>
         request.Headers.TryGetValue(CustomerIdentity.CsrfHeader, out var values) && values.Count == 1 && values[0] == "1";

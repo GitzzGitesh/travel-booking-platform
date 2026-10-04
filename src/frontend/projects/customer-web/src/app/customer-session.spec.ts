@@ -20,7 +20,25 @@ describe('CustomerSession', () => {
     return TestBed.inject(CustomerSession);
   }
 
-  afterEach(() => http.verify());
+  const hint = (present: boolean) =>
+    (document.cookie = present
+      ? 'tb-customer-hint=1; Path=/'
+      : 'tb-customer-hint=; Path=/; Max-Age=0');
+
+  beforeEach(() => hint(true));
+
+  afterEach(() => {
+    http.verify();
+    hint(false);
+  });
+
+  it('asks nothing when no session was hinted: an anonymous visitor makes no request', async () => {
+    hint(false);
+    const session = setUp();
+    await session.load();
+    http.expectNone('/api/v1/session');
+    expect(session.state()).toEqual({ kind: 'signed-out' });
+  });
 
   it('is signed in when the server reports a session, and signs out through the server', async () => {
     const session = setUp();
@@ -43,6 +61,7 @@ describe('CustomerSession', () => {
     http.expectOne('/api/v1/session').flush(null, { status: 401, statusText: 'Unauthorized' });
     await loaded;
     expect(session.state()).toEqual({ kind: 'signed-out' });
+    expect(document.cookie).not.toContain('tb-customer-hint=1'); // the stale hint is dropped
 
     TestBed.resetTestingModule();
     const server = setUp('server');

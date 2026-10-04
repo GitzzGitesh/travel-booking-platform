@@ -48,7 +48,11 @@ public sealed class CustomerSessionTests(SqlApiFactory api) : IClassFixture<SqlA
         using var signedIn = await SignIn(client, account);
 
         signedIn.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        var cookie = signedIn.Headers.GetValues("Set-Cookie").Single().ToLowerInvariant();
+        var cookies = signedIn.Headers.GetValues("Set-Cookie").Select(c => c.ToLowerInvariant()).ToList();
+        var hint = cookies.Single(c => c.StartsWith("tb-customer-hint=", StringComparison.Ordinal));
+        hint.ShouldStartWith("tb-customer-hint=1;"); // a hint for customer-web only: no credential, readable by script
+        hint.ShouldNotContain("httponly");
+        var cookie = cookies.Single(c => c.StartsWith("__host-tb-customer=", StringComparison.Ordinal));
         cookie.ShouldStartWith("__host-tb-customer=");
         cookie.ShouldContain("path=/");
         cookie.ShouldContain("secure");
@@ -185,6 +189,7 @@ public sealed class CustomerSessionTests(SqlApiFactory api) : IClassFixture<SqlA
         using var signedOut = await Send(client, HttpMethod.Post, $"{_session}/sign-out");
 
         signedOut.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        signedOut.Headers.GetValues("Set-Cookie").ShouldContain(c => c.StartsWith("tb-customer-hint=;", StringComparison.Ordinal)); // the hint goes too
         (await client.GetAsync(_session, Ct)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
