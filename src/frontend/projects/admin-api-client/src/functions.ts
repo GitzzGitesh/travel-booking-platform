@@ -13,6 +13,10 @@ export type { ListOrderRefundCases$Params as ListOrderRefundCases$Params } from 
 export { listOrderRefundCases as listOrderRefundCases } from './fn/orders-staff/list-order-refund-cases';
 export type { OpenRefundCase$Params as OpenRefundCase$Params } from './fn/orders-staff/open-refund-case';
 export { openRefundCase as openRefundCase } from './fn/orders-staff/open-refund-case';
+export type { ListOpenCancellationRequests$Params as ListOpenCancellationRequests$Params } from './fn/cancellation-requests-staff/list-open-cancellation-requests';
+export { listOpenCancellationRequests as listOpenCancellationRequests } from './fn/cancellation-requests-staff/list-open-cancellation-requests';
+export type { DeclineCancellationRequest$Params as DeclineCancellationRequest$Params } from './fn/cancellation-requests-staff/decline-cancellation-request';
+export { declineCancellationRequest as declineCancellationRequest } from './fn/cancellation-requests-staff/decline-cancellation-request';
 export type { ListPendingRefundCases$Params as ListPendingRefundCases$Params } from './fn/refunds-staff/list-pending-refund-cases';
 export { listPendingRefundCases as listPendingRefundCases } from './fn/refunds-staff/list-pending-refund-cases';
 export type { DecideRefundCase$Params as DecideRefundCase$Params } from './fn/refunds-staff/decide-refund-case';

@@ -25,9 +25,15 @@ export type { SignOutCustomer$Params as SignOutCustomer$Params } from './fn/cust
 export { signOutCustomer as signOutCustomer } from './fn/customer-session/sign-out-customer';
 export type { GetCurrentCustomer$Params as GetCurrentCustomer$Params } from './fn/customers/get-current-customer';
 export { getCurrentCustomer as getCurrentCustomer } from './fn/customers/get-current-customer';
+export type { ListMyOrders$Params as ListMyOrders$Params } from './fn/orders/list-my-orders';
+export { listMyOrders as listMyOrders } from './fn/orders/list-my-orders';
 export type { CreateFlightOrder$Params as CreateFlightOrder$Params } from './fn/orders/create-flight-order';
 export { createFlightOrder as createFlightOrder } from './fn/orders/create-flight-order';
 export type { CheckoutOrder$Params as CheckoutOrder$Params } from './fn/orders/checkout-order';
 export { checkoutOrder as checkoutOrder } from './fn/orders/checkout-order';
 export type { GetOrder$Params as GetOrder$Params } from './fn/orders/get-order';
 export { getOrder as getOrder } from './fn/orders/get-order';
+export type { RequestCancellation$Params as RequestCancellation$Params } from './fn/orders/request-cancellation';
+export { requestCancellation as requestCancellation } from './fn/orders/request-cancellation';
+export type { WithdrawCancellationRequest$Params as WithdrawCancellationRequest$Params } from './fn/orders/withdraw-cancellation-request';
+export { withdrawCancellationRequest as withdrawCancellationRequest } from './fn/orders/withdraw-cancellation-request';

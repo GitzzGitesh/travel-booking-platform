@@ -36,32 +36,7 @@
           </dd>
           <dt>Status</dt>
           <dd>
-            @switch (state.order.status) {
-              @case ('AwaitingPayment') {
-                Waiting for your details and payment
-              }
-              @case ('Pending') {
-                Being confirmed with the airline
-              }
-              @case ('Confirmed') {
-                Confirmed
-              }
-              @case ('PartiallyConfirmed') {
-                Partly confirmed
-              }
-              @case ('Failed') {
-                Not booked: nothing was charged
-              }
-              @case ('Abandoned') {
-                Expired: nothing was charged
-              }
-              @case ('Cancelled') {
-                Cancelled
-              }
-              @default {
-                {{ state.order.status }}
-              }
-            }
+            {{ statusLabel(state.order.status) }}
           </dd>
           @if (item.bookingReference) {
             <dt>Booking reference</dt>
@@ -88,6 +63,46 @@
             You are charged only for what the airline confirmed.
           }
         </p>
+
+        <section class="card step cancellation" aria-labelledby="cancellation-heading">
+          <h2 id="cancellation-heading">Cancel this booking</h2>
+          @switch (state.order.cancellationRequest?.status) {
+            @case ('Open') {
+              <p>
+                You asked to cancel this booking on
+                {{ state.order.cancellationRequest!.requestedAt.slice(0, 10) }}. Our team is
+                handling it with the airline; your booking stays as it is until we email you.
+              </p>
+              <button
+                type="button"
+                class="btn btn-outline"
+                [disabled]="busy()"
+                (click)="withdrawCancellation()"
+              >
+                Withdraw my request
+              </button>
+            }
+            @default {
+              @if (state.order.cancellationRequest?.status === 'Declined') {
+                <p>
+                  We could not cancel this booking as you asked. Our support team will contact you.
+                </p>
+              }
+              <p class="note">
+                Our team cancels with the airline and tells you by email what, if anything, is
+                refunded. Asking does not cancel the booking by itself.
+              </p>
+              <button
+                type="button"
+                class="btn btn-outline"
+                [disabled]="busy()"
+                (click)="requestCancellation()"
+              >
+                Ask to cancel this booking
+              </button>
+            }
+          }
+        </section>
       }
 
       @if (payable()) {

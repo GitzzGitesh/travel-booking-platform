@@ -47,6 +47,9 @@ public static class OrdersModule
             }));
         services.AddScoped<IOrderStore, SqlOrderStore>();
         services.AddScoped<IRefundCaseStore, SqlRefundCaseStore>();
+        services.AddScoped<ICancellationRequestStore, SqlCancellationRequestStore>();
+        services.AddScoped<IOrderHistory, SqlOrderHistory>();
+        services.AddScoped<CancellationRequestHandler>();
         services.AddScoped<RefundCaseHandler>();
         services.AddOptions<RefundOptions>()
             .Bind(configuration.GetSection(RefundOptions.SectionName))
@@ -86,6 +89,25 @@ public static class OrdersModule
         group.MapGet("/{orderId:guid}", OrderEndpoints.Get)
             .WithName("GetOrder")
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        // ADR 0029: "My trips", and asking to cancel (operations act on it; nothing is cancelled here).
+        group.MapGet("/", CancellationRequestEndpoints.ListMine)
+            .WithName("ListMyOrders")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+        group.MapPost("/{orderId:guid}/cancellation-requests", CancellationRequestEndpoints.Request)
+            .WithName("RequestCancellation")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+        group.MapPost("/{orderId:guid}/cancellation-requests/{requestId:guid}/withdrawal", CancellationRequestEndpoints.Withdraw)
+            .WithName("WithdrawCancellationRequest")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
         return endpoints;
     }
 
@@ -145,6 +167,22 @@ public static class OrdersModule
             .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.OrdersRead))
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        // ADR 0029: customers' cancellation requests: completed by opening the cancellation case, or declined.
+        var cancellations = endpoints.MapGroup("/cancellation-requests").WithTags("Cancellation requests (staff)");
+        cancellations.MapGet("/", CancellationRequestEndpoints.Open)
+            .WithName("ListOpenCancellationRequests")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.RefundsRequest))
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+        cancellations.MapPost("/{requestId:guid}/decline", CancellationRequestEndpoints.Decline)
+            .WithName("DeclineCancellationRequest")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.RefundsRequest))
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         var refunds = endpoints.MapGroup("/refund-cases").WithTags("Refunds (staff)");
         refunds.MapGet("/", AdminRefundEndpoints.Pending)

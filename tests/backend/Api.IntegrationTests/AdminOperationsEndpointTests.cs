@@ -42,6 +42,8 @@ public sealed class AdminOperationsEndpointTests(SqlApiFactory api) : IClassFixt
     [InlineData("POST", "/api/admin/v1/refund-cases/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/withdrawal", TestStaffTokens.Operations)]
     [InlineData("POST", "/api/admin/v1/refund-cases/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/decision", TestStaffTokens.Finance)]
     [InlineData("GET", "/api/admin/v1/refund-cases", TestStaffTokens.Finance)]
+    [InlineData("GET", "/api/admin/v1/cancellation-requests", TestStaffTokens.Operations)]
+    [InlineData("POST", "/api/admin/v1/cancellation-requests/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/decline", TestStaffTokens.Operations)]
     public async Task Each_endpoint_needs_a_staff_member_with_MFA_and_its_own_permission(string method, string url, string allowed)
     {
         object? body = method switch { "POST" => new { reason = "TICKET-1" }, "PUT" => new { hold = true, reason = "CASE-1" }, _ => null };

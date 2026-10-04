@@ -504,6 +504,140 @@
         }
       }
     },
+    "/api/admin/v1/cancellation-requests": {
+      "get": {
+        "tags": [
+          "Cancellation requests (staff)"
+        ],
+        "operationId": "ListOpenCancellationRequests",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminCancellationRequest"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/v1/cancellation-requests/{requestId}/decline": {
+      "post": {
+        "tags": [
+          "Cancellation requests (staff)"
+        ],
+        "operationId": "DeclineCancellationRequest",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancellationRequestDeclineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCancellationRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/v1/refund-cases": {
       "get": {
         "tags": [
@@ -1881,10 +2015,63 @@
           }
         }
       },
+      "AdminCancellationRequest": {
+        "required": [
+          "requestId",
+          "orderId",
+          "customerId",
+          "status",
+          "requestedAt",
+          "resolvedAt",
+          "resolvedBy",
+          "resolutionNote"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "resolvedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "resolutionNote": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "AdminOrderDetail": {
         "required": [
           "order",
-          "timeline"
+          "timeline",
+          "cancellationRequest"
         ],
         "type": "object",
         "properties": {
@@ -1896,6 +2083,16 @@
             "items": {
               "$ref": "#/components/schemas/AdminTimelineEntry"
             }
+          },
+          "cancellationRequest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminCancellationRequest"
+              }
+            ]
           }
         }
       },
@@ -2376,6 +2573,22 @@
           "priceNotAboveAgreed": {
             "type": "boolean"
           },
+          "reason": {
+            "maxLength": 200,
+            "minLength": 3,
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CancellationRequestDeclineRequest": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
           "reason": {
             "maxLength": 200,
             "minLength": 3,
@@ -3117,6 +3330,9 @@
   "tags": [
     {
       "name": "Orders (staff)"
+    },
+    {
+      "name": "Cancellation requests (staff)"
     },
     {
       "name": "Refunds (staff)"

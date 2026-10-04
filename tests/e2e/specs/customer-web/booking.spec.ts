@@ -67,6 +67,19 @@ test.describe('customer booking', () => {
     });
     await expect(page.locator('.summary')).toContainText('Booking reference');
     await expectNoAccessibilityViolations(page);
+
+    // ADR 0029: asking to cancel records a request (nothing is cancelled), and the trip is listed.
+    await page.getByRole('button', { name: 'Ask to cancel this booking' }).click();
+    await expect(page.getByText('You asked to cancel this booking')).toBeVisible();
+    await expect(page.locator('.summary')).toContainText('Confirmed');
+    await expectNoAccessibilityViolations(page);
+    await page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: 'My trips' })
+      .click();
+    await expect(page.getByRole('heading', { name: 'My trips' })).toBeVisible();
+    await expect(page.locator('li.trip')).toHaveCount(1);
+    await expectNoAccessibilityViolations(page);
     expect(errors).toEqual([]);
   });
 

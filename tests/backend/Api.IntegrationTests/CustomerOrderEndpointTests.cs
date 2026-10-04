@@ -29,6 +29,9 @@ public sealed class CustomerOrderEndpointTests(SqlApiFactory api) : IClassFixtur
     [InlineData("POST", "/api/v1/orders")]
     [InlineData("GET", "/api/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11")]
     [InlineData("POST", "/api/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/checkout")]
+    [InlineData("GET", "/api/v1/orders")]
+    [InlineData("POST", "/api/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/cancellation-requests")]
+    [InlineData("POST", "/api/v1/orders/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c11/cancellation-requests/9f3c1f0e-5d3b-4a55-9f86-2f6d3a0b1c12/withdrawal")]
     public async Task Customer_endpoints_refuse_anonymous_requests(string method, string url)
     {
         using var client = api.CreateClient();

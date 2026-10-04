@@ -236,6 +236,19 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **E2E:** two booking journeys (approved; declined, then approved) and the signed-out page. CI and local E2E now apply the Customers migrations.
 - **Next:** "My trips" (the customer's orders) and the customer's own cancellation request; the Stripe Payment Element once ADR 0006 is accepted.
 - **Pending (external):** Stripe acceptance (ADR 0006) for real card entry and 3-D Secure challenges. |
+| 17 | **Batch G: "My trips" and customers' cancellation requests (ADR 0029)** | **Done; supplier cancellation stays at the desk (R8).**
+- **My trips:** `GET /api/v1/orders?limit=&cursor=` (own orders, newest first, cursor pages; new index on customer and creation time). customer-web gets a "My trips" page and nav link; each trip opens its booking page.
+- **Cancellation requests** (Orders, migration `AddCancellationRequests`, additive):
+  - `POST /api/v1/orders/{id}/cancellation-requests` (`Idempotency-Key`) for a booking with a confirmed item. It cancels nothing and promises nothing.
+  - Unique per customer and key; at most one open per order (a filtered unique index). Withdrawable by the customer. On the order's timeline, and shown on the order (`cancellationRequest`).
+- **Operations:**
+  - "Cancellation requests" in admin-web (`refunds.request`).
+  - Opening the cancellation case (ADR 0027) completes the request in the same save.
+  - Declining is audited.
+- **Customer emails:** "We have received your cancellation request" and "We could not cancel your booking" (support will contact them; the reason stays internal).
+- **Runbook:** `refunds.md` ("Customers' cancellation requests").
+- **Next:** the Stripe Payment Element once ADR 0006 is accepted. Until then: hotel or ancillary scope needs product decisions (Q1 for hotels).
+- **Pending (legal):** a response-time target for requests; non-cancellable fares online; cancellation rights per market. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

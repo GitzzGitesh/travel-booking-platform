@@ -20,6 +20,9 @@
             Flights
           </a>
         </li>
+        <li>
+          <a routerLink="/trips" routerLinkActive="active" ariaCurrentWhenActive="page">My trips</a>
+        </li>
         @for (item of comingSoon; track item) {
           <li>
             <span class="soon-item">{{ item }} <span class="badge">Soon</span></span>
@@ -86,6 +89,15 @@
           ariaCurrentWhenActive="page"
           (click)="menu.close()"
           >Flights</a
+        >
+      </li>
+      <li>
+        <a
+          routerLink="/trips"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          (click)="menu.close()"
+          >My trips</a
         >
       </li>
       @for (item of comingSoon; track item) {

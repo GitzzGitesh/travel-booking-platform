@@ -22,6 +22,16 @@
             >
           </li>
         }
+        @if (session.can('refunds.request')) {
+          <li>
+            <a
+              routerLink="/cancellation-requests"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              >Cancellation requests</a
+            >
+          </li>
+        }
         @if (session.can('refunds.approve')) {
           <li>
             <a routerLink="/refund-cases" routerLinkActive="active" ariaCurrentWhenActive="page"

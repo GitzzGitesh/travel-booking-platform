@@ -83,6 +83,28 @@ internal sealed class OrderCancellationRecordedHandler(INotificationStore store,
     }
 }
 
+/// <summary>The customer's acknowledgement of a cancellation request (ADR 0029): nothing is cancelled or promised yet.</summary>
+internal sealed class CustomerCancellationRequestedHandler(INotificationStore store, TimeProvider timeProvider)
+    : IIntegrationEventHandler<CustomerCancellationRequested>
+{
+    public Task HandleAsync(CustomerCancellationRequested integrationEvent, CancellationToken cancellationToken) =>
+        store.TryAddAsync(
+            Notification.For(NoticeTemplates.CancellationRequested, integrationEvent.OrderId, integrationEvent.EventId, NoticeTemplates.Version,
+                new BookingNoticeValues(integrationEvent.OrderId, [], null, null).ToJson(), NoticeTemplates.DefaultCulture, timeProvider.GetUtcNow()),
+            cancellationToken);
+}
+
+/// <summary>A declined cancellation request (ADR 0029): the customer is told support will contact them, never the internal reason.</summary>
+internal sealed class CustomerCancellationDeclinedHandler(INotificationStore store, TimeProvider timeProvider)
+    : IIntegrationEventHandler<CustomerCancellationDeclined>
+{
+    public Task HandleAsync(CustomerCancellationDeclined integrationEvent, CancellationToken cancellationToken) =>
+        store.TryAddAsync(
+            Notification.For(NoticeTemplates.CancellationDeclined, integrationEvent.OrderId, integrationEvent.EventId, NoticeTemplates.Version,
+                new BookingNoticeValues(integrationEvent.OrderId, [], null, null).ToJson(), NoticeTemplates.DefaultCulture, timeProvider.GetUtcNow()),
+            cancellationToken);
+}
+
 /// <summary>
 /// Sends due notices (ADR 0024), each on its own: saved as Sending before the provider is called, so a crash leads to
 /// another send later (at least once). Without a configured provider nothing is sent and notices wait, which is safe.

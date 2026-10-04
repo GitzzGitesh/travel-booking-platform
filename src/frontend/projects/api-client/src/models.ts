@@ -5,6 +5,7 @@ export type { AcceptFlightOfferPriceRequest } from './models/accept-flight-offer
 export type { AirportResponse } from './models/airport-response';
 export type { BaggageAllowanceResponse } from './models/baggage-allowance-response';
 export type { CabinClass } from './models/cabin-class';
+export type { CancellationRequestResponse } from './models/cancellation-request-response';
 export type { CheckoutRequest } from './models/checkout-request';
 export type { CheckoutResponse } from './models/checkout-response';
 export type { ConfirmedFlightOfferResponse } from './models/confirmed-flight-offer-response';
@@ -25,6 +26,7 @@ export type { HttpValidationProblemDetails } from './models/http-validation-prob
 export type { MoneyResponse } from './models/money-response';
 export type { OrderAmountResponse } from './models/order-amount-response';
 export type { OrderItemResponse } from './models/order-item-response';
+export type { OrderPage } from './models/order-page';
 export type { OrderResponse } from './models/order-response';
 export type { OrderTravellersResponse } from './models/order-travellers-response';
 export type { PassengerFareResponse } from './models/passenger-fare-response';

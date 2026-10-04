@@ -30,6 +30,8 @@ internal static class NoticeTemplates
     public const string RefundCompleted = "refund-completed";
     public const string BookingCancelled = "booking-cancelled";
     public const string RefundDelayed = "refund-delayed";
+    public const string CancellationRequested = "cancellation-requested";
+    public const string CancellationDeclined = "cancellation-declined";
 
     /// <summary>Bumped when a template's meaning changes; stored on each notification.</summary>
     public const int Version = 1;
@@ -38,7 +40,8 @@ internal static class NoticeTemplates
 
     private static readonly Dictionary<string, NoticeTexts> _texts = new(StringComparer.Ordinal) { ["en"] = NoticeTexts.English };
 
-    public static bool IsKnown(string kind) => kind is BookingConfirmed or BookingPartiallyConfirmed or BookingNotBooked or RefundCompleted or BookingCancelled or RefundDelayed;
+    public static bool IsKnown(string kind) => kind is BookingConfirmed or BookingPartiallyConfirmed or BookingNotBooked or RefundCompleted or BookingCancelled or RefundDelayed
+        or CancellationRequested or CancellationDeclined;
 
     public static RenderedNotice Render(string kind, string culture, BookingNoticeValues values)
     {
@@ -51,6 +54,8 @@ internal static class NoticeTemplates
             RefundCompleted => (texts.RefundSubject, texts.RefundIntro),
             BookingCancelled => (texts.CancelledSubject, texts.CancelledIntro),
             RefundDelayed => (texts.RefundDelayedSubject, texts.RefundDelayedIntro),
+            CancellationRequested => (texts.CancellationRequestedSubject, texts.CancellationRequestedIntro),
+            CancellationDeclined => (texts.CancellationDeclinedSubject, texts.CancellationDeclinedIntro),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown notice."),
         };
 
@@ -65,7 +70,7 @@ internal static class NoticeTemplates
         {
             RefundCompleted => texts.RefundedLabel,
             RefundDelayed => texts.RefundAmountLabel,
-            BookingCancelled => null,
+            BookingCancelled or CancellationRequested or CancellationDeclined => null,
             _ => texts.ChargedLabel,
         };
         if (amountLabel is not null)
@@ -120,6 +125,10 @@ internal sealed record NoticeTexts(
     string RefundAmountLabel,
     string RefundDelayedSubject,
     string RefundDelayedIntro,
+    string CancellationRequestedSubject,
+    string CancellationRequestedIntro,
+    string CancellationDeclinedSubject,
+    string CancellationDeclinedIntro,
     string Footer)
 {
     public static readonly NoticeTexts English = new(
@@ -142,5 +151,9 @@ internal sealed record NoticeTexts(
         "Refund amount",
         "Your refund is delayed",
         "We could not complete your refund yet. Our team is looking into it and will contact you; you do not need to do anything.",
+        "We have received your cancellation request",
+        "We have received your request to cancel your booking. Our team handles it with the airline; your booking stays as it is until we confirm the cancellation by email.",
+        "We could not cancel your booking",
+        "We could not cancel your booking as requested. Your booking stays as it is, and our support team will contact you about it.",
         "This is an automated message about your order. Your trip details are in your account.");
 }

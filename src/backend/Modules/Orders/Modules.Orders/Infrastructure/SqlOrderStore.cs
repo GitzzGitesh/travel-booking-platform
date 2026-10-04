@@ -179,3 +179,41 @@ internal sealed class SqlRefundCaseStore(OrdersDbContext db) : IRefundCaseStore
     public void MarkConsumed(Guid messageId, string handler, DateTimeOffset at) =>
         db.Set<InboxMessage>().Add(InboxMessage.For(messageId, handler, at));
 }
+
+internal sealed class SqlCancellationRequestStore(OrdersDbContext db) : ICancellationRequestStore
+{
+    public void Add(CancellationRequest request) => db.Set<CancellationRequest>().Add(request);
+
+    public Task<CancellationRequest?> FindAsync(Guid requestId, CancellationToken cancellationToken) =>
+        db.Set<CancellationRequest>().SingleOrDefaultAsync(r => r.Id == requestId, cancellationToken);
+
+    public Task<CancellationRequest?> PeekAsync(Guid requestId, CancellationToken cancellationToken) =>
+        db.Set<CancellationRequest>().AsNoTracking().SingleOrDefaultAsync(r => r.Id == requestId, cancellationToken);
+
+    public Task<CancellationRequest?> FindByKeyAsync(string customerId, string idempotencyKey, CancellationToken cancellationToken) =>
+        db.Set<CancellationRequest>().AsNoTracking().SingleOrDefaultAsync(r => r.CustomerId == customerId && r.IdempotencyKey == idempotencyKey, cancellationToken);
+
+    public Task<CancellationRequest?> FindOpenForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        db.Set<CancellationRequest>().SingleOrDefaultAsync(r => r.OrderId == orderId && r.Status == CancellationRequestStatus.Open, cancellationToken);
+
+    public Task<CancellationRequest?> FindLatestForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
+        db.Set<CancellationRequest>().AsNoTracking().Where(r => r.OrderId == orderId)
+            .OrderByDescending(r => r.Status == CancellationRequestStatus.Open) // the open one (at most one) first, whatever the clock
+            .ThenByDescending(r => r.RequestedAt).ThenByDescending(r => r.Id).FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<CancellationRequest>> FindOpenAsync(int limit, CancellationToken cancellationToken) =>
+        await db.Set<CancellationRequest>().AsNoTracking().Where(r => r.Status == CancellationRequestStatus.Open)
+            .OrderBy(r => r.RequestedAt).Take(limit).ToListAsync(cancellationToken);
+}
+
+internal sealed class SqlOrderHistory(OrdersDbContext db) : IOrderHistory
+{
+    public async Task<IReadOnlyList<Order>> FindForCustomerAsync(
+        string customerId, (DateTimeOffset CreatedAt, Guid Id)? before, int limit, CancellationToken cancellationToken) =>
+        await db.Orders.AsNoTracking().Include(o => o.Items)
+            .Where(o => o.CustomerId == customerId)
+            .Where(o => before == null || o.CreatedAt < before.Value.CreatedAt || (o.CreatedAt == before.Value.CreatedAt && o.Id.CompareTo(before.Value.Id) < 0))
+            .OrderByDescending(o => o.CreatedAt).ThenByDescending(o => o.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+}

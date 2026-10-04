@@ -113,8 +113,8 @@ internal enum RefundCaseOutcome
 /// it, once, under the case's id. Every step is audited in the same save.
 /// </summary>
 internal sealed partial class RefundCaseHandler(
-    IOrderStore orders, IRefundCaseStore cases, IOrderPayments payments, IOptions<RefundOptions> options, TimeProvider timeProvider,
-    ILogger<RefundCaseHandler> logger)
+    IOrderStore orders, IRefundCaseStore cases, ICancellationRequestStore requests, IOrderPayments payments, IOptions<RefundOptions> options,
+    TimeProvider timeProvider, ILogger<RefundCaseHandler> logger)
 {
     public const string OpenAction = "refunds.open";
     public const string ApproveAction = "refunds.approve";
@@ -203,6 +203,23 @@ internal sealed partial class RefundCaseHandler(
             context, command.SupplierReference);
         if (command.Kind is RefundCaseKind.Cancellation)
         {
+            // The customer's request, if any (ADR 0029): answered by this case once nothing confirmed is left; a request
+            // withdrawn before the desk cancelled is flagged for a person to tell the customer.
+            var latest = await requests.FindLatestForOrderAsync(order.Id, cancellationToken);
+            if (latest is { Status: CancellationRequestStatus.Open } && !order.Items.Any(i => i.Status is FlightOrderItemStatus.Confirmed)
+                && await requests.FindOpenForOrderAsync(order.Id, cancellationToken) is { } request && request.Complete(refundCase.Id, staff, now))
+            {
+                order.NoteRefund([], $"Cancellation request {request.Id:N} completed by refund case {refundCase.Id:N}", context, null);
+            }
+            else if (latest is { Status: CancellationRequestStatus.Open })
+            {
+                order.NoteRefund([], $"Cancellation request {latest.Id:N} stays open: confirmed items remain", context, null);
+            }
+            else if (latest is { Status: CancellationRequestStatus.Withdrawn })
+            {
+                order.NoteRefund([], $"Attention: the customer had withdrawn cancellation request {latest.Id:N}; confirm with them", context, null);
+            }
+
             orders.Publish(new OrderCancellationRecorded(Guid.NewGuid(), now, order.Id, refundCase.Id, amount, command.Source.CorrelationId), command.Source.CorrelationId);
         }
 
