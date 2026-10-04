@@ -8,6 +8,7 @@ export type { StrictHttpResponse } from './strict-http-response';
 export { Api } from './api';
 
 export type { AdminAmount } from './models/admin-amount';
+export type { AdminCancellationRequest } from './models/admin-cancellation-request';
 export type { AdminOrderDetail } from './models/admin-order-detail';
 export type { AdminOrderItem } from './models/admin-order-item';
 export type { AdminOrderPage } from './models/admin-order-page';
@@ -21,6 +22,7 @@ export type { BookingReviewCheckRequest } from './models/booking-review-check-re
 export type { BookingReviewCheckResponse } from './models/booking-review-check-response';
 export type { BookingReviewOutcome } from './models/booking-review-outcome';
 export type { BookingReviewOutcomeRequest } from './models/booking-review-outcome-request';
+export type { CancellationRequestDeclineRequest } from './models/cancellation-request-decline-request';
 export type { HttpValidationProblemDetails } from './models/http-validation-problem-details';
 export type { LegalHoldReleaseDecisionRequest } from './models/legal-hold-release-decision-request';
 export type { LegalHoldReleaseRequestRequest } from './models/legal-hold-release-request-request';
@@ -58,6 +60,10 @@ export type { ListOrderRefundCases$Params as ListOrderRefundCases$Params } from 
 export { listOrderRefundCases as listOrderRefundCases } from './fn/orders-staff/list-order-refund-cases';
 export type { OpenRefundCase$Params as OpenRefundCase$Params } from './fn/orders-staff/open-refund-case';
 export { openRefundCase as openRefundCase } from './fn/orders-staff/open-refund-case';
+export type { ListOpenCancellationRequests$Params as ListOpenCancellationRequests$Params } from './fn/cancellation-requests-staff/list-open-cancellation-requests';
+export { listOpenCancellationRequests as listOpenCancellationRequests } from './fn/cancellation-requests-staff/list-open-cancellation-requests';
+export type { DeclineCancellationRequest$Params as DeclineCancellationRequest$Params } from './fn/cancellation-requests-staff/decline-cancellation-request';
+export { declineCancellationRequest as declineCancellationRequest } from './fn/cancellation-requests-staff/decline-cancellation-request';
 export type { ListPendingRefundCases$Params as ListPendingRefundCases$Params } from './fn/refunds-staff/list-pending-refund-cases';
 export { listPendingRefundCases as listPendingRefundCases } from './fn/refunds-staff/list-pending-refund-cases';
 export type { DecideRefundCase$Params as DecideRefundCase$Params } from './fn/refunds-staff/decide-refund-case';

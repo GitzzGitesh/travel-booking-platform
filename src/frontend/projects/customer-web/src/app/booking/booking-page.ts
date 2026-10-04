@@ -21,6 +21,8 @@ import {
   getOrder,
   getOrderTravellers,
   getPaymentEntry,
+  requestCancellation,
+  withdrawCancellationRequest,
   saveOrderTravellers,
   saveTravelDocument,
   revalidateSelectedFlightOffer,
@@ -37,6 +39,7 @@ import {
 } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
 import { formatMoney } from '../flights/flight-format';
+import { orderStatusLabel } from './order-status';
 
 /** Mirrors the API's rules (OrderTravellerSet, TravelDocument); the server remains the authority. */
 const latinName = /^[A-Za-z][A-Za-z '-]{0,59}$/;
@@ -93,6 +96,7 @@ export class BookingPage {
   private readonly destroyed = signal(false);
   protected readonly session = inject(CustomerSession);
   protected readonly formatMoney = formatMoney;
+  protected readonly statusLabel = orderStatusLabel;
 
   protected readonly orderId = inject(ActivatedRoute).snapshot.paramMap.get('orderId') ?? '';
   protected readonly state = signal<PageState>({ kind: 'loading' });
@@ -105,6 +109,7 @@ export class BookingPage {
     validators: [Validators.required],
   });
   protected readonly submitted = signal(false);
+  private cancellationKey: string | null = null;
   private readonly stepHeading = viewChild<ElementRef<HTMLElement>>('stepHeading');
 
   protected readonly item = computed(() => {
@@ -215,6 +220,64 @@ export class BookingPage {
   protected editTravellers(): void {
     this.message.set(null);
     this.goTo('travellers');
+  }
+
+  /**
+   * Asks operations to cancel the booking (ADR 0029): nothing is cancelled or promised by asking. One key per intent,
+   * kept until the server answers, so a retry after a lost answer returns the same request.
+   */
+  protected async requestCancellation(): Promise<void> {
+    if (this.busy()) {
+      return;
+    }
+    this.cancellationKey ??= crypto.randomUUID();
+    const key = this.cancellationKey;
+    await this.act(async () => {
+      try {
+        await this.api.invoke(requestCancellation, {
+          orderId: this.orderId,
+          'Idempotency-Key': key,
+        });
+        this.cancellationKey = null;
+        this.message.set({
+          tone: 'success',
+          text: 'We have received your request. We will email you once our team has handled it.',
+        });
+      } catch (error) {
+        // Kept after a lost answer (no response, or a server error), so the retry repeats the same request.
+        if (error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500) {
+          this.cancellationKey = null;
+        }
+        const type =
+          error instanceof HttpErrorResponse
+            ? (error.error as { type?: string } | null)?.type
+            : null;
+        if (type !== 'cancellation-already-requested') {
+          throw error;
+        }
+        this.message.set({ tone: 'info', text: 'You have already asked to cancel this booking.' });
+      }
+      await this.reload();
+    });
+  }
+
+  protected async withdrawCancellation(): Promise<void> {
+    const state = this.state();
+    const request = state.kind === 'ready' ? state.order.cancellationRequest : null;
+    if (!request || this.busy()) {
+      return;
+    }
+    await this.act(async () => {
+      await this.api.invoke(withdrawCancellationRequest, {
+        orderId: this.orderId,
+        requestId: request.requestId,
+      });
+      this.message.set({
+        tone: 'success',
+        text: 'Your request is withdrawn. If our team had already cancelled with the airline, we will contact you.',
+      });
+      await this.reload();
+    });
   }
 
   /** Pays with the chosen method; the server books, and charges only what the airline confirmed. */

@@ -50,6 +50,23 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         refund.HasIndex(r => r.OrderId);
         refund.HasIndex(r => new { r.Status, r.RequestedAt });
 
+        // ADR 0029: customers' cancellation requests.
+        var cancellation = modelBuilder.Entity<CancellationRequest>();
+        cancellation.ToTable("CancellationRequests", table => table.HasCheckConstraint(
+            "CK_CancellationRequests_Status", $"[Status] IN ({string.Join(", ", Enum.GetNames<CancellationRequestStatus>().Select(name => $"'{name}'"))})"));
+        cancellation.HasKey(r => r.Id);
+        cancellation.Property(r => r.Id).ValueGeneratedNever();
+        cancellation.Property(r => r.CustomerId).HasMaxLength(Order.MaxCustomerIdLength);
+        cancellation.Property(r => r.IdempotencyKey).HasMaxLength(CancellationRequest.MaxKeyLength).IsUnicode(false);
+        cancellation.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsUnicode(false);
+        cancellation.Property(r => r.ResolvedBy).HasMaxLength(Order.MaxCustomerIdLength + 10);
+        cancellation.Property(r => r.ResolutionNote).HasMaxLength(CancellationRequest.MaxReasonLength);
+        cancellation.Property<byte[]>("RowVersion").IsRowVersion();
+        // Idempotency (non-negotiable 4): one request per customer and key; and at most one open request per order.
+        cancellation.HasIndex(r => new { r.CustomerId, r.IdempotencyKey }).IsUnique();
+        cancellation.HasIndex(r => r.OrderId).IsUnique().HasFilter("[Status] = 'Open'").HasDatabaseName("IX_CancellationRequests_OrderId_Open");
+        cancellation.HasIndex(r => new { r.Status, r.RequestedAt });
+
         var order = modelBuilder.Entity<Order>();
         order.ToTable("Orders");
         order.HasKey(o => o.Id);
@@ -59,6 +76,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
 
         // Idempotent creation per customer, enforced by the database; also the customer's order-history lookup path.
         order.HasIndex(o => new { o.CustomerId, o.IdempotencyKey }).IsUnique();
+        order.HasIndex(o => new { o.CustomerId, o.CreatedAt, o.Id }); // the customer's trips, newest first (ADR 0029)
         order.Ignore(o => o.Total);
         order.Ignore(o => o.Status); // derived from the items
         order.Property(o => o.PaymentAuthorizationId).HasMaxLength(100);

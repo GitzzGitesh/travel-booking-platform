@@ -51,5 +51,12 @@ export const routes: Routes = [
     canActivate: [staffWith('refunds.approve')],
     loadComponent: () => import('./refunds/refund-approvals').then((m) => m.RefundApprovals),
   },
+  {
+    path: 'cancellation-requests',
+    title: 'Cancellation requests · Travel booking operations',
+    canActivate: [staffWith('refunds.request')],
+    loadComponent: () =>
+      import('./cancellations/cancellation-requests').then((m) => m.CancellationRequests),
+  },
   { path: '**', redirectTo: '' },
 ];

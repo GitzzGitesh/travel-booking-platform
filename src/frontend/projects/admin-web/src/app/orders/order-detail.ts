@@ -6,6 +6,7 @@ import {
   Api,
   checkBookingReview,
   getOrderForOperations,
+  declineCancellationRequest,
   recordBookingReviewOutcome,
 } from '@travel-booking/admin-api-client';
 import type {
@@ -124,6 +125,35 @@ import { ReviewOutcomeForm } from './review-outcome-form';
         }
       }
 
+      @if (detail.cancellationRequest; as request) {
+        <section class="action" aria-labelledby="cancellation-request">
+          <h2 id="cancellation-request">Customer's cancellation request</h2>
+          <p>
+            {{ request.status }}: asked on
+            {{ request.requestedAt | date: 'yyyy-MM-dd HH:mm' : 'UTC' }} UTC
+            @if (request.resolvedBy) {
+              , handled by <span class="mono">{{ request.resolvedBy }}</span>
+              @if (request.resolutionNote) {
+                ({{ request.resolutionNote }})
+              }
+            }
+          </p>
+          @if (request.status === 'Open' && session.can('refunds.request')) {
+            <p>
+              Cancel at the supplier's desk, then record it under "Cancellations and refunds": that
+              completes this request. If it cannot be cancelled, decline it (the customer is told
+              support will contact them; your reference stays internal).
+            </p>
+            <adm-reason-form
+              label="Ticket reference to decline the request"
+              action="Decline request"
+              [busy]="busy()"
+              (submitted)="declineCancellation(request.requestId, $event)"
+            />
+          }
+        </section>
+      }
+
       @if (session.can('refunds.request') || session.can('refunds.approve')) {
         <adm-refund-panel [orderId]="orderId()" [items]="detail.order.items" (changed)="reload()" />
       }
@@ -210,6 +240,21 @@ export class OrderDetail {
         problemType(error) === 'not-in-review'
           ? `This booking is no longer in manual review (now ${problemExtension(error, 'itemStatus') ?? 'changed'}).`
           : describeProblem(error, { 'order-item-not-found': 'This order item was not found.' }),
+    );
+  }
+
+  protected async declineCancellation(requestId: string, reason: string): Promise<void> {
+    await this.act(
+      async () => {
+        await this.api.invoke(declineCancellationRequest, { requestId, body: { reason } });
+        return 'Request declined: the customer is told support will contact them.';
+      },
+      (error) =>
+        problemType(error) === 'not-open'
+          ? `This request was already handled (now ${problemExtension(error, 'requestStatus') ?? 'changed'}).`
+          : describeProblem(error, {
+              'cancellation-request-not-found': 'This cancellation request was not found.',
+            }),
     );
   }
 

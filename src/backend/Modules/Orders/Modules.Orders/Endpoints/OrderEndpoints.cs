@@ -110,9 +110,10 @@ internal static class OrderEndpoints
             : TypedResults.Ok(response);
     }
 
-    public static async Task<Results<Ok<OrderResponse>, NotFound>> Get(Guid orderId, ClaimsPrincipal user, IOrderStore store, CancellationToken cancellationToken) =>
+    public static async Task<Results<Ok<OrderResponse>, NotFound>> Get(
+        Guid orderId, ClaimsPrincipal user, IOrderStore store, ICancellationRequestStore cancellations, CancellationToken cancellationToken) =>
         await store.FindOwnedAsync(orderId, user.CustomerId()!, cancellationToken) is { } order
-            ? TypedResults.Ok(OrderResponse.From(order))
+            ? TypedResults.Ok(OrderResponse.From(order, await cancellations.FindLatestForOrderAsync(order.Id, cancellationToken)))
             : TypedResults.NotFound();
 
     private static ProblemHttpResult CheckoutProblem(CheckoutFailure failure) => failure switch
@@ -157,9 +158,11 @@ internal static class OrderEndpoints
 }
 
 /// <summary>The customer's order. Never the customer id, the idempotency key or supplier references.</summary>
-internal sealed record OrderResponse(Guid OrderId, string Status, DateTimeOffset CreatedAt, IReadOnlyList<OrderItemResponse> Items)
+/// <param name="CancellationRequest">The customer's latest cancellation request (ADR 0029), on the order's own page; null in lists.</param>
+internal sealed record OrderResponse(
+    Guid OrderId, string Status, DateTimeOffset CreatedAt, IReadOnlyList<OrderItemResponse> Items, CancellationRequestResponse? CancellationRequest)
 {
-    public static OrderResponse From(Order order) => new(
+    public static OrderResponse From(Order order, CancellationRequest? cancellation = null) => new(
         order.Id,
         order.Status.ToString(),
         order.CreatedAt,
@@ -174,7 +177,8 @@ internal sealed record OrderResponse(Guid OrderId, string Status, DateTimeOffset
             item.Ticketing?.ToString(),
             item.TravellerNeeds is { IsKnown: true } needs
                 ? new TravellersNeededResponse(needs.Adults, needs.Children, needs.Infants, needs.DocumentsRequired)
-                : null)).ToList());
+                : null)).ToList(),
+        cancellation is null ? null : CancellationRequestResponse.From(cancellation));
 }
 
 /// <param name="PriceChangeAccepted">The customer accepted a changed price for this item before ordering (F-01).</param>

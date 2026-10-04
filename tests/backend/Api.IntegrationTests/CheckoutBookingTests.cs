@@ -252,6 +252,181 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         EmailsAbout(order).ShouldBeEmpty();
     }
 
+    // ---------- My trips and cancellation requests (ADR 0029) ----------
+
+    [Fact]
+    public async Task A_customer_lists_only_their_own_orders_newest_first_page_by_page()
+    {
+        var token = Token();
+        var (older, _) = await CapturedOrder(customer: token);
+        api.Clock.Advance(TimeSpan.FromSeconds(1)); // "newest first" needs two creation times (the test clock stands still)
+        var newer = await ReadyOrder(token);
+        (await CapturedOrder()).Order.ShouldNotBe(older); // another customer's order
+
+        using var first = await Send(HttpMethod.Get, "/api/v1/orders?limit=1", token);
+        var page = await Read(first);
+        page.GetProperty("orders").EnumerateArray().Single().GetProperty("orderId").GetGuid().ShouldBe(newer);
+        var cursor = page.GetProperty("nextCursor").GetString();
+        using var second = await Send(HttpMethod.Get, $"/api/v1/orders?limit=1&cursor={cursor}", token);
+        var last = await Read(second);
+        last.GetProperty("orders").EnumerateArray().Single().GetProperty("orderId").GetGuid().ShouldBe(older);
+        using var third = await Send(HttpMethod.Get, $"/api/v1/orders?limit=1&cursor={last.GetProperty("nextCursor").GetString()}", token);
+        (await Read(third)).GetProperty("orders").GetArrayLength().ShouldBe(0);
+
+        (await Send(HttpMethod.Get, "/api/v1/orders?cursor=not-a-cursor", token)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Send(HttpMethod.Get, "/api/v1/orders?limit=51", token)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task A_cancellation_request_is_recorded_once_acknowledged_and_completed_by_the_cancellation_case()
+    {
+        var token = Token();
+        var (order, price) = await CapturedOrder(customer: token);
+        var url = $"/api/v1/orders/{order}/cancellation-requests";
+        var key = NewKey();
+
+        using var requested = await Send(HttpMethod.Post, url, token, key: key);
+        using var replay = await Send(HttpMethod.Post, url, token, key: key);
+        using var again = await Send(HttpMethod.Post, url, token, key: NewKey());
+        using var stranger = await Send(HttpMethod.Post, url, Token(), key: NewKey());
+
+        requested.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var requestId = (await Read(requested)).GetProperty("requestId").GetGuid();
+        replay.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await Read(replay)).GetProperty("requestId").GetGuid().ShouldBe(requestId);
+        again.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await Read(again)).GetProperty("type").GetString().ShouldBe("cancellation-already-requested");
+        stranger.StatusCode.ShouldBe(HttpStatusCode.NotFound); // never says another customer's order exists
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Confirmed); // nothing is cancelled by asking
+
+        using var open = await Send(HttpMethod.Get, "/api/admin/v1/cancellation-requests", Staff(TestStaffTokens.Operations));
+        (await Read(open)).EnumerateArray().ShouldContain(r => r.GetProperty("requestId").GetGuid() == requestId);
+
+        // Operations cancel at the supplier's desk and record it: the request is completed by that case, in the same save.
+        var item = (await LoadOrder(order)).Items[0].Id;
+        using var recorded = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations), new
+        {
+            kind = "Cancellation",
+            itemIds = new[] { item },
+            supplierReference = "DESK-CXL-77",
+            supplierRefund = price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            reason = "TICKET-701",
+        }, NewKey());
+        recorded.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        using var mine = await Send(HttpMethod.Get, $"/api/v1/orders/{order}", token);
+        (await Read(mine)).GetProperty("cancellationRequest").GetProperty("status").GetString().ShouldBe("Completed");
+        await Run("orders.outbox");
+        await Run(SendNotificationsJob.Name);
+        EmailsAbout(order).Single(m => m.Subject == "We have received your cancellation request").TextBody.ShouldNotContain(price.Currency.Value);
+        EmailsAbout(order).ShouldContain(m => m.Subject == "Your booking has been cancelled");
+    }
+
+    [Fact]
+    public async Task A_declined_request_tells_the_customer_support_will_call_and_a_withdrawn_one_is_closed()
+    {
+        var token = Token();
+        var (order, _) = await CapturedOrder(customer: token);
+        using var requested = await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests", token, key: NewKey());
+        var requestId = (await Read(requested)).GetProperty("requestId").GetGuid();
+
+        using var declined = await Send(HttpMethod.Post, $"/api/admin/v1/cancellation-requests/{requestId}/decline", Staff(TestStaffTokens.Operations),
+            new { reason = "TICKET-702 non-refundable fare" });
+        using var twice = await Send(HttpMethod.Post, $"/api/admin/v1/cancellation-requests/{requestId}/decline", Staff(TestStaffTokens.Operations),
+            new { reason = "TICKET-702" });
+        using var withdrawLate = await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests/{requestId}/withdrawal", token);
+
+        declined.StatusCode.ShouldBe(HttpStatusCode.OK);
+        twice.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        using (var scope = api.Services.CreateScope())
+        {
+            var audit = await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Set<TravelBooking.BuildingBlocks.Audit.AuditEntry>().AsNoTracking()
+                .SingleAsync(a => a.Action == CancellationRequestHandler.DeclineAction && a.Target == $"cancellation-request:{requestId}", Ct);
+            (audit.Before, audit.After).ShouldBe(("Open", "Declined; TICKET-702 non-refundable fare"));
+            audit.Actor.ShouldStartWith("staff:");
+        }
+
+        withdrawLate.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        using var mine = await Send(HttpMethod.Get, $"/api/v1/orders/{order}", token);
+        var seen = (await Read(mine)).GetProperty("cancellationRequest");
+        seen.GetProperty("status").GetString().ShouldBe("Declined");
+        seen.GetRawText().ShouldNotContain("TICKET-702"); // the staff note stays internal
+        await Run("orders.outbox");
+        await Run(SendNotificationsJob.Name);
+        EmailsAbout(order).Single(m => m.Subject == "We could not cancel your booking").TextBody.ShouldNotContain("TICKET");
+
+        // A new request after a decline is allowed, and its customer may withdraw it; nobody else can.
+        using var second = await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests", token, key: NewKey());
+        var secondId = (await Read(second)).GetProperty("requestId").GetGuid();
+        (await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests/{secondId}/withdrawal", Token())).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var (otherOrder, _) = await CapturedOrder(customer: token);
+        (await Send(HttpMethod.Post, $"/api/v1/orders/{otherOrder}/cancellation-requests/{secondId}/withdrawal", token)).StatusCode
+            .ShouldBe(HttpStatusCode.NotFound); // the request of another order of the same customer: nothing changes
+        using (var still = await Send(HttpMethod.Get, $"/api/v1/orders/{order}", token))
+        {
+            (await Read(still)).GetProperty("cancellationRequest").GetProperty("status").GetString().ShouldBe("Open");
+        }
+
+        using var withdrawn = await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests/{secondId}/withdrawal", token);
+        using var withdrawnAgain = await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests/{secondId}/withdrawal", token);
+        (await Read(withdrawn)).GetProperty("status").GetString().ShouldBe("Withdrawn");
+        withdrawnAgain.StatusCode.ShouldBe(HttpStatusCode.OK); // a repeat answers the same
+        (await Read(withdrawnAgain)).GetProperty("requestId").GetGuid().ShouldBe(secondId);
+    }
+
+    [Fact]
+    public async Task A_parallel_withdrawal_and_decline_resolve_the_request_once_and_a_goodwill_refund_leaves_it_open()
+    {
+        var token = Token();
+        var (order, _) = await CapturedOrder(customer: token);
+        using var requested = await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests", token, key: NewKey());
+        var requestId = (await Read(requested)).GetProperty("requestId").GetGuid();
+
+        // A goodwill refund is not a cancellation: the request stays open.
+        using var goodwill = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations),
+            new { kind = "Goodwill", amount = "5", reason = "TICKET-703" }, NewKey());
+        goodwill.StatusCode.ShouldBe(HttpStatusCode.Created);
+        using (var open = await Send(HttpMethod.Get, $"/api/v1/orders/{order}", token))
+        {
+            (await Read(open)).GetProperty("cancellationRequest").GetProperty("status").GetString().ShouldBe("Open");
+        }
+
+        var withdraw = Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests/{requestId}/withdrawal", token);
+        var decline = Send(HttpMethod.Post, $"/api/admin/v1/cancellation-requests/{requestId}/decline", Staff(TestStaffTokens.Operations),
+            new { reason = "TICKET-704" });
+        using var withdrawn = await withdraw;
+        using var declined = await decline;
+
+        new[] { withdrawn.StatusCode, declined.StatusCode }.Count(s => s == HttpStatusCode.OK).ShouldBe(1); // exactly one resolution
+        using var scope = api.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
+        var stored = await db.Set<CancellationRequest>().AsNoTracking().SingleAsync(r => r.Id == requestId, Ct);
+        stored.Status.ShouldBe(declined.StatusCode == HttpStatusCode.OK ? CancellationRequestStatus.Declined : CancellationRequestStatus.Withdrawn);
+        (await db.Set<TravelBooking.BuildingBlocks.Audit.AuditEntry>().AsNoTracking()
+            .CountAsync(a => a.Target == $"cancellation-request:{requestId}", Ct)).ShouldBe(declined.StatusCode == HttpStatusCode.OK ? 1 : 0);
+    }
+
+    [Fact]
+    public async Task Only_a_confirmed_booking_can_be_asked_to_be_cancelled_and_parallel_requests_open_one()
+    {
+        var token = Token();
+        var unpaid = await ReadyOrder(token);
+        using var refused = await Send(HttpMethod.Post, $"/api/v1/orders/{unpaid}/cancellation-requests", token, key: NewKey());
+        refused.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await Read(refused)).GetProperty("type").GetString().ShouldBe("not-cancellable");
+        (await Send(HttpMethod.Post, $"/api/v1/orders/{unpaid}/cancellation-requests", token)).StatusCode.ShouldBe(HttpStatusCode.BadRequest); // no key
+
+        var (order, _) = await CapturedOrder(customer: token);
+        var responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ =>
+            Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests", token, key: NewKey())));
+        responses.Count(r => r.StatusCode == HttpStatusCode.Created).ShouldBe(1);
+        responses.Where(r => r.StatusCode != HttpStatusCode.Created).ShouldAllBe(r => r.StatusCode == HttpStatusCode.Conflict);
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
     // ---------- Cancellations and refunds (ADR 0027) ----------
 
     [Fact]
@@ -505,9 +680,9 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         }
     }
 
-    private async Task<(Guid Order, Money Price)> CapturedOrder(string paymentMethod = MockPaymentMethods.Approved)
+    private async Task<(Guid Order, Money Price)> CapturedOrder(string paymentMethod = MockPaymentMethods.Approved, string? customer = null)
     {
-        var token = Token();
+        var token = customer ?? Token();
         var order = await ReadyOrder(token, email: $"booker-{Guid.NewGuid():N}@example.com");
         (await Checkout(token, order, NewKey(), paymentMethod)).Dispose();
         await Run("orders.outbox");

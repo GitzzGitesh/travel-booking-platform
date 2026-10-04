@@ -11,6 +11,7 @@ export type { AcceptFlightOfferPriceRequest } from './models/accept-flight-offer
 export type { AirportResponse } from './models/airport-response';
 export type { BaggageAllowanceResponse } from './models/baggage-allowance-response';
 export type { CabinClass } from './models/cabin-class';
+export type { CancellationRequestResponse } from './models/cancellation-request-response';
 export type { CheckoutRequest } from './models/checkout-request';
 export type { CheckoutResponse } from './models/checkout-response';
 export type { ConfirmedFlightOfferResponse } from './models/confirmed-flight-offer-response';
@@ -31,6 +32,7 @@ export type { HttpValidationProblemDetails } from './models/http-validation-prob
 export type { MoneyResponse } from './models/money-response';
 export type { OrderAmountResponse } from './models/order-amount-response';
 export type { OrderItemResponse } from './models/order-item-response';
+export type { OrderPage } from './models/order-page';
 export type { OrderResponse } from './models/order-response';
 export type { OrderTravellersResponse } from './models/order-travellers-response';
 export type { PassengerFareResponse } from './models/passenger-fare-response';
@@ -74,9 +76,15 @@ export type { SignOutCustomer$Params as SignOutCustomer$Params } from './fn/cust
 export { signOutCustomer as signOutCustomer } from './fn/customer-session/sign-out-customer';
 export type { GetCurrentCustomer$Params as GetCurrentCustomer$Params } from './fn/customers/get-current-customer';
 export { getCurrentCustomer as getCurrentCustomer } from './fn/customers/get-current-customer';
+export type { ListMyOrders$Params as ListMyOrders$Params } from './fn/orders/list-my-orders';
+export { listMyOrders as listMyOrders } from './fn/orders/list-my-orders';
 export type { CreateFlightOrder$Params as CreateFlightOrder$Params } from './fn/orders/create-flight-order';
 export { createFlightOrder as createFlightOrder } from './fn/orders/create-flight-order';
 export type { CheckoutOrder$Params as CheckoutOrder$Params } from './fn/orders/checkout-order';
 export { checkoutOrder as checkoutOrder } from './fn/orders/checkout-order';
 export type { GetOrder$Params as GetOrder$Params } from './fn/orders/get-order';
 export { getOrder as getOrder } from './fn/orders/get-order';
+export type { RequestCancellation$Params as RequestCancellation$Params } from './fn/orders/request-cancellation';
+export { requestCancellation as requestCancellation } from './fn/orders/request-cancellation';
+export type { WithdrawCancellationRequest$Params as WithdrawCancellationRequest$Params } from './fn/orders/withdraw-cancellation-request';
+export { withdrawCancellationRequest as withdrawCancellationRequest } from './fn/orders/withdraw-cancellation-request';

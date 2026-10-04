@@ -82,8 +82,11 @@ internal static class AdminOrderEndpoints
         return TypedResults.Ok(new AdminOrderPage([.. orders.Select(AdminOrderSummary.From)], next));
     }
 
-    public static async Task<Results<Ok<AdminOrderDetail>, NotFound>> Get(Guid orderId, IOrderStore store, CancellationToken cancellationToken) =>
-        await store.FindAsync(orderId, cancellationToken) is { } order ? TypedResults.Ok(AdminOrderDetail.From(order)) : TypedResults.NotFound();
+    public static async Task<Results<Ok<AdminOrderDetail>, NotFound>> Get(
+        Guid orderId, IOrderStore store, ICancellationRequestStore cancellations, CancellationToken cancellationToken) =>
+        await store.FindAsync(orderId, cancellationToken) is { } order
+            ? TypedResults.Ok(AdminOrderDetail.From(order, await cancellations.FindLatestForOrderAsync(order.Id, cancellationToken)))
+            : TypedResults.NotFound();
 
     public static async Task<Results<Ok<BookingReviewCheckResponse>, ProblemHttpResult>> CheckReview(
         Guid orderId, Guid itemId, BookingReviewCheckRequest request, ClaimsPrincipal user, HttpContext http,
@@ -161,11 +164,13 @@ internal sealed record AdminOrderItem(
         item.BookingStartedAt);
 }
 
-internal sealed record AdminOrderDetail(AdminOrderSummary Order, IReadOnlyList<AdminTimelineEntry> Timeline)
+/// <param name="CancellationRequest">The customer's latest cancellation request (ADR 0029), if any.</param>
+internal sealed record AdminOrderDetail(AdminOrderSummary Order, IReadOnlyList<AdminTimelineEntry> Timeline, AdminCancellationRequest? CancellationRequest)
 {
-    public static AdminOrderDetail From(Order order) => new(
+    public static AdminOrderDetail From(Order order, CancellationRequest? cancellation = null) => new(
         AdminOrderSummary.From(order),
-        [.. order.Timeline.OrderBy(e => e.At).ThenBy(e => e.Id).Select(e => new AdminTimelineEntry(e.At, e.Actor, e.ItemId, e.FromStatus, e.ToStatus, e.Reason, e.CorrelationId, e.ProviderReference))]);
+        [.. order.Timeline.OrderBy(e => e.At).ThenBy(e => e.Id).Select(e => new AdminTimelineEntry(e.At, e.Actor, e.ItemId, e.FromStatus, e.ToStatus, e.Reason, e.CorrelationId, e.ProviderReference))],
+        cancellation is null ? null : AdminCancellationRequest.From(cancellation));
 }
 
 internal sealed record AdminTimelineEntry(

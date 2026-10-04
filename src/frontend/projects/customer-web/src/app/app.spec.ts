@@ -22,7 +22,7 @@ describe('App', () => {
     expect(element.querySelector('a.skip-link')?.getAttribute('href')).toBe('#main-content');
   });
 
-  it('marks Flights as the current page and shows other products as coming soon', async () => {
+  it('marks Flights as the current page, links My trips and shows Hotels as coming soon', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const nav = (fixture.nativeElement as HTMLElement).querySelector('.primary-nav')!;
@@ -30,7 +30,11 @@ describe('App', () => {
     expect(nav.querySelector('a')?.textContent).toContain('Flights');
     expect(nav.textContent).toContain('Hotels');
     expect(nav.textContent).toContain('Soon');
-    expect(nav.querySelectorAll('a').length).toBe(1);
+    // Flights and My trips (ADR 0029) are destinations; Hotels is not a link yet.
+    expect([...nav.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual([
+      'Flights',
+      'My trips',
+    ]);
   });
 
   it('opens the menu dialog from the menu button', async () => {

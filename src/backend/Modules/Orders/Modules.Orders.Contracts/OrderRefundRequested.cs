@@ -28,3 +28,11 @@ public sealed record OrderRefundRequested(
 /// </summary>
 public sealed record OrderCancellationRecorded(
     Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid RefundCaseId, Money ExpectedRefund, string? CorrelationId) : IIntegrationEvent;
+
+/// <summary>A customer asked to cancel a booking (ADR 0029): for the customer's acknowledgement. Nothing is cancelled yet.</summary>
+public sealed record CustomerCancellationRequested(
+    Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid RequestId, string? CorrelationId) : IIntegrationEvent;
+
+/// <summary>A customer's cancellation request was declined by a person (ADR 0029): the customer is told support will contact them.</summary>
+public sealed record CustomerCancellationDeclined(
+    Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid RequestId, string? CorrelationId) : IIntegrationEvent;

@@ -22,6 +22,14 @@ In admin-web, all of this is on the order's page ("Cancellations and refunds"); 
 
 `GET /api/admin/v1/orders/{orderId}/refund-cases` shows every case of an order and its status: `PendingApproval`, `Approved`, `Rejected`, `Refunded`, `RefundFailed`, or `NoRefund` (a cancellation with nothing to refund).
 
+## Customers' cancellation requests (ADR 0029)
+Customers ask to cancel from their booking page. Asking cancels nothing and promises no refund.
+- **Where:** in admin-web, open requests are under "Cancellation requests" (oldest first; `GET /api/admin/v1/cancellation-requests`, `refunds.request`). Each order's page shows its request.
+- **To cancel:** re-check that the request is still Open right before calling the supplier's desk (a customer may withdraw it), then cancel at the desk and record the cancellation case as above (step 1). If the timeline says the customer had withdrawn the request, contact them through support. Opening the case completes the request in the same save once no confirmed item is left (a partial cancellation leaves it open, noted on the timeline), and the customer gets "Your booking has been cancelled".
+- **If it cannot be cancelled** (for example a non-refundable fare): decline the request with a ticket reference (`POST /api/admin/v1/cancellation-requests/{id}/decline`, audited). The customer gets "We could not cancel your booking" and is told support will contact them. Contact them through support (Q12); the reference is never shown to them.
+- **Withdrawals:** a customer may withdraw an open request; it then needs nothing.
+- **Response time:** no target is promised yet (pending legal confirmation). Work the list oldest first.
+
 ## Alerts
 - **`RefundNotPossible`** (P2): the approved refund would exceed what was captured, or the payment was not captured. A payment without the provider's payment id fails the same way (`RefundFailed`, "Not sent"). It was not sent, and the case becomes `RefundFailed`. Check other refunds of the payment (`payments.Refunds` by `AttemptId`). Open a corrected case if needed.
 - **`RefundFailed`** (P2): the provider could not return the money. Check the provider's dashboard with `ProviderRefundId`, and contact the customer through support (Q12).
