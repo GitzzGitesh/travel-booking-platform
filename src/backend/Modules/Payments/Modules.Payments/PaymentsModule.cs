@@ -130,6 +130,13 @@ public static class PaymentsModule
     /// </summary>
     public static IEndpointRouteBuilder MapPaymentsEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // How customer-web collects a payment method: for a signed-in customer about to pay.
+        endpoints.MapGet("/payments/entry", PaymentEntryEndpoint.Handle)
+            .WithName("GetPaymentEntry")
+            .WithTags("Payments")
+            .RequireAuthorization(CustomerIdentity.Policy)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
         if (!endpoints.ServiceProvider.GetServices<IPaymentNotifications>().Any())
         {
             return endpoints;

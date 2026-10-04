@@ -43,6 +43,27 @@ export async function signInStaffForDevelopment(page: Page, objectId: string): P
   }
 }
 
+/**
+ * Signs this page's browser in to customer-web with the Api's Development-only stand-in (ADR 0028), from the page
+ * itself, so the HttpOnly session cookie (and its hint) land exactly as a real sign-in's would.
+ */
+export async function signInCustomerForDevelopment(page: Page, objectId: string): Promise<void> {
+  const status = await page.evaluate(async (id) => {
+    const response = await fetch('/api/v1/session/development-sign-in', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-TB-Customer-Csrf': '1',
+      },
+      body: JSON.stringify({ objectId: id }),
+    });
+    return response.status;
+  }, objectId);
+  if (status !== 204) {
+    throw new Error(`Development sign-in failed with ${status}.`);
+  }
+}
+
 /** A date N days from today as yyyy-mm-dd, for date inputs. */
 export function daysFromToday(days: number): string {
   const date = new Date();

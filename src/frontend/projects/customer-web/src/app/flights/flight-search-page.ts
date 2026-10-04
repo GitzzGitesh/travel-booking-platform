@@ -19,9 +19,12 @@ import {
   ValidationErrors,
   Validators,
 } from '@angular/forms';
+import { DOCUMENT } from '@angular/common';
+import { Router } from '@angular/router';
 import {
   Api,
   acceptSelectedFlightOfferPrice,
+  createFlightOrder,
   revalidateSelectedFlightOffer,
   searchFlights,
   selectFlightOffer,
@@ -138,8 +141,15 @@ export class FlightSearchPage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
 
-  /** Booking needs a signed-in customer (Q8): until sign-in exists, a confirmed price says so. */
+  /** Booking needs a signed-in customer (Q8): a confirmed price offers the booking, or the sign-in. */
   protected readonly session = inject(CustomerSession);
+  private readonly router = inject(Router);
+  private readonly document = inject(DOCUMENT);
+  protected readonly booking = signal<
+    { kind: 'idle' | 'creating' } | { kind: 'error'; message: string }
+  >({
+    kind: 'idle',
+  });
   private readonly resultsHeading = viewChild<ElementRef<HTMLElement>>('resultsHeading');
   private readonly searchForm = viewChild.required<ElementRef<HTMLFormElement>>('searchForm');
   private readonly originInput = viewChild.required<ElementRef<HTMLInputElement>>('originInput');
@@ -413,6 +423,46 @@ export class FlightSearchPage {
 
   protected chooseAnotherFlight(): void {
     this.resultsHeading()?.nativeElement.focus();
+  }
+
+  /** Starts the sign-in on the server; the customer comes back to the search and selects again (ADR 0028). */
+  protected signIn(): void {
+    this.document.location.assign(this.session.signInUrl(this.router.url));
+  }
+
+  /**
+   * Creates the order for the confirmed selection and opens the booking. The idempotency key is the selection's own
+   * id: one intent per selection, so a repeated click or a retry after a lost answer returns the same order.
+   */
+  protected async book(): Promise<void> {
+    const chosen = this.selection();
+    if (chosen.kind !== 'saved' || this.booking().kind === 'creating') {
+      return;
+    }
+    const selectedOfferId = chosen.selection.selectedOfferId;
+    this.booking.set({ kind: 'creating' });
+    try {
+      const order = await this.api.invoke(createFlightOrder, {
+        'Idempotency-Key': `order-${selectedOfferId}`,
+        body: { selectedOfferId },
+      });
+      await this.router.navigate(['/booking', order.orderId]);
+    } catch (error) {
+      const problem =
+        error instanceof HttpErrorResponse ? (error.error as ProblemDetails | null) : null;
+      const existing = (problem as { orderId?: unknown } | null)?.orderId;
+      if (problem?.type === 'selection-already-ordered' && typeof existing === 'string') {
+        await this.router.navigate(['/booking', existing]);
+        return;
+      }
+      this.booking.set({
+        kind: 'error',
+        message:
+          error instanceof HttpErrorResponse && error.status === 401
+            ? 'Your session has ended. Sign in again, then select your flight.'
+            : (problem?.title ?? 'We could not start your booking. Please try again.'),
+      });
+    }
   }
 
   /** The price the customer has agreed to: the confirmed price once checked, otherwise the selected one. */

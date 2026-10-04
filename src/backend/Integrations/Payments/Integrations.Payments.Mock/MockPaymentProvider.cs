@@ -22,6 +22,14 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
 
     public string Id => ProviderId;
 
+    // The outcomes a customer can complete in the browser without a challenge (the mock has no challenge page).
+    public PaymentEntry Entry { get; } = new(PaymentEntryMode.Test,
+    [
+        new TestPaymentMethod(MockPaymentMethods.Approved, "Test payment: approved"),
+        new TestPaymentMethod(MockPaymentMethods.Declined, "Test payment: declined"),
+        new TestPaymentMethod(MockPaymentMethods.TimeoutAuthorized, "Test payment: slow answer, then approved"),
+    ]);
+
     public Task<Result<PaymentSnapshot, ProviderError>> AuthorizeAsync(AuthorizationDetails details, CancellationToken cancellationToken) =>
         Run(cancellationToken, () => Authorize(details));
 

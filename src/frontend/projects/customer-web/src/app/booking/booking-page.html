@@ -1,0 +1,289 @@
+<div class="page booking">
+  <p><a routerLink="/">Back to flight search</a></p>
+
+  @switch (state().kind) {
+    @case ('loading') {
+      <h1>Your booking</h1>
+      <p role="status">Loading your booking…</p>
+    }
+    @case ('signed-out') {
+      <h1>Your booking</h1>
+      <p class="note">Sign in to see and complete your booking.</p>
+      <button type="button" class="btn btn-primary" (click)="signIn()">Sign in</button>
+    }
+    @case ('not-found') {
+      <h1>Your booking</h1>
+      <p class="alert alert-error" role="alert">We could not find this booking.</p>
+    }
+    @case ('error') {
+      <h1>Your booking</h1>
+      <p class="alert alert-error" role="alert">
+        We could not load your booking. Please try again shortly.
+      </p>
+    }
+  }
+
+  @if (state(); as state) {
+    @if (state.kind === 'ready') {
+      <h1>Your booking</h1>
+      @if (item(); as item) {
+        <dl class="summary card">
+          <dt>Price</dt>
+          <dd class="tabular">
+            @if (price(); as price) {
+              {{ formatMoney(price) }}
+            }
+          </dd>
+          <dt>Status</dt>
+          <dd>
+            @switch (state.order.status) {
+              @case ('AwaitingPayment') {
+                Waiting for your details and payment
+              }
+              @case ('Pending') {
+                Being confirmed with the airline
+              }
+              @case ('Confirmed') {
+                Confirmed
+              }
+              @case ('PartiallyConfirmed') {
+                Partly confirmed
+              }
+              @case ('Failed') {
+                Not booked: nothing was charged
+              }
+              @case ('Abandoned') {
+                Expired: nothing was charged
+              }
+              @case ('Cancelled') {
+                Cancelled
+              }
+              @default {
+                {{ state.order.status }}
+              }
+            }
+          </dd>
+          @if (item.bookingReference) {
+            <dt>Booking reference</dt>
+            <dd class="reference">{{ item.bookingReference }}</dd>
+          }
+        </dl>
+      }
+
+      @if (message(); as message) {
+        <p
+          class="alert"
+          [class.alert-error]="message.tone === 'error'"
+          [class.alert-info]="message.tone !== 'error'"
+          [attr.role]="message.tone === 'error' ? 'alert' : 'status'"
+        >
+          {{ message.text }}
+        </p>
+      }
+
+      @if (state.order.status === 'Confirmed' || state.order.status === 'PartiallyConfirmed') {
+        <p>
+          We have emailed your confirmation. Keep the booking reference for your trip.
+          @if (state.order.status === 'PartiallyConfirmed') {
+            You are charged only for what the airline confirmed.
+          }
+        </p>
+      }
+
+      @if (payable()) {
+        @if (step() === 'travellers') {
+          <form class="step" (submit)="$event.preventDefault(); saveTravellers()" novalidate>
+            <h2 #stepHeading tabindex="-1">Who is travelling</h2>
+            <p class="note">Enter names exactly as on the travel document, in Latin letters.</p>
+
+            @for (traveller of travellers.controls; track $index; let i = $index) {
+              <fieldset class="card traveller" [formGroup]="traveller">
+                <legend>{{ travellerLabel(traveller.controls.type.value, i) }}</legend>
+                <div class="grid">
+                  <label>
+                    <span class="field-label">Given names</span>
+                    <input
+                      formControlName="givenNames"
+                      autocomplete="off"
+                      maxlength="60"
+                      [attr.aria-invalid]="invalid(traveller.controls.givenNames)"
+                    />
+                  </label>
+                  <label>
+                    <span class="field-label">Surname</span>
+                    <input
+                      formControlName="surname"
+                      autocomplete="off"
+                      maxlength="60"
+                      [attr.aria-invalid]="invalid(traveller.controls.surname)"
+                    />
+                  </label>
+                  <label>
+                    <span class="field-label">Date of birth</span>
+                    <input
+                      type="date"
+                      formControlName="dateOfBirth"
+                      [attr.aria-invalid]="invalid(traveller.controls.dateOfBirth)"
+                    />
+                  </label>
+                  <label>
+                    <span class="field-label">Gender (as on the document)</span>
+                    <select
+                      formControlName="gender"
+                      [attr.aria-invalid]="invalid(traveller.controls.gender)"
+                    >
+                      <option [ngValue]="null" disabled>Choose</option>
+                      <option value="Female">Female</option>
+                      <option value="Male">Male</option>
+                    </select>
+                  </label>
+                  @if (documentsRequired()) {
+                    <label>
+                      <span class="field-label">Document</span>
+                      <select formControlName="documentType">
+                        <option value="Passport">Passport</option>
+                        <option value="IdentityCard">Identity card</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span class="field-label">Document number</span>
+                      <input
+                        formControlName="documentNumber"
+                        autocomplete="off"
+                        maxlength="20"
+                        [attr.aria-invalid]="invalid(traveller.controls.documentNumber)"
+                      />
+                    </label>
+                    <label>
+                      <span class="field-label">Issuing country (2 letters)</span>
+                      <input
+                        formControlName="issuingCountry"
+                        autocomplete="off"
+                        maxlength="2"
+                        [attr.aria-invalid]="invalid(traveller.controls.issuingCountry)"
+                      />
+                    </label>
+                    <label>
+                      <span class="field-label">Nationality (2 letters)</span>
+                      <input
+                        formControlName="nationality"
+                        autocomplete="off"
+                        maxlength="2"
+                        [attr.aria-invalid]="invalid(traveller.controls.nationality)"
+                      />
+                    </label>
+                    <label>
+                      <span class="field-label">Document expiry date</span>
+                      <input
+                        type="date"
+                        formControlName="expiryDate"
+                        [attr.aria-invalid]="invalid(traveller.controls.expiryDate)"
+                      />
+                    </label>
+                  }
+                </div>
+              </fieldset>
+            }
+
+            <fieldset class="card traveller" [formGroup]="contact">
+              <legend>Contact for this booking</legend>
+              <div class="grid">
+                <label>
+                  <span class="field-label">Email</span>
+                  <input
+                    type="email"
+                    formControlName="email"
+                    autocomplete="email"
+                    maxlength="254"
+                    [attr.aria-invalid]="invalid(contact.controls.email)"
+                  />
+                </label>
+                <label>
+                  <span class="field-label">Mobile phone (e.g. +447700900123)</span>
+                  <input
+                    type="tel"
+                    formControlName="phone"
+                    autocomplete="tel"
+                    maxlength="16"
+                    [attr.aria-invalid]="invalid(contact.controls.phone)"
+                  />
+                </label>
+              </div>
+            </fieldset>
+
+            <button type="submit" class="btn btn-primary" [disabled]="busy()">
+              {{ busy() ? 'Saving…' : 'Continue to payment' }}
+            </button>
+          </form>
+        } @else {
+          <form class="step" (submit)="$event.preventDefault(); pay()" novalidate>
+            <h2 #stepHeading tabindex="-1">Payment</h2>
+            @if (entry(); as entry) {
+              @if (entry.mode === 'Test') {
+                <fieldset class="card traveller">
+                  <legend>Test payment (no real card is charged)</legend>
+                  @for (method of entry.testMethods; track method.token) {
+                    <label class="checkbox">
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        [value]="method.token"
+                        [formControl]="paymentMethod"
+                      />
+                      {{ method.label }}
+                    </label>
+                  }
+                </fieldset>
+                @if (priceChange(); as change) {
+                  <div class="alert alert-warning" role="alert">
+                    <p>
+                      The airline's price has changed to {{ formatMoney(change.next) }}
+                      @if (change.previous; as previous) {
+                        (was {{ formatMoney(previous) }})
+                      }
+                      . Accept it to pay, or search again.
+                    </p>
+                    <button
+                      type="button"
+                      class="btn btn-dark"
+                      [disabled]="busy()"
+                      (click)="acceptPrice()"
+                    >
+                      Accept {{ formatMoney(change.next) }}
+                    </button>
+                  </div>
+                } @else if (price(); as price) {
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    [disabled]="busy() || searchAgain()"
+                  >
+                    {{ busy() ? 'Paying…' : 'Pay ' + formatMoney(price) }}
+                  </button>
+                }
+                <p class="note">
+                  The amount is held on your card and charged only once the airline confirms.
+                </p>
+              } @else {
+                <p class="alert alert-info" role="status">
+                  Card payment is not available yet. Nothing has been charged.
+                </p>
+              }
+            }
+            @if (searchAgain()) {
+              <p><a routerLink="/">Search again</a></p>
+            }
+            <button
+              type="button"
+              class="btn btn-ghost"
+              [disabled]="busy()"
+              (click)="editTravellers()"
+            >
+              Change traveller details
+            </button>
+          </form>
+        }
+      }
+    }
+  }
+</div>

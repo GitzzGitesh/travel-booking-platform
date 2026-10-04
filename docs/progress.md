@@ -226,6 +226,16 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **customer-web:** the header's Sign in / Sign out work (no visual change). Signed-in state is read in the browser only (SSR stays signed out). The interceptor adds the CSRF header to unsafe `/api/v1` calls, and a 401 ends the session.
 - **Next:** the booking journey in customer-web: travellers, checkout with the mock payment, order status, then "My trips" and the customer's cancellation request.
 - **Pending (external):** the customer tenant's app registration (redirect URI `/api/v1/session/callback`, client credential in Key Vault); Data Protection keys with hosting (Q2). |
+| 16 | **Batch F: the customer booking journey in customer-web** | **Done, with the mock supplier and the mock payment provider.**
+- **Search page:** once the price is confirmed, a signed-in customer gets "Continue to booking". It creates the order with the key `order-{selectedOfferId}`, and an order already made for that selection opens instead. A signed-out customer gets "Sign in", then selects again: an anonymous selection is never bookable.
+- **`/booking/:orderId`** (client-rendered, signed in only):
+  - the travellers the order needs (names as on the document, date of birth, gender) and the contact; the documents too when the airline requires them;
+  - the payment, as the provider declares it (`IPaymentProvider.Entry`, `GET /api/v1/payments/entry`): test methods with the mock, unavailable otherwise, never card data;
+  - the outcome: confirmed with the booking reference, being confirmed (polled), declined (try another method), or not booked (nothing charged).
+- **Keys:** one `Idempotency-Key` per payment attempt, kept while the outcome is pending and new after a decline (`payment-lifecycle.md`).
+- **E2E:** two booking journeys (approved; declined, then approved) and the signed-out page. CI and local E2E now apply the Customers migrations.
+- **Next:** "My trips" (the customer's orders) and the customer's own cancellation request; the Stripe Payment Element once ADR 0006 is accepted.
+- **Pending (external):** Stripe acceptance (ADR 0006) for real card entry and 3-D Secure challenges. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.
