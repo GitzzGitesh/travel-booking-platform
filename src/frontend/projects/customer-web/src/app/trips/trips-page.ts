@@ -1,4 +1,3 @@
-import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, afterNextRender, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
@@ -94,7 +93,6 @@ export class TripsPage {
   private readonly api = inject(Api);
   private readonly session = inject(CustomerSession);
   private readonly router = inject(Router);
-  private readonly document = inject(DOCUMENT);
   protected readonly formatMoney = formatMoney;
   protected readonly statusLabel = orderStatusLabel;
 
@@ -108,7 +106,7 @@ export class TripsPage {
   }
 
   protected signIn(): void {
-    this.document.location.assign(this.session.signInUrl(this.router.url));
+    void this.session.signIn(this.router.url);
   }
 
   protected async more(): Promise<void> {

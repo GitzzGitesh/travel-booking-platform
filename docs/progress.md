@@ -249,6 +249,15 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **Runbook:** `refunds.md` ("Customers' cancellation requests").
 - **Next:** the Stripe Payment Element once ADR 0006 is accepted. Until then: hotel or ancillary scope needs product decisions (Q1 for hotels).
 - **Pending (legal):** a response-time target for requests; non-cancellable fares online; cancellation rights per market. |
+| 18 | **Local Development identities for customer-web and admin-web** | **Done (local development and test infrastructure only; no product change).**
+- **The problem:** without the Entra tenants, the apps' **Sign in** led to 503 `customer-sign-in-unavailable` and `staff-sign-in-unavailable`, so the customer and staff journeys could not be tried locally.
+- **The fix:** in dev server builds only (`isDevMode()`), both apps' existing **Sign in** buttons use the Api's existing Development stand-ins (ADR 0023, ADR 0028) as fixed synthetic accounts: the test customer `0c0de000-0000-4000-8000-00000000c001` and the test staff member `0c0de000-0000-4000-8000-0000000000a1`. Production builds, and an Api that does not offer the stand-in (404), use the tenant sign-in as before. No new endpoint and no server change: the customer and staff pipelines run unchanged (mapping, policies, ownership, permissions from `Access:RoleAssignments`, CSRF).
+- **Guards (tested):**
+  - the stand-in is mapped only in Development with its setting;
+  - startup refuses the setting in Staging and Production;
+  - a Development-issued session never authenticates in Staging or Production, even when made with the host's own keys (new test, for customers and staff);
+  - outside Development the routes are not mapped yet either.
+- **How to:** CLAUDE.md (Dev server) and `docs/runbooks/staff-access.md`. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

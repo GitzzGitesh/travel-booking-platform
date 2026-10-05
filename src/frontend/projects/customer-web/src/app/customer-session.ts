@@ -1,8 +1,8 @@
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
-import { Injectable, PLATFORM_ID, computed, inject, signal } from '@angular/core';
+import { HttpClient, HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
+import { Injectable, PLATFORM_ID, computed, inject, isDevMode, signal } from '@angular/core';
 import { Api, getCustomerSession, signOutCustomer } from '@travel-booking/api-client';
-import { tap } from 'rxjs';
+import { firstValueFrom, tap } from 'rxjs';
 
 /** Whether a customer is signed in, and as whom (our internal customer id, never the identity provider's subject). */
 export type CustomerSessionState =
@@ -17,6 +17,13 @@ export const signInPath = '/api/v1/session/sign-in';
 /** Set by the server beside the HttpOnly session (ADR 0028): a session may exist. No credential. */
 export const hintCookie = 'tb-customer-hint';
 
+/**
+ * The local test customer (ADR 0028, Development only): a fixed synthetic account, so the same internal customer (and
+ * their trips) comes back after every local sign-in. Never a real account; the Api accepts it only in Development
+ * with `Authentication:CustomerSession:DevelopmentSignIn` = `true`.
+ */
+export const developmentCustomerAccount = '0c0de000-0000-4000-8000-00000000c001';
+
 /** Required by the server on unsafe requests made with the session cookie (ADR 0028). */
 export const csrfHeader = 'X-TB-Customer-Csrf';
 
@@ -30,6 +37,7 @@ export class CustomerSession {
   private readonly api = inject(Api);
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly document = inject(DOCUMENT);
+  private readonly http = inject(HttpClient);
   private readonly current = signal<CustomerSessionState>({ kind: 'loading' });
   private loading: Promise<void> | null = null;
 
@@ -58,6 +66,33 @@ export class CustomerSession {
   /** The URL that starts the sign-in, returning to this path afterwards (the server accepts local paths only). */
   signInUrl(returnUrl: string): string {
     return `${signInPath}?returnUrl=${encodeURIComponent(returnUrl)}`;
+  }
+
+  /**
+   * Signs in and comes back to `returnUrl`: with the customer tenant (the server's sign-in), or, in a development
+   * build only, with the Api's Development stand-in as the local test customer when the Api offers it.
+   */
+  async signIn(returnUrl: string): Promise<void> {
+    if (isDevMode() && (await this.developmentSignIn())) {
+      this.document.location.assign(returnUrl);
+      return;
+    }
+    this.document.location.assign(this.signInUrl(returnUrl));
+  }
+
+  // Development builds only: the Api maps this endpoint only in Development with its setting (404 otherwise), and the
+  // CSRF header comes from the interceptor. Any failure falls back to the tenant's sign-in.
+  private async developmentSignIn(): Promise<boolean> {
+    try {
+      await firstValueFrom(
+        this.http.post('/api/v1/session/development-sign-in', {
+          objectId: developmentCustomerAccount,
+        }),
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async signOut(): Promise<void> {

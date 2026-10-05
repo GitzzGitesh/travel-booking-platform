@@ -187,6 +187,24 @@ public sealed class StaffSessionTests(SqlApiFactory api) : IClassFixture<SqlApiF
         Should.Throw<InvalidOperationException>(() => host.CreateClient()).Message.ShouldContain("staff tenant's own authority");
     }
 
+    [Fact]
+    public async Task A_development_staff_session_made_with_the_hosts_keys_is_accepted_in_development()
+    {
+        // The counterpart of EndpointAuthorizationTests.A_development_session_never_authenticates_outside_development: the
+        // same forged session is valid here, so its refusal there is the Development-only rule, not a broken cookie.
+        const HttpStatusCode expected = HttpStatusCode.OK;
+        using var host = api.WithWebHostBuilder(b => b.UseEnvironment("Development"));
+        var options = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>()
+            .Get(StaffIdentity.SessionScheme);
+        var ticket = new AuthenticationTicket(StaffSessions.SessionPrincipal(StaffSessions.DevelopmentIssuer, TestStaffTokens.Operations),
+            StaffSessions.Start(host.Services.GetRequiredService<TimeProvider>()), StaffIdentity.SessionScheme);
+        using var client = Client(host);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/v1/session");
+        request.Headers.Add("Cookie", $"{options.Cookie.Name}={options.TicketDataFormat.Protect(ticket)}");
+
+        (await client.SendAsync(request, Ct)).StatusCode.ShouldBe(expected);
+    }
+
     [Theory]
     [InlineData("/", true)]
     [InlineData("/orders/1?tab=timeline", true)]

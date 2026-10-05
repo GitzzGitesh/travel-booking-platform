@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  isDevMode,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { StaffSession } from '../staff-session';
 
@@ -21,7 +29,7 @@ import { StaffSession } from '../staff-session';
           </p>
         }
         <p>Sign in with your work account to continue.</p>
-        <a class="button button-primary" [href]="signInUrl()">Sign in</a>
+        <a class="button button-primary" [href]="signInUrl()" (click)="signIn($event)">Sign in</a>
       }
       @case ('unavailable') {
         <p class="alert alert-error" role="alert">
@@ -46,10 +54,23 @@ import { StaffSession } from '../staff-session';
 })
 export class Home {
   protected readonly session = inject(StaffSession);
+  private readonly document = inject(DOCUMENT);
 
   /** Set by the server when a sign-in is refused (ADR 0023); the reason stays in the security log. */
   readonly signInResult = input<string | undefined>(undefined, { alias: 'sign-in' });
 
   protected readonly signInFailed = computed(() => this.signInResult() === 'failed');
   protected readonly signInUrl = computed(() => this.session.signInUrl('/'));
+
+  // A development build signs in as the local test staff member when the Api offers it; otherwise the link's own
+  // navigation starts the tenant's sign-in.
+  protected async signIn(event: MouseEvent): Promise<void> {
+    if (!isDevMode()) {
+      return;
+    }
+    event.preventDefault();
+    if (!(await this.session.developmentSignIn())) {
+      this.document.location.assign(this.signInUrl());
+    }
+  }
 }

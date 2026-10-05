@@ -1,9 +1,14 @@
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { DOCUMENT } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
-import { CustomerSession, customerApiInterceptor } from './customer-session';
+import {
+  CustomerSession,
+  customerApiInterceptor,
+  developmentCustomerAccount,
+} from './customer-session';
 
 describe('CustomerSession', () => {
   let http: HttpTestingController;
@@ -98,5 +103,47 @@ describe('CustomerSession', () => {
     expect(setUp().signInUrl('/?from=LHR')).toBe(
       '/api/v1/session/sign-in?returnUrl=%2F%3Ffrom%3DLHR',
     );
+  });
+
+  describe('in a development build (tests run in dev mode)', () => {
+    function withPage() {
+      const assign = vi.fn();
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(withInterceptors([customerApiInterceptor])),
+          provideHttpClientTesting(),
+          { provide: PLATFORM_ID, useValue: 'browser' },
+          { provide: DOCUMENT, useValue: { cookie: '', location: { assign } } },
+        ],
+      });
+      http = TestBed.inject(HttpTestingController);
+      return { session: TestBed.inject(CustomerSession), assign };
+    }
+
+    it('signs in as the local test customer through the Api, then returns to the page', async () => {
+      const { session, assign } = withPage();
+
+      const signingIn = session.signIn('/trips');
+      const request = http.expectOne('/api/v1/session/development-sign-in');
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual({ objectId: developmentCustomerAccount });
+      expect(request.request.headers.get('X-TB-Customer-Csrf')).toBe('1');
+      request.flush(null, { status: 204, statusText: 'No Content' });
+      await signingIn;
+
+      expect(assign).toHaveBeenCalledWith('/trips');
+    });
+
+    it("uses the tenant's sign-in when the Api does not offer the stand-in", async () => {
+      const { session, assign } = withPage();
+
+      const signingIn = session.signIn('/trips');
+      http
+        .expectOne('/api/v1/session/development-sign-in')
+        .flush(null, { status: 404, statusText: 'Not Found' });
+      await signingIn;
+
+      expect(assign).toHaveBeenCalledWith('/api/v1/session/sign-in?returnUrl=%2Ftrips');
+    });
   });
 });

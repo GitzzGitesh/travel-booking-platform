@@ -1,5 +1,4 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -91,7 +90,6 @@ type Message = { tone: 'info' | 'error' | 'success'; text: string };
 export class BookingPage {
   private readonly api = inject(Api);
   private readonly router = inject(Router);
-  private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
   private readonly destroyed = signal(false);
   protected readonly session = inject(CustomerSession);
@@ -156,7 +154,7 @@ export class BookingPage {
   }
 
   protected signIn(): void {
-    this.document.location.assign(this.session.signInUrl(this.router.url));
+    void this.session.signIn(this.router.url);
   }
 
   protected travellerLabel(type: TravellerType, index: number): string {

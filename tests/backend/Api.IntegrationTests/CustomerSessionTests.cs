@@ -249,6 +249,24 @@ public sealed class CustomerSessionTests(SqlApiFactory api) : IClassFixture<SqlA
             new Claim(CustomerIdentity.CustomerIdClaim, "someone-else"))).Result!.Failure.ShouldNotBeNull();
     }
 
+    [Fact]
+    public async Task A_development_customer_session_made_with_the_hosts_keys_is_accepted_in_development()
+    {
+        // The counterpart of EndpointAuthorizationTests.A_development_session_never_authenticates_outside_development: the
+        // same forged session is valid here, so its refusal there is the Development-only rule, not a broken cookie.
+        const HttpStatusCode expected = HttpStatusCode.OK;
+        using var host = api.WithWebHostBuilder(b => b.UseEnvironment("Development"));
+        var options = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>()
+            .Get(CustomerIdentity.SessionScheme);
+        var ticket = new AuthenticationTicket(CustomerSessions.SessionPrincipal(CustomerSessions.DevelopmentIssuer, NewAccount()),
+            CustomerSessions.Start(host.Services.GetRequiredService<TimeProvider>()), CustomerIdentity.SessionScheme);
+        using var client = Client(host);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/session");
+        request.Headers.Add("Cookie", $"{options.Cookie.Name}={options.TicketDataFormat.Protect(ticket)}");
+
+        (await client.SendAsync(request, Ct)).StatusCode.ShouldBe(expected);
+    }
+
     [Theory]
     [InlineData("/", true)]
     [InlineData("/trips?tab=upcoming", true)]

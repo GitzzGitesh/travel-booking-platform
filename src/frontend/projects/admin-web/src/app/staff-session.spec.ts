@@ -2,7 +2,7 @@ import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
-import { StaffSession, staffApiInterceptor } from './staff-session';
+import { StaffSession, developmentStaffAccount, staffApiInterceptor } from './staff-session';
 
 describe('StaffSession', () => {
   let http: HttpTestingController;
@@ -92,5 +92,28 @@ describe('StaffSession', () => {
     await signedOut;
 
     expect(session.state()).toBe('signed-out');
+  });
+
+  it('signs in as the local test staff member in a development build, when the Api offers it', async () => {
+    const signingIn = session.developmentSignIn();
+    const request = http.expectOne('/api/admin/v1/session/development-sign-in');
+    expect(request.request.body).toEqual({ objectId: developmentStaffAccount });
+    expect(request.request.headers.get('X-TB-Staff-Csrf')).toBe('1');
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await Promise.resolve();
+    await Promise.resolve();
+    http
+      .expectOne('/api/admin/v1/session')
+      .flush({ staffId: 'staff:dev', permissions: ['orders.read'] });
+    expect(await signingIn).toBe(true);
+    expect(session.can('orders.read')).toBe(true);
+  });
+
+  it('reports no stand-in when the Api does not offer it (the tenant link is used)', async () => {
+    const signingIn = session.developmentSignIn();
+    http
+      .expectOne('/api/admin/v1/session/development-sign-in')
+      .flush(null, { status: 404, statusText: 'Not Found' });
+    expect(await signingIn).toBe(false);
   });
 });
