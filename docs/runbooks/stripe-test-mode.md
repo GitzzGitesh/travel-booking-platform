@@ -10,6 +10,7 @@ Set these with user-secrets locally, or in Key Vault for Staging, for **both** h
 - `Integrations:Payments:Stripe:BaseUrl=https://api.stripe.com/`;
 - `Integrations:Payments:Stripe:SecretKey`: `sk_test_...` or `rk_test_...` (a secret);
 - `Integrations:Payments:Stripe:WebhookSigningSecret`: `whsec_...` (a secret: from the webhook endpoint, or from `stripe listen` locally);
+- `Integrations:Payments:Stripe:PublishableKey`: the same Stripe account's test publishable key (`pk_test_...`), for the card step in customer-web. Not a secret (it is meant for browsers), but per account and environment, so keep it with the other Stripe settings (user-secrets locally). The Api refuses to start with a live key or a secret key here.
 - `Integrations:Payments:Stripe:ApiVersion`: the pinned API version;
 - `Integrations:Payments:Stripe:Currencies:0=USD` (add EUR and GBP as needed; INR only after P7; TND is refused).
 

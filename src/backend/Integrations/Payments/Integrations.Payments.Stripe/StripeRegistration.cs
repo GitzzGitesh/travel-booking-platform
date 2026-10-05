@@ -11,8 +11,8 @@ namespace TravelBooking.Integrations.Payments.Stripe;
 
 /// <summary>
 /// <c>Integrations:Payments:Stripe</c>. The secret key and the webhook signing secret come from user-secrets or Key
-/// Vault only (security rules). The publishable key is the only Stripe key the frontend may ever see, and is not needed
-/// here.
+/// Vault only (security rules). The publishable key is the only Stripe key the frontend may ever see: configured here
+/// and handed to customer-web for the Payment Element (ADR 0006, P9).
 /// </summary>
 public sealed class StripeOptions : SupplierHttpOptions
 {
@@ -23,6 +23,13 @@ public sealed class StripeOptions : SupplierHttpOptions
 
     /// <summary>A test-mode key (the only kind accepted until the adapter is production-ready).</summary>
     internal bool IsTestMode => SecretKey is not null && (SecretKey.StartsWith("sk_test_", StringComparison.Ordinal) || SecretKey.StartsWith("rk_test_", StringComparison.Ordinal));
+
+    /// <summary>
+    /// The account's publishable key, for the Payment Element in customer-web (ADR 0006, P9). Not a secret (it is meant
+    /// for browsers), but per account and environment, so it comes from configuration. Test mode only until the adapter
+    /// is production-ready.
+    /// </summary>
+    public string? PublishableKey { get; set; }
 
     /// <summary>The webhook endpoint's signing secret (<c>whsec_...</c>).</summary>
     public string? WebhookSigningSecret { get; set; }
@@ -53,6 +60,11 @@ public sealed class StripeOptions : SupplierHttpOptions
         if (!IsTestMode)
         {
             yield return "SecretKey must be a Stripe test-mode key (sk_test_ or rk_test_) until the adapter is production-ready.";
+        }
+
+        if (PublishableKey is null || !PublishableKey.StartsWith("pk_test_", StringComparison.Ordinal))
+        {
+            yield return "PublishableKey must be a Stripe test-mode publishable key (pk_test_) until the adapter is production-ready.";
         }
 
         if (WebhookSigningSecret is null || !WebhookSigningSecret.StartsWith("whsec_", StringComparison.Ordinal))
@@ -96,7 +108,7 @@ public static class StripeRegistration
 
         services.AddOptions<StripeOptions>()
             .Bind(configuration.GetSection(StripeOptions.SectionName))
-            .Validate(o => !o.Problems().Any(), $"{StripeOptions.SectionName} is incomplete: set BaseUrl (https), SecretKey and WebhookSigningSecret (test mode, from secrets), ApiVersion and Currencies.")
+            .Validate(o => !o.Problems().Any(), $"{StripeOptions.SectionName} is incomplete: set BaseUrl (https), SecretKey and WebhookSigningSecret (test mode, from secrets), PublishableKey (pk_test_), ApiVersion and Currencies.")
             .ValidateOnStart();
 
         // No resilience pipeline: writes are never retried (booking rules), and lookups are repeated by reconciliation.

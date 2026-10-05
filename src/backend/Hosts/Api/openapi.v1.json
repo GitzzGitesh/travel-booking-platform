@@ -2105,7 +2105,8 @@
       "PaymentEntryResponse": {
         "required": [
           "mode",
-          "testMethods"
+          "testMethods",
+          "publishableKey"
         ],
         "type": "object",
         "properties": {
@@ -2117,6 +2118,12 @@
             "items": {
               "$ref": "#/components/schemas/TestPaymentMethodResponse"
             }
+          },
+          "publishableKey": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

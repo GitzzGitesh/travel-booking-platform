@@ -31,6 +31,7 @@ public sealed class StripePaymentProviderTests
         ["Integrations:Payments:Stripe:BaseUrl"] = "https://stripe.example.test/",
         ["Integrations:Payments:Stripe:SecretKey"] = "sk_test_fixture",
         ["Integrations:Payments:Stripe:WebhookSigningSecret"] = "whsec_fixture",
+        ["Integrations:Payments:Stripe:PublishableKey"] = "pk_test_fixture",
         ["Integrations:Payments:Stripe:ApiVersion"] = "2026-08-26.fixture",
         ["Integrations:Payments:Stripe:Currencies:0"] = "USD",
         ["Integrations:Payments:Stripe:Currencies:1"] = "EUR",
@@ -302,11 +303,21 @@ public sealed class StripePaymentProviderTests
     [Theory]
     [InlineData("Integrations:Payments:Stripe:SecretKey", "sk_live_x")] // never a live key while not production-ready
     [InlineData("Integrations:Payments:Stripe:WebhookSigningSecret", "secret")]
+    [InlineData("Integrations:Payments:Stripe:PublishableKey", "pk_live_x")] // the browser key follows the secret key's mode
+    [InlineData("Integrations:Payments:Stripe:PublishableKey", "sk_test_x")] // never a secret key in the browser
     [InlineData("Integrations:Payments:Stripe:Currencies:0", "TND")] // three decimals: needs Stripe's confirmation first
     [InlineData("Integrations:Payments:Stripe:BaseUrl", "http://stripe.example.test/")]
     [InlineData("Integrations:Payments:Stripe:WebhookTolerance", "00:00:00")]
     public void Unsafe_settings_fail_at_startup(string key, string value) =>
         Should.Throw<OptionsValidationException>(() => Stripe(new FakeHandler(), _settings.With(key, value)));
+
+    [Fact]
+    public void Customers_enter_their_card_in_stripes_component_with_the_publishable_key_only()
+    {
+        var entry = Stripe(new FakeHandler(), _settings).Entry;
+
+        (entry.Mode, entry.PublishableKey, entry.TestMethods.Count).ShouldBe((PaymentEntryMode.Card, "pk_test_fixture", 0));
+    }
 
     [Fact]
     public void The_adapter_is_not_production_ready() =>
@@ -477,6 +488,7 @@ public sealed class StripeSandboxContractTests : PaymentProviderContract
             ["Integrations:Payments:Stripe:BaseUrl"] = "https://api.stripe.com/",
             ["Integrations:Payments:Stripe:SecretKey"] = key,
             ["Integrations:Payments:Stripe:WebhookSigningSecret"] = "whsec_unused_by_the_contract",
+            ["Integrations:Payments:Stripe:PublishableKey"] = "pk_test_unused_by_the_contract",
             ["Integrations:Payments:Stripe:ApiVersion"] = version,
             ["Integrations:Payments:Stripe:Currencies:0"] = "USD",
         }).Build();

@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { BookingPage } from './booking-page';
+import { STRIPE_JS, minorUnits, type StripeJs } from './stripe';
 
 const orderId = '3f0c6b9e-1d2a-4c55-9f86-000000000001';
 const order = (status: string) => ({
@@ -50,7 +51,7 @@ describe('BookingPage', () => {
     await vi.advanceTimersByTimeAsync(0);
   }
 
-  async function atPayment() {
+  async function atPayment(entryBody: object = entry, stripe?: StripeJs) {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
@@ -60,6 +61,7 @@ describe('BookingPage', () => {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } },
         },
+        ...(stripe ? [{ provide: STRIPE_JS, useValue: () => Promise.resolve(stripe) }] : []),
       ],
     });
     http = TestBed.inject(HttpTestingController);
@@ -98,8 +100,9 @@ describe('BookingPage', () => {
     });
     saved.flush({ contact: {}, travellers: [] });
     await settle();
-    http.expectOne('/api/v1/payments/entry').flush(entry);
+    http.expectOne('/api/v1/payments/entry').flush(entryBody);
     await saving;
+    await settle(); // the payment step renders (and mounts the card component, for card entry)
     return { fixture, page };
   }
 
@@ -309,5 +312,213 @@ describe('BookingPage', () => {
     await retried;
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('MOCK42');
+  });
+
+  describe('with card entry (Stripe Payment Element, ADR 0006)', () => {
+    const cardEntry = { mode: 'Card', testMethods: [], publishableKey: 'pk_test_fixture' };
+    const checkoutUrl = `/api/v1/orders/${orderId}/checkout`;
+    const answer = (
+      outcome: string,
+      customerAction: string | null = null,
+      status = 'AwaitingPayment',
+    ) => ({
+      orderId,
+      outcome,
+      payment: outcome,
+      customerAction,
+      order: order(status),
+    });
+
+    function fakeStripe(options: { submitError?: string } = {}) {
+      const calls = {
+        elements: [] as object[],
+        updates: [] as object[],
+        mounted: 0,
+        tokens: 0,
+        challenged: [] as string[],
+      };
+      const elements = {
+        create: () => ({ mount: () => void calls.mounted++, destroy: () => undefined }),
+        submit: () =>
+          Promise.resolve(options.submitError ? { error: { message: options.submitError } } : {}),
+        update: (opts: object) => void calls.updates.push(opts),
+      };
+      const stripe: StripeJs = {
+        elements: (opts) => {
+          calls.elements.push(opts);
+          return elements;
+        },
+        createConfirmationToken: () => {
+          calls.tokens++;
+          return Promise.resolve({ confirmationToken: { id: `ctoken_${calls.tokens}` } });
+        },
+        handleNextAction: ({ clientSecret }) => {
+          calls.challenged.push(clientSecret);
+          return Promise.resolve({});
+        },
+      };
+      return { stripe, calls };
+    }
+
+    async function payAnswering(page: { pay(): Promise<void> }, ...answers: object[]) {
+      const paying = page.pay();
+      const sent = [];
+      for (const body of answers) {
+        await settle();
+        const request = http.expectOne(checkoutUrl);
+        sent.push(request.request);
+        request.flush(body);
+      }
+      await paying;
+      return sent;
+    }
+
+    it('mounts a cards-only component for the server price and pays with the ConfirmationToken Stripe created', async () => {
+      const { stripe, calls } = fakeStripe();
+      const { page } = await atPayment(cardEntry, stripe);
+
+      expect(calls.mounted).toBe(1);
+      expect(calls.elements[0]).toEqual({
+        mode: 'payment',
+        amount: 12200,
+        currency: 'xts',
+        captureMethod: 'manual',
+        paymentMethodTypes: ['card'],
+      });
+
+      const [sent] = await payAnswering(page, answer('Booked', null, 'Confirmed'));
+
+      expect(sent.body).toEqual({ paymentMethodToken: 'ctoken_1' }); // an id, never card data
+      expect(sent.headers.get('Idempotency-Key')).toMatch(/^[0-9a-f-]{36}$/);
+      expect(calls.tokens).toBe(1);
+    });
+
+    it('completes a 3-D Secure check with Stripe and repeats the same request once', async () => {
+      const { stripe, calls } = fakeStripe();
+      const { page } = await atPayment(cardEntry, stripe);
+
+      const [first, again] = await payAnswering(
+        page,
+        answer('ActionRequired', 'pi_secret_1'),
+        answer('Booked', null, 'Confirmed'),
+      );
+
+      expect(calls.challenged).toEqual(['pi_secret_1']);
+      expect(again.headers.get('Idempotency-Key')).toBe(first.headers.get('Idempotency-Key')); // the same attempt
+      expect(again.body).toEqual({ paymentMethodToken: 'ctoken_1' });
+      expect(calls.tokens).toBe(1); // one token, one attempt
+    });
+
+    it('lets the server decide after a check: declined ends the attempt, and the next Pay is a new token and key', async () => {
+      const { stripe, calls } = fakeStripe();
+      const { page, fixture } = await atPayment(cardEntry, stripe);
+
+      const [first] = await payAnswering(
+        page,
+        answer('ActionRequired', 'pi_secret_2'),
+        answer('Declined'),
+      );
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).textContent).toContain('nothing was charged');
+
+      const [next] = await payAnswering(page, answer('Booked', null, 'Confirmed'));
+      expect(next.headers.get('Idempotency-Key')).not.toBe(first.headers.get('Idempotency-Key'));
+      expect(next.body).toEqual({ paymentMethodToken: 'ctoken_2' });
+    });
+
+    it('never offers the check twice, also while the payment is still pending', async () => {
+      const { stripe, calls } = fakeStripe();
+      const { page, fixture } = await atPayment(cardEntry, stripe);
+
+      const paying = page.pay();
+      await settle();
+      http.expectOne(checkoutUrl).flush(answer('ActionRequired', 'pi_secret_3'));
+      await settle();
+      http.expectOne(checkoutUrl).flush(answer('PaymentPending'));
+      await vi.advanceTimersByTimeAsync(3000);
+      http.expectOne(checkoutUrl).flush(answer('ActionRequired', 'pi_secret_3'));
+      await paying;
+      fixture.detectChanges();
+
+      expect(calls.challenged).toEqual(['pi_secret_3']); // once
+      expect((fixture.nativeElement as HTMLElement).textContent).toContain('contact support');
+    });
+
+    it('repeats an attempt whose answer was lost with the same token and key, never a second card payment', async () => {
+      const { stripe, calls } = fakeStripe();
+      const { page } = await atPayment(cardEntry, stripe);
+
+      const lost = page.pay();
+      await settle();
+      const first = http.expectOne(checkoutUrl);
+      first.error(new ProgressEvent('error'));
+      await lost;
+      const [again] = await payAnswering(page, answer('Booked', null, 'Confirmed'));
+
+      expect(again.headers.get('Idempotency-Key')).toBe(
+        first.request.headers.get('Idempotency-Key'),
+      );
+      expect(again.body).toEqual({ paymentMethodToken: 'ctoken_1' });
+      expect(calls.tokens).toBe(1);
+    });
+
+    it('shows the accepted new price in the card component (display only: the server charges its own)', async () => {
+      const { stripe, calls } = fakeStripe();
+      const { page } = await atPayment(cardEntry, stripe);
+
+      const paying = page.pay();
+      await settle();
+      http
+        .expectOne(checkoutUrl)
+        .flush(
+          { type: 'price-changed', title: 'The price changed.' },
+          { status: 422, statusText: 'Unprocessable' },
+        );
+      await settle();
+      http
+        .expectOne('/api/v1/flights/selected-offers/s1/revalidations')
+        .flush(
+          {
+            type: 'price-changed',
+            title: 'The price changed',
+            status: 422,
+            priceQuoteId: 'q9',
+            newTotalPrice: { amount: '130.00', currency: 'XTS' },
+          },
+          { status: 422, statusText: 'Unprocessable' },
+        );
+      await paying;
+      const accepting = (page as unknown as { acceptPrice(): Promise<void> }).acceptPrice();
+      await settle();
+      http.expectOne('/api/v1/flights/selected-offers/s1/price-acceptances').flush({
+        selectedOfferId: 's1',
+        offerExpiresAt: '2026-10-04T09:00:00+00:00',
+        revalidatedAt: '2026-10-04T08:10:00+00:00',
+        selectedTotalPrice: { amount: '122.00', currency: 'XTS' },
+        totalPrice: { amount: '130.00', currency: 'XTS' },
+      });
+      await accepting;
+
+      expect(calls.updates).toEqual([{ amount: 13000, currency: 'xts' }]);
+    });
+
+    it('sends nothing when the card is invalid', async () => {
+      const { stripe } = fakeStripe({ submitError: 'Your card number is incomplete.' });
+      const { page, fixture } = await atPayment(cardEntry, stripe);
+
+      await page.pay();
+      fixture.detectChanges();
+
+      http.expectNone(checkoutUrl);
+      expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+        'Your card number is incomplete.',
+      );
+    });
+  });
+
+  it('turns an amount into minor units by text, never by floating point', () => {
+    expect([minorUnits('122.00'), minorUnits('0.1'), minorUnits('19.99'), minorUnits('5')]).toEqual(
+      [12200, 10, 1999, 500],
+    );
   });
 });

@@ -4,5 +4,6 @@
 import { TestPaymentMethodResponse } from '../models/test-payment-method-response';
 export interface PaymentEntryResponse {
   mode: string;
+  publishableKey: (string | null);
   testMethods: Array<TestPaymentMethodResponse>;
 }

@@ -1,6 +1,6 @@
 # 0006. Payments: Stripe first, server-confirmed authorization, PCI SAQ-A, manual capture, webhooks
 
-- **Status:** Proposed (revised 2026-09-27). **Recommendation:** Stripe as the first payment provider, with server-side confirmation (option A below). Choosing the provider is a commercial decision, so acceptance is the project owner's. It also depends on the merchant entity (Q14) and the Stripe account approval. The provider-neutral groundwork and a Stripe adapter mapped from documentation are implemented, but the adapter is **not production-ready**: startup refuses it outside Development and Staging, and it accepts test-mode keys only.
+- **Status:** Accepted (2026-10-05) under the delegated decision authority (the project owner asked for business blockers to be decided as for a production application, and noted). Stripe is the first payment provider, with server-side confirmation (option A below). Still external before live payments: the merchant entity (Q14, P1), Stripe's account approval (P2) and test-mode keys (P3). (Proposed 2026-09-24, revised 2026-09-27.) The provider-neutral groundwork and a Stripe adapter mapped from documentation are implemented, but the adapter is **not production-ready**: startup refuses it outside Development and Staging, and it accepts test-mode keys only.
 - **Date:** 2026-09-24, revised 2026-09-27
 - **Related:** [0004](0004-supplier-provider-abstraction.md), [0005](0005-order-aggregate-and-booking-orchestration.md), [0007](0007-async-processing-worker-and-outbox.md), [0010](0010-money-currency-and-time.md), [0015](0015-synchronous-cross-module-commands-for-checkout.md), `docs/architecture/payment-lifecycle.md`, `docs/requirements/open-questions.md` (Q1, Q2, Q5, Q10, Q14)
 
@@ -130,7 +130,12 @@ Regional acquirers are not a first global provider. They become candidates behin
 | P6 | Authorization lifetime against our booking time; eligibility for extended authorization | Stripe (PC) |
 | P7 | INR and TND enablement (see Currencies) | Stripe, business owner |
 | P8 | Radar rules and the fraud review process (Q10) | Business owner |
-| P9 | The customer payment step in customer-web: Stripe.js loaded from js.stripe.com, the Payment Element, CSP updates and the publishable key. It comes with the checkout page (identity, ADR 0008) | Engineering |
+| P9 | The customer payment step in customer-web: Stripe.js loaded from js.stripe.com, the Payment Element, CSP updates and the publishable key. It comes with the checkout page (identity, ADR 0008). **Built 2026-10-05, not yet run against Stripe:**
+- The Payment Element (cards only, manual capture, like the PaymentIntent) creates a ConfirmationToken in the browser, and our server confirms with it.
+- A 3-D Secure check is completed with `handleNextAction` and the same request repeated once under the same key; the server's answer decides the outcome.
+- The publishable key comes from `Integrations:Payments:Stripe:PublishableKey` (`pk_test_` only for now).
+- **To verify in P3:** the Elements options against the PaymentIntent's parameters, and 3DS with server-side confirmation.
+- **CSP:** customer-web sends none yet. The production CSP comes with hosting (Q2) and must follow Stripe's own CSP documentation at that time; this ADR does not fix the list | Engineering |
 | P10 | Live keys in Key Vault, and `IsProductionReady` switched on only after P1–P9 | Engineering, with business sign-off |
 
 ## Consequences

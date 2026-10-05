@@ -42,6 +42,10 @@ internal sealed partial class StripePaymentProvider(IHttpClientFactory httpClien
 
     public bool IsProductionReady => false;
 
+    // Customers enter their card in Stripe's Payment Element (ADR 0006, P9): it creates the payment method in the
+    // browser, and only its id reaches us.
+    public PaymentEntry Entry => new(PaymentEntryMode.Card, [], options.Value.PublishableKey);
+
     /// <summary>
     /// Stripe's search normally lags writes by under a minute, but can lag much more during incidents, so "not found" by
     /// our reference is concluded only after an hour (ADR 0006).

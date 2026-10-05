@@ -234,21 +234,29 @@
           <form class="step" (submit)="$event.preventDefault(); pay()" novalidate>
             <h2 #stepHeading tabindex="-1">Payment</h2>
             @if (entry(); as entry) {
-              @if (entry.mode === 'Test') {
-                <fieldset class="card traveller">
-                  <legend>Test payment (no real card is charged)</legend>
-                  @for (method of entry.testMethods; track method.token) {
-                    <label class="checkbox">
-                      <input
-                        type="radio"
-                        name="paymentMethod"
-                        [value]="method.token"
-                        [formControl]="paymentMethod"
-                      />
-                      {{ method.label }}
-                    </label>
-                  }
-                </fieldset>
+              @if (entry.mode === 'Test' || entry.mode === 'Card') {
+                @if (entry.mode === 'Test') {
+                  <fieldset class="card traveller">
+                    <legend>Test payment (no real card is charged)</legend>
+                    @for (method of entry.testMethods; track method.token) {
+                      <label class="checkbox">
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          [value]="method.token"
+                          [formControl]="paymentMethod"
+                        />
+                        {{ method.label }}
+                      </label>
+                    }
+                  </fieldset>
+                } @else {
+                  <fieldset class="card traveller">
+                    <legend>Card</legend>
+                    <!-- Stripe's Payment Element (ADR 0006): card data goes to Stripe only. -->
+                    <div #cardElement class="card-element"></div>
+                  </fieldset>
+                }
                 @if (priceChange(); as change) {
                   <div class="alert alert-warning" role="alert">
                     <p>
