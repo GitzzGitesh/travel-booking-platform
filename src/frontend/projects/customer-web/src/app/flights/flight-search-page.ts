@@ -19,7 +19,6 @@ import {
   ValidationErrors,
   Validators,
 } from '@angular/forms';
-import { DOCUMENT } from '@angular/common';
 import { Router } from '@angular/router';
 import {
   Api,
@@ -144,7 +143,6 @@ export class FlightSearchPage {
   /** Booking needs a signed-in customer (Q8): a confirmed price offers the booking, or the sign-in. */
   protected readonly session = inject(CustomerSession);
   private readonly router = inject(Router);
-  private readonly document = inject(DOCUMENT);
   protected readonly booking = signal<
     { kind: 'idle' | 'creating' } | { kind: 'error'; message: string }
   >({
@@ -427,7 +425,7 @@ export class FlightSearchPage {
 
   /** Starts the sign-in on the server; the customer comes back to the search and selects again (ADR 0028). */
   protected signIn(): void {
-    this.document.location.assign(this.session.signInUrl(this.router.url));
+    void this.session.signIn(this.router.url);
   }
 
   /**

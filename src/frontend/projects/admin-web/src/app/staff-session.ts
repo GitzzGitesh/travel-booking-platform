@@ -1,11 +1,18 @@
-import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { HttpClient, HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
+import { Injectable, computed, inject, isDevMode, signal } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { Api, getStaffSession, signOutStaff } from '@travel-booking/admin-api-client';
 import type { StaffSessionResponse } from '@travel-booking/admin-api-client';
-import { tap } from 'rxjs';
+import { firstValueFrom, tap } from 'rxjs';
 
 export type SessionState = 'loading' | 'signed-out' | 'signed-in' | 'unavailable';
+
+/**
+ * The local test staff member (ADR 0023, Development only): a fixed synthetic account. Its roles come from
+ * `Access:RoleAssignments` like anyone's (configured locally, never in Git); the Api accepts it only in Development
+ * with `Authentication:StaffSession:DevelopmentSignIn` = `true`.
+ */
+export const developmentStaffAccount = '0c0de000-0000-4000-8000-0000000000a1';
 
 /** The staff API's sign-in route (ADR 0023): the server runs the sign-in and sets an HttpOnly session cookie. */
 export const signInPath = '/api/admin/v1/session/sign-in';
@@ -17,6 +24,7 @@ export const signInPath = '/api/admin/v1/session/sign-in';
 @Injectable({ providedIn: 'root' })
 export class StaffSession {
   private readonly api = inject(Api);
+  private readonly http = inject(HttpClient);
   private readonly current = signal<StaffSessionResponse | null>(null);
   private loading: Promise<void> | null = null;
 
@@ -41,6 +49,27 @@ export class StaffSession {
   /** The URL that starts the sign-in, returning to this path afterwards (the server accepts local paths only). */
   signInUrl(returnUrl: string): string {
     return `${signInPath}?returnUrl=${encodeURIComponent(returnUrl)}`;
+  }
+
+  /**
+   * Development builds only: signs in as the local test staff member with the Api's Development stand-in, when the Api
+   * offers it (404 otherwise). False means: use the tenant's sign-in link as usual.
+   */
+  async developmentSignIn(): Promise<boolean> {
+    if (!isDevMode()) {
+      return false;
+    }
+    try {
+      await firstValueFrom(
+        this.http.post('/api/admin/v1/session/development-sign-in', {
+          objectId: developmentStaffAccount,
+        }),
+      );
+      await this.refresh();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async signOut(): Promise<void> {

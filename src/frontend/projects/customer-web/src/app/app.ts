@@ -1,4 +1,3 @@
-import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -25,7 +24,6 @@ export class App {
   protected readonly session = inject(CustomerSession);
   protected readonly signingOut = signal(false);
   private readonly router = inject(Router);
-  private readonly document = inject(DOCUMENT);
   protected readonly closeOnBackdropClick = closeOnBackdropClick;
 
   private readonly menu = viewChild.required<ElementRef<HTMLDialogElement>>('menu');
@@ -37,7 +35,7 @@ export class App {
 
   /** The server runs the sign-in (ADR 0028) and brings the customer back to this page. */
   protected signIn(): void {
-    this.document.location.assign(this.session.signInUrl(this.router.url));
+    void this.session.signIn(this.router.url);
   }
 
   protected async signOut(): Promise<void> {

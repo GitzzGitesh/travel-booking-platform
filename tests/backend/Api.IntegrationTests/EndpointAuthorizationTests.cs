@@ -92,6 +92,68 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
             .ShouldAllBe(e => !e.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(a => a.Policy != null && a.Policy.StartsWith("staff:")));
     }
 
+    // The Development stand-ins can never act outside Development (ADR 0023, ADR 0028): a well-formed session protected with
+    // the host's own keys is refused there when its issuer is the Development one. (Outside Development the routes are not
+    // even mapped yet; this checks the authentication itself, for when they are.)
+    [Theory]
+    [InlineData("Staging", "CustomerSession")]
+    [InlineData("Production", "CustomerSession")]
+    [InlineData("Staging", "StaffSession")]
+    [InlineData("Production", "StaffSession")]
+    public async Task A_development_session_never_authenticates_outside_development(string environment, string scheme)
+    {
+        var refusals = new RefusalLog();
+        using var host = factory.WithWebHostBuilder(b => b.UseEnvironment(environment)
+            .ConfigureServices(services => services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(refusals)));
+        var options = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>()
+            .Get(scheme);
+        var time = host.Services.GetRequiredService<TimeProvider>();
+        var (principal, properties) = scheme == TravelBooking.BuildingBlocks.Http.CustomerIdentity.SessionScheme
+            ? (TravelBooking.Modules.Customers.CustomerSessions.SessionPrincipal(TravelBooking.Modules.Customers.CustomerSessions.DevelopmentIssuer, Guid.NewGuid().ToString("D")),
+                TravelBooking.Modules.Customers.CustomerSessions.Start(time))
+            : (TravelBooking.Modules.Access.StaffSessions.SessionPrincipal(TravelBooking.Modules.Access.StaffSessions.DevelopmentIssuer, Guid.NewGuid().ToString("D")),
+                TravelBooking.Modules.Access.StaffSessions.Start(time));
+        var cookie = options.TicketDataFormat.Protect(new Microsoft.AspNetCore.Authentication.AuthenticationTicket(principal, properties, scheme));
+        using var scope = host.Services.CreateScope();
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        http.Request.Scheme = "https";
+        http.Request.Method = "GET";
+        http.Request.Headers.Cookie = $"{options.Cookie.Name}={cookie}";
+
+        var result = await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.AuthenticateAsync(http, scheme);
+
+        result.Succeeded.ShouldBeFalse();
+        // Refused by the Development-only rule itself (a readable, unexpired session), never by an unrelated failure.
+        refusals.Messages.ShouldContain(m => m.Contains("(session-invalid-session)", StringComparison.Ordinal));
+        refusals.Messages.ShouldNotContain(m => m.Contains("expired", StringComparison.Ordinal));
+    }
+
+    // The security log's refusals (the session handlers log one reason code each).
+    private sealed class RefusalLog : Microsoft.Extensions.Logging.ILoggerProvider, Microsoft.Extensions.Logging.ILogger
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> Messages { get; } = new();
+
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => this;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (eventId.Name is "CustomerSessionRefused" or "StaffTokenRefused")
+            {
+                Messages.Enqueue(formatter(state, exception));
+            }
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
     // The Development sign-in stand-ins (ADR 0023, ADR 0028) need both the Development environment and the setting, and
     // startup refuses the setting anywhere else.
     [Theory]
