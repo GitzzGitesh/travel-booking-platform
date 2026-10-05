@@ -1,14 +1,7 @@
 import { DOCUMENT } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  input,
-  isDevMode,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { StaffSession } from '../staff-session';
+import { DEVELOPMENT_BUILD, StaffSession } from '../staff-session';
 
 /** Sign-in (signed out) or the operations start page (signed in). */
 @Component({
@@ -55,6 +48,7 @@ import { StaffSession } from '../staff-session';
 export class Home {
   protected readonly session = inject(StaffSession);
   private readonly document = inject(DOCUMENT);
+  private readonly developmentBuild = inject(DEVELOPMENT_BUILD);
 
   /** Set by the server when a sign-in is refused (ADR 0023); the reason stays in the security log. */
   readonly signInResult = input<string | undefined>(undefined, { alias: 'sign-in' });
@@ -65,7 +59,7 @@ export class Home {
   // A development build signs in as the local test staff member when the Api offers it; otherwise the link's own
   // navigation starts the tenant's sign-in.
   protected async signIn(event: MouseEvent): Promise<void> {
-    if (!isDevMode()) {
+    if (!this.developmentBuild) {
       return;
     }
     event.preventDefault();

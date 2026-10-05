@@ -1,6 +1,14 @@
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
-import { Injectable, PLATFORM_ID, computed, inject, isDevMode, signal } from '@angular/core';
+import {
+  Injectable,
+  InjectionToken,
+  PLATFORM_ID,
+  computed,
+  inject,
+  isDevMode,
+  signal,
+} from '@angular/core';
 import { Api, getCustomerSession, signOutCustomer } from '@travel-booking/api-client';
 import { firstValueFrom, tap } from 'rxjs';
 
@@ -24,6 +32,12 @@ export const hintCookie = 'tb-customer-hint';
  */
 export const developmentCustomerAccount = '0c0de000-0000-4000-8000-00000000c001';
 
+/** Whether this build may use the Development stand-in: a development build (`ng serve`) only, never a production build. */
+export const DEVELOPMENT_BUILD = new InjectionToken<boolean>('customer-web development build', {
+  providedIn: 'root',
+  factory: () => isDevMode(),
+});
+
 /** Required by the server on unsafe requests made with the session cookie (ADR 0028). */
 export const csrfHeader = 'X-TB-Customer-Csrf';
 
@@ -38,6 +52,7 @@ export class CustomerSession {
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly document = inject(DOCUMENT);
   private readonly http = inject(HttpClient);
+  private readonly developmentBuild = inject(DEVELOPMENT_BUILD);
   private readonly current = signal<CustomerSessionState>({ kind: 'loading' });
   private loading: Promise<void> | null = null;
 
@@ -73,7 +88,7 @@ export class CustomerSession {
    * build only, with the Api's Development stand-in as the local test customer when the Api offers it.
    */
   async signIn(returnUrl: string): Promise<void> {
-    if (isDevMode() && (await this.developmentSignIn())) {
+    if (this.developmentBuild && (await this.developmentSignIn())) {
       this.document.location.assign(returnUrl);
       return;
     }
