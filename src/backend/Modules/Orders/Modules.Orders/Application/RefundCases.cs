@@ -13,7 +13,14 @@ internal interface IRefundCaseStore
 {
     void Add(RefundCase refundCase);
 
+    /// <summary>
+    /// Tracked, for a change. Load the case's order FIRST: an order load that retries (a torn read) clears the change
+    /// tracker, which would detach a case loaded before it, so its change would be lost while the rest is saved.
+    /// </summary>
     Task<RefundCase?> FindAsync(Guid caseId, CancellationToken cancellationToken);
+
+    /// <summary>Read-only: which order a case belongs to, before that order is loaded.</summary>
+    Task<RefundCase?> PeekAsync(Guid caseId, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<RefundCase>> FindForOrderAsync(Guid orderId, CancellationToken cancellationToken);
 
@@ -248,13 +255,18 @@ internal sealed partial class RefundCaseHandler(
             return (RefundCaseOutcome.Invalid, null);
         }
 
-        if (await cases.FindAsync(caseId, cancellationToken) is not { } refundCase)
+        // The order first, then the tracked case: an order load that retries clears the change tracker, and a case loaded
+        // before it would be detached, its decision lost while the timeline, audit and refund request were still saved.
+        if (await cases.PeekAsync(caseId, cancellationToken) is not { } peeked)
         {
             return (RefundCaseOutcome.NotFound, null);
         }
 
-        // Loaded before anything changes (a tracked load needs a clean unit of work), for the timeline entry.
-        var order = await orders.FindAsync(refundCase.OrderId, cancellationToken);
+        var order = await orders.FindAsync(peeked.OrderId, cancellationToken);
+        if (await cases.FindAsync(caseId, cancellationToken) is not { } refundCase)
+        {
+            return (RefundCaseOutcome.NotFound, null);
+        }
 
         if (!isChecker && !(refundCase.IsRequester(actor.StaffId, actor.Account) && !approve))
         {
@@ -315,10 +327,12 @@ internal sealed partial class PaymentRefundSettledHandler(IOrderStore orders, IR
         }
 
         var now = timeProvider.GetUtcNow();
-        if (await cases.FindAsync(integrationEvent.RefundId, cancellationToken) is { } refundCase)
+        // The order first, then the tracked case (see DecideAsync): a detached case would stay Approved for ever while
+        // this event was marked consumed.
+        if (await cases.PeekAsync(integrationEvent.RefundId, cancellationToken) is { } peeked
+            && await orders.FindAsync(peeked.OrderId, cancellationToken) is var order
+            && await cases.FindAsync(integrationEvent.RefundId, cancellationToken) is { } refundCase)
         {
-            // Loaded before anything changes (a tracked load needs a clean unit of work), for the timeline entry.
-            var order = await orders.FindAsync(refundCase.OrderId, cancellationToken);
             if (refundCase.Settle(integrationEvent.Succeeded, now))
             {
                 var outcome = integrationEvent.Succeeded ? "refunded" : "not refunded (the provider could not, or it was not possible)";

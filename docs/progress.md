@@ -206,6 +206,7 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - `PaymentRefundSettled` goes to Orders (the case becomes `Refunded` or `RefundFailed`) and to Notifications ("Your refund has been sent").
 - **Timeline and audit:** opening, deciding and settling a case are on the order timeline and in the audit log. `orders.watch-refund-cases` raises `RefundCaseOverdue` for an approved case not refunded within `Refunds:ExecutionTargetDays` (7).
 - **Runbook:** `refunds.md`. Failure scenarios F-40, F-41 and F-43 updated.
+- **Fixed later (2026-10-05):** a refund decision, and Payments' settled outcome, could lose the case's change while saving the timeline, audit and refund request, when their order load was retried (a concurrent change): the case was loaded first and detached by the retry. Both now load the order first, then the case; a regression test forces the retry. Money stayed safe (Payments refunds once per case id).
 - **Next:** Batch D (row 14).
 - **Pending:**
   - legal confirmation: consumer cancellation rights and refund timelines per market, and the disclosure of any fee;
