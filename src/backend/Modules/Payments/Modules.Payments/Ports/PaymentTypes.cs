@@ -245,13 +245,20 @@ public enum PaymentEntryMode
 
     /// <summary>A test provider: the customer picks one of its named test methods (Development and Staging only).</summary>
     Test,
+
+    /// <summary>
+    /// Card entry in the provider's own browser component (ADR 0006: Stripe's Payment Element), which creates the payment
+    /// method token; card data never reaches our servers.
+    /// </summary>
+    Card,
 }
 
 /// <summary>One test payment method: the provider's own token (never a card number) and what it does.</summary>
 public sealed record TestPaymentMethod(string Token, string Label);
 
 /// <summary>What customer-web offers for entering a payment method, as the provider declares it.</summary>
-public sealed record PaymentEntry(PaymentEntryMode Mode, IReadOnlyList<TestPaymentMethod> TestMethods)
+/// <param name="PublishableKey">The provider's publishable (browser) key, for <see cref="PaymentEntryMode.Card"/>: never a secret.</param>
+public sealed record PaymentEntry(PaymentEntryMode Mode, IReadOnlyList<TestPaymentMethod> TestMethods, string? PublishableKey = null)
 {
     public static PaymentEntry Unavailable { get; } = new(PaymentEntryMode.Unavailable, []);
 }

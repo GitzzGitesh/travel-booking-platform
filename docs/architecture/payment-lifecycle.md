@@ -115,6 +115,11 @@ Invariants:
 - The mock (Development and Staging only) declares **Test**, with named test methods (its own tokens, never card numbers): approved, declined, and a slow answer that is then approved (PaymentPending, repeated with the same key).
 - Stripe stays Unavailable until ADR 0006 is accepted and the Payment Element is built; it will then declare its mode and publishable key.
 
+**Card entry (ADR 0006, P9).** With Stripe, the entry is `Card` with the publishable key.
+1. customer-web loads Stripe.js from js.stripe.com (never bundled) and mounts the Payment Element: cards only and manual capture, like the PaymentIntent the server creates. Its amount is for display only (updated when a new price is accepted); the server charges its own.
+2. On Pay, Stripe validates the card and creates a ConfirmationToken in the browser. Only its id reaches our checkout.
+3. If the server answers ActionRequired, the page completes the bank's check with `handleNextAction` and the client secret, then repeats the same request once under the same key. The server learns the result from Stripe, never from the browser, and its answer decides (booked, declined, or a check still to complete). The check is never offered twice in one Pay, also not while polling a pending payment.
+
 **customer-web checkout keys.** One `Idempotency-Key` per payment attempt, generated in the browser with its payment method and kept in session storage until the outcome is final, so a reload resumes the same attempt.
 - **Kept (the same attempt):**
   - while the payment is pending;

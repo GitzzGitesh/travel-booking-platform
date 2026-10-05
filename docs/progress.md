@@ -263,6 +263,22 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **A retried order load no longer clears the whole unit of work.** It detaches only that order's torn copy (the order, its items and timeline), so a refund case or cancellation request loaded before the order stays tracked and its change is saved. This closes the class of bug fixed in the refund handlers (row 13); loading the order first stays as defence in depth.
 - **An order that keeps changing during a read** (`OrderKeptChangingException`, after five consistent-read attempts, nothing saved) is now a **503** with a generic Problem Details, through a shared `TryAgainException`, instead of a 500. Checkout already answered it itself.
 - **Tests:** a case loaded before its order survives a forced retry (this test fails with the old clear-everything behaviour), and the 503 mapping. |
+| 20 | **Business decisions and the card payment step (ADR 0006 accepted)** | **Done in code; live payments need external items.**
+- **Decisions (2026-10-05, Claude, delegated by the project owner; revisitable, in `docs/requirements/open-questions.md`):**
+  - ADR 0006 accepted (Stripe, server-confirmed);
+  - Q2 markets and Q5 currencies as recorded in ADR 0006;
+  - hotels (Q1) and flight + hotel packages (Q7) out of the launch scope;
+  - email support at launch (Q12);
+  - groups and child-only bookings not sold online (Q13).
+- **Card payment step (ADR 0006, P9):**
+  - The Stripe adapter declares card entry with its publishable key (`PublishableKey`, `pk_test_` only, refused otherwise), and `GET /api/v1/payments/entry` returns it.
+  - customer-web loads Stripe.js from js.stripe.com, mounts the Payment Element and pays with the payment method id Stripe creates. It completes a 3-D Secure check with `handleNextAction` and repeats the request once under the same key.
+  - The mock's test methods are unchanged.
+- **External, still open:**
+  - the merchant entity (Q14, P1);
+  - Stripe's approval (P2) and test-mode keys (P3), which are needed to run the card step against Stripe;
+  - the production CSP and webhook endpoint with hosting (Q2, P4);
+  - live keys (P10). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

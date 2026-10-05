@@ -39,6 +39,7 @@ import {
 import { CustomerSession } from '../customer-session';
 import { formatMoney } from '../flights/flight-format';
 import { orderStatusLabel } from './order-status';
+import { STRIPE_JS, minorUnits, type StripeElements, type StripeJs } from './stripe';
 
 /** Mirrors the API's rules (OrderTravellerSet, TravelDocument); the server remains the authority. */
 const latinName = /^[A-Za-z][A-Za-z '-]{0,59}$/;
@@ -102,6 +103,12 @@ export class BookingPage {
   protected readonly busy = signal(false);
   protected readonly message = signal<Message | null>(null);
   protected readonly entry = signal<PaymentEntryResponse | null>(null);
+  // Card entry (ADR 0006): Stripe's Payment Element, loaded from js.stripe.com when the payment step shows.
+  private readonly stripeJs = inject(STRIPE_JS);
+  private readonly cardElement = viewChild<ElementRef<HTMLElement>>('cardElement');
+  private stripe: StripeJs | null = null;
+  private elements: StripeElements | null = null;
+  private cardMount: { destroy(): void } | null = null;
   protected readonly paymentMethod = new FormControl('', {
     nonNullable: true,
     validators: [Validators.required],
@@ -280,15 +287,86 @@ export class BookingPage {
 
   /** Pays with the chosen method; the server books, and charges only what the airline confirmed. */
   protected async pay(): Promise<void> {
-    if (this.busy() || this.paymentMethod.invalid) {
+    const card = this.entry()?.mode === 'Card';
+    if (this.busy() || (!card && this.paymentMethod.invalid)) {
       this.paymentMethod.markAsTouched();
       return;
     }
     if (this.priceChange()) {
       return; // the new price is accepted first
     }
-    const key = this.attemptKey(); // before any await: a double click sends one attempt
-    await this.act(() => this.checkout(key, 0));
+    if (!card) {
+      const key = this.attemptKey(); // before any await: a double click sends one attempt
+      await this.act(() => this.checkout(key, 0));
+      return;
+    }
+    // act() marks the page busy at once, so a double click sends one attempt here too.
+    await this.act(async () => {
+      const unfinished = this.storedAttempt();
+      if (unfinished) {
+        this.paymentMethod.setValue(unfinished.token); // an attempt still under way: continue it, never a second card payment
+      } else if (!(await this.createCardToken())) {
+        return;
+      }
+      await this.checkout(this.attemptKey(), 0);
+    });
+  }
+
+  // Stripe validates the card and creates a ConfirmationToken in the browser; only its id comes to us (ADR 0006).
+  private async createCardToken(): Promise<boolean> {
+    if (!this.stripe || !this.elements) {
+      this.message.set({
+        tone: 'error',
+        text: 'Card payment is still loading. Please try again in a moment.',
+      });
+      return false;
+    }
+    const submitted = await this.elements.submit();
+    if (submitted.error) {
+      this.message.set({
+        tone: 'error',
+        text: submitted.error.message ?? 'Check your card details.',
+      });
+      return false;
+    }
+    const created = await this.stripe.createConfirmationToken({ elements: this.elements });
+    if (created.error || !created.confirmationToken) {
+      this.message.set({
+        tone: 'error',
+        text: created.error?.message ?? 'Check your card details.',
+      });
+      return false;
+    }
+    this.paymentMethod.setValue(created.confirmationToken.id);
+    return true;
+  }
+
+  // The Payment Element, once per visit of the payment step, sized to the server's price (for display only).
+  private async mountCard(): Promise<void> {
+    const entry = this.entry();
+    const price = this.price();
+    const container = this.cardElement()?.nativeElement;
+    if (entry?.mode !== 'Card' || !entry.publishableKey || !price || !container || this.cardMount) {
+      return;
+    }
+    try {
+      this.stripe ??= await this.stripeJs(entry.publishableKey);
+      this.elements = this.stripe.elements({
+        mode: 'payment',
+        amount: minorUnits(price.amount),
+        currency: price.currency.toLowerCase(),
+        captureMethod: 'manual',
+        paymentMethodTypes: ['card'], // like the PaymentIntent: cards only (manual capture), never a wallet the server refuses
+      });
+      const element = this.elements.create('payment');
+      element.mount(container);
+      this.cardMount = element;
+    } catch {
+      this.message.set({
+        tone: 'error',
+        text: 'Card payment could not be loaded. Please try again shortly.',
+      });
+    }
   }
 
   /** Accepts the new price the airline quoted (F-01); then the customer pays it. */
@@ -305,6 +383,10 @@ export class BookingPage {
       });
       this.confirmedPrice.set(confirmed.totalPrice);
       this.priceChange.set(null);
+      this.elements?.update({
+        amount: minorUnits(confirmed.totalPrice.amount),
+        currency: confirmed.totalPrice.currency.toLowerCase(),
+      });
       this.message.set({
         tone: 'info',
         text: `New price accepted: ${formatMoney(confirmed.totalPrice)}. You can pay now.`,
@@ -359,7 +441,7 @@ export class BookingPage {
     }
   }
 
-  private async checkout(key: string, attempt: number): Promise<void> {
+  private async checkout(key: string, attempt: number, challenged = false): Promise<void> {
     // 200 with the outcome, or 202 while it is being settled: the same body either way.
     const result: CheckoutResponse = await this.api.invoke(checkoutOrder, {
       orderId: this.orderId,
@@ -387,7 +469,7 @@ export class BookingPage {
         if (attempt + 1 < pollAttempts && !this.destroyed()) {
           this.message.set({ tone: 'info', text: 'We are confirming your payment…' });
           await delay(pollEvery);
-          await this.checkout(key, attempt + 1);
+          await this.checkout(key, attempt + 1, challenged); // a challenge is offered once, never again by polling
         } else {
           this.message.set({
             tone: 'info',
@@ -412,7 +494,19 @@ export class BookingPage {
         return;
       case 'ActionRequired':
         // The same attempt continues after the bank's check (the same key): never "try another card", which the
-        // server holds back while this attempt is live.
+        // server holds back while this attempt is live. With card entry, the customer completes the check with
+        // Stripe, and the same request is repeated once: the server learns the result from Stripe, never from us.
+        if (!challenged && result.customerAction && this.entry()?.mode === 'Card') {
+          const stripe = await this.stripeFor();
+          if (stripe) {
+            this.message.set({ tone: 'info', text: 'Your bank asks you to confirm this payment…' });
+            // Whatever the check's result, the same request once more: the server asks Stripe and answers (declined,
+            // booked, or a check still to complete), never the browser.
+            await stripe.handleNextAction({ clientSecret: result.customerAction });
+            await this.checkout(key, attempt + 1, true);
+            return;
+          }
+        }
         this.message.set({
           tone: 'error',
           text: 'Your bank asks for an extra check that this page cannot complete yet. Nothing has been charged. Please contact support.',
@@ -489,6 +583,9 @@ export class BookingPage {
         this.endAttempt();
         await this.reload();
         return 'This booking can no longer be paid for.';
+      case 'invalid-payment-method':
+        this.endAttempt();
+        return problem.title ?? 'This payment method cannot be used.';
       case 'idempotency-conflict':
         this.endAttempt();
         return 'This payment changed while it was being sent. Please pay again.';
@@ -529,7 +626,29 @@ export class BookingPage {
 
   private goTo(step: Step): void {
     this.step.set(step);
-    afterNextRender(() => this.stepHeading()?.nativeElement.focus(), { injector: this.injector });
+    if (step === 'travellers') {
+      this.cardMount?.destroy(); // its container leaves the page; mounted again on the payment step
+      this.cardMount = null;
+    }
+    afterNextRender(
+      () => {
+        this.stepHeading()?.nativeElement.focus();
+        if (step === 'payment') {
+          void this.mountCard();
+        }
+      },
+      { injector: this.injector },
+    );
+  }
+
+  private async stripeFor(): Promise<StripeJs | null> {
+    const key = this.entry()?.publishableKey;
+    try {
+      this.stripe ??= key ? await this.stripeJs(key) : null;
+    } catch {
+      this.stripe = null;
+    }
+    return this.stripe;
   }
 
   private async load(): Promise<void> {
