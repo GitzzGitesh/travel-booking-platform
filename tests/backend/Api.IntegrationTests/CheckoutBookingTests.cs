@@ -222,6 +222,47 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         (await LoadOrder(order)).Timeline.ShouldContain(e => e.Reason.Contains($"Refund case {caseId:N} refunded", StringComparison.Ordinal));
     }
 
+    // A retried order load detaches only the order's own torn copy: a case the caller loaded BEFORE the order stays
+    // tracked, and its change is saved (the class of bug fixed in the refund handlers can no longer lose a change).
+    [Fact]
+    public async Task A_retried_order_load_keeps_what_was_loaded_before_it_tracked()
+    {
+        var (order, _) = await CapturedOrder();
+        using var opened = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations),
+            new { kind = "Goodwill", amount = "5", reason = "TICKET-901" }, NewKey());
+        var caseId = (await Read(opened)).GetProperty("caseId").GetGuid();
+        var interceptor = new CommitBeforeItemsQuery(async () =>
+        {
+            using var scope = api.Services.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
+            var concurrent = (await store.FindAsync(order, Ct))!;
+            concurrent.NoteRefund([], "A concurrent change", new TransitionContext(api.Clock.GetUtcNow(), "test", null), null);
+            (await store.TrySaveAsync(Ct)).ShouldBeTrue();
+        });
+        using var services = api.Services.CreateScope();
+        var options = services.ServiceProvider.GetRequiredService<DbContextOptions<OrdersDbContext>>();
+        await using var db = new OrdersDbContext(new DbContextOptionsBuilder<OrdersDbContext>(options).AddInterceptors(interceptor).Options);
+        var orders = new SqlOrderStore(db);
+
+        var refundCase = (await new SqlRefundCaseStore(db).FindAsync(caseId, Ct))!; // the case first, on purpose
+        var loaded = (await orders.FindAsync(order, Ct))!;                           // then the order, read twice
+
+        interceptor.Fired.ShouldBeTrue();
+        db.Entry(refundCase).State.ShouldBe(EntityState.Unchanged); // still tracked
+        // Nothing of the torn first read is left tracked: exactly the reloaded order, its items and their owned values.
+        db.ChangeTracker.Entries<Order>().ShouldHaveSingleItem().Entity.ShouldBeSameAs(loaded);
+        db.ChangeTracker.Entries<FlightOrderItem>().Select(e => e.Entity).ShouldBe(loaded.Items, ignoreOrder: true);
+        var owned = db.ChangeTracker.Entries().Where(e => e.Metadata.IsOwned()).Select(e => e.Entity).ToList();
+        owned.ShouldNotBeEmpty(); // the items' traveller needs (owned)
+        owned.ShouldAllBe(o => loaded.Items.Any(i => ReferenceEquals(i.TravellerNeeds, o)));
+        refundCase.Approve("finance-901", "account-finance-901", "TICKET-901 checked", api.Clock.GetUtcNow()).ShouldBeNull();
+        loaded.NoteRefund([], "Approved in the same unit of work", new TransitionContext(api.Clock.GetUtcNow(), "test", null), null);
+        (await orders.TrySaveAsync(Ct)).ShouldBeTrue();
+        using var check = api.Services.CreateScope();
+        (await check.ServiceProvider.GetRequiredService<OrdersDbContext>().Set<RefundCase>().AsNoTracking().SingleAsync(c => c.Id == caseId, Ct))
+            .Status.ShouldBe(RefundCaseStatus.Approved);
+    }
+
     private sealed class CommitBeforeItemsQuery(Func<Task> change, bool everyTime = false) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
     {
         public bool Fired { get; private set; }

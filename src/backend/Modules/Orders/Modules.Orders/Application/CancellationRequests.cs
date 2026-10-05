@@ -8,7 +8,7 @@ internal interface ICancellationRequestStore
 {
     void Add(CancellationRequest request);
 
-    /// <summary>Tracked, for a change. Load the order first: an order load that retries clears the change tracker.</summary>
+    /// <summary>Tracked, for a change. Load the order first (defence in depth: a retried order load detaches only the order's own copy).</summary>
     Task<CancellationRequest?> FindAsync(Guid requestId, CancellationToken cancellationToken);
 
     /// <summary>Read-only: which order a request belongs to, before the order is loaded.</summary>
@@ -110,7 +110,7 @@ internal sealed class CancellationRequestHandler(IOrderStore orders, ICancellati
         Guid orderId, Guid requestId, string customerId, string? correlationId, CancellationToken cancellationToken)
     {
         // The request must belong to this customer AND to the order named: nothing changes otherwise. The order is loaded
-        // before the tracked request (an order load that retries clears the change tracker).
+        // before the tracked request (defence in depth).
         if (await requests.PeekAsync(requestId, cancellationToken) is not { } peeked || peeked.CustomerId != customerId || peeked.OrderId != orderId
             || await orders.FindOwnedAsync(orderId, customerId, cancellationToken) is not { } order
             || await requests.FindAsync(requestId, cancellationToken) is not { } request)

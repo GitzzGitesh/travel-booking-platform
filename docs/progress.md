@@ -259,6 +259,10 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - a Development-issued session never authenticates in Staging or Production, even when made with the host's own keys (new test, for customers and staff);
   - outside Development the routes are not mapped yet either.
 - **How to:** CLAUDE.md (Dev server) and `docs/runbooks/staff-access.md`. |
+| 19 | **Hardening: torn order reads** | **Done.**
+- **A retried order load no longer clears the whole unit of work.** It detaches only that order's torn copy (the order, its items and timeline), so a refund case or cancellation request loaded before the order stays tracked and its change is saved. This closes the class of bug fixed in the refund handlers (row 13); loading the order first stays as defence in depth.
+- **An order that keeps changing during a read** (`OrderKeptChangingException`, after five consistent-read attempts, nothing saved) is now a **503** with a generic Problem Details, through a shared `TryAgainException`, instead of a 500. Checkout already answered it itself.
+- **Tests:** a case loaded before its order survives a forced retry (this test fails with the old clear-everything behaviour), and the 503 mapping. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.
