@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
-import { Injectable, computed, inject, isDevMode, signal } from '@angular/core';
+import { Injectable, InjectionToken, computed, inject, isDevMode, signal } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { Api, getStaffSession, signOutStaff } from '@travel-booking/admin-api-client';
 import type { StaffSessionResponse } from '@travel-booking/admin-api-client';
@@ -14,6 +14,12 @@ export type SessionState = 'loading' | 'signed-out' | 'signed-in' | 'unavailable
  */
 export const developmentStaffAccount = '0c0de000-0000-4000-8000-0000000000a1';
 
+/** Whether this build may use the Development stand-in: a development build (`ng serve`) only, never a production build. */
+export const DEVELOPMENT_BUILD = new InjectionToken<boolean>('admin-web development build', {
+  providedIn: 'root',
+  factory: () => isDevMode(),
+});
+
 /** The staff API's sign-in route (ADR 0023): the server runs the sign-in and sets an HttpOnly session cookie. */
 export const signInPath = '/api/admin/v1/session/sign-in';
 
@@ -25,6 +31,7 @@ export const signInPath = '/api/admin/v1/session/sign-in';
 export class StaffSession {
   private readonly api = inject(Api);
   private readonly http = inject(HttpClient);
+  private readonly developmentBuild = inject(DEVELOPMENT_BUILD);
   private readonly current = signal<StaffSessionResponse | null>(null);
   private loading: Promise<void> | null = null;
 
@@ -56,7 +63,7 @@ export class StaffSession {
    * offers it (404 otherwise). False means: use the tenant's sign-in link as usual.
    */
   async developmentSignIn(): Promise<boolean> {
-    if (!isDevMode()) {
+    if (!this.developmentBuild) {
       return false;
     }
     try {
