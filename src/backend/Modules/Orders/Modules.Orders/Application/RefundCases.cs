@@ -14,8 +14,8 @@ internal interface IRefundCaseStore
     void Add(RefundCase refundCase);
 
     /// <summary>
-    /// Tracked, for a change. Load the case's order FIRST: an order load that retries (a torn read) clears the change
-    /// tracker, which would detach a case loaded before it, so its change would be lost while the rest is saved.
+    /// Tracked, for a change. Load the case's order first anyway (defence in depth): a retried order load detaches only
+    /// the order's own copy, so a case loaded before it stays tracked.
     /// </summary>
     Task<RefundCase?> FindAsync(Guid caseId, CancellationToken cancellationToken);
 
@@ -255,8 +255,8 @@ internal sealed partial class RefundCaseHandler(
             return (RefundCaseOutcome.Invalid, null);
         }
 
-        // The order first, then the tracked case: an order load that retries clears the change tracker, and a case loaded
-        // before it would be detached, its decision lost while the timeline, audit and refund request were still saved.
+        // The order first, then the tracked case (defence in depth: a retried order load detaches only the order's own copy;
+        // before that change it cleared everything, and a case loaded first lost its decision while the rest was saved).
         if (await cases.PeekAsync(caseId, cancellationToken) is not { } peeked)
         {
             return (RefundCaseOutcome.NotFound, null);

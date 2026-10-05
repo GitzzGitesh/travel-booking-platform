@@ -112,9 +112,32 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
     // which a duplicate checkout then refuses as not payable. Every change rewrites the order row (Order.Revision), so a
     // load counts only when the order's rowversion is the same before and after it; otherwise it is repeated. A commit
     // after that is caught by the rowversion check when saving.
+    // Detaches this order's own torn copy (the order, its items with their owned values, and its timeline) before reading
+    // it again: never the rest of the unit of work, so a case or request the caller loaded before the order stays tracked
+    // and its change is saved.
+    private void Forget(Guid orderId)
+    {
+        var entries = db.ChangeTracker.Entries().ToList();
+        var graph = entries.Where(e => e.Entity switch
+        {
+            Order order => order.Id == orderId,
+            FlightOrderItem => e.Property("OrderId").CurrentValue is Guid owner && owner == orderId,
+            OrderTimelineEntry timeline => timeline.OrderId == orderId,
+            _ => false,
+        }).ToList();
+        var itemIds = graph.Select(e => e.Entity).OfType<FlightOrderItem>().Select(i => i.Id).ToHashSet();
+        var owned = entries.Where(e => e.Metadata.IsOwned() && e.Metadata.FindOwnership() is { } ownership
+            && ownership.Properties.Any(p => e.Property(p.Name).CurrentValue is Guid owner && itemIds.Contains(owner)));
+        foreach (var entry in owned.Concat(graph).ToList())
+        {
+            entry.State = EntityState.Detached;
+        }
+    }
+
     private async Task<Order?> LoadAsync(Expression<Func<Order, bool>> predicate, bool tracked, CancellationToken cancellationToken)
     {
-        // A repeated tracked load clears the unit of work, so it must not hold anything unsaved (IOrderStore remarks).
+        // A repeated tracked load detaches this order's torn copy, so the unit of work must not hold anything unsaved
+        // (IOrderStore remarks): changes made before the load could otherwise be lost with it.
         if (tracked && db.ChangeTracker.HasChanges())
         {
             throw new InvalidOperationException("Load the order before changing anything in this unit of work.");
@@ -137,7 +160,7 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
 
             if (tracked)
             {
-                db.ChangeTracker.Clear();
+                Forget(before.Id);
             }
 
             if (attempt == MaxLoadAttempts)

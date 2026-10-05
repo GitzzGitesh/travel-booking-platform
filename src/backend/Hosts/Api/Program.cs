@@ -24,6 +24,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<TravelBooking.Api.TryAgainExceptionHandler>(); // 503 try-again: nothing changed, repeat it
 // Numbers must be JSON numbers: the web default also accepts numeric strings, which loosens input validation
 // and the API contract. Money amounts are explicit strings by design (api-design rules). Enums are strings.
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -112,7 +113,8 @@ if (!app.Environment.IsDevelopment())
 }
 
 // Malformed requests (invalid JSON, wrong types, oversized bodies) are client errors in every environment,
-// not 500s. Everything else stays a generic 500 ProblemDetails without exception details.
+// not 500s. A request that changed nothing and can simply be repeated is a 503 try-again (TryAgainExceptionHandler).
+// Everything else stays a generic 500 ProblemDetails without exception details.
 app.UseExceptionHandler(new ExceptionHandlerOptions
 {
     StatusCodeSelector = exception => exception is BadHttpRequestException badRequest

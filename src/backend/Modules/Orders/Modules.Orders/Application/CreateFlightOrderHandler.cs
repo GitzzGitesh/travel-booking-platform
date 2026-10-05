@@ -10,7 +10,7 @@ namespace TravelBooking.Modules.Orders.Application;
 /// The order kept changing while it was being read, so no consistent copy could be loaded (it is read again a few times
 /// first). Nothing was changed: the caller may answer "try again", and must not decide anything from a partial read.
 /// </summary>
-internal sealed class OrderKeptChangingException(Guid orderId) : Exception($"Order {orderId} kept changing while it was being loaded.")
+internal sealed class OrderKeptChangingException(Guid orderId) : BuildingBlocks.TryAgainException($"Order {orderId} kept changing while it was being loaded.")
 {
     public Guid OrderId { get; } = orderId;
 }
