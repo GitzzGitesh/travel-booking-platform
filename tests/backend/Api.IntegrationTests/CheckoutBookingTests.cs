@@ -150,6 +150,78 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
     }
 
     // Commits a change just before an items query runs (after the order row was read, before its items): once, or every time.
+    // ADR 0027: a decision whose order load is retried (another change committed meanwhile) keeps its case tracked: the
+    // case is loaded after the order, so its decision is saved with the refund request, never lost while the rest is saved.
+    [Fact]
+    public async Task A_refund_decision_while_the_order_changes_is_saved_whole_never_half()
+    {
+        var (order, _) = await CapturedOrder();
+        using var opened = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations),
+            new { kind = "Goodwill", amount = "5", reason = "TICKET-801" }, NewKey());
+        var caseId = (await Read(opened)).GetProperty("caseId").GetGuid();
+        var interceptor = new CommitBeforeItemsQuery(async () =>
+        {
+            using var scope = api.Services.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
+            var concurrent = (await store.FindAsync(order, Ct))!;
+            concurrent.NoteRefund([], "A concurrent change", new TransitionContext(api.Clock.GetUtcNow(), "test", null), null);
+            (await store.TrySaveAsync(Ct)).ShouldBeTrue();
+        });
+        using var services = api.Services.CreateScope();
+        var options = services.ServiceProvider.GetRequiredService<DbContextOptions<OrdersDbContext>>();
+        await using var db = new OrdersDbContext(new DbContextOptionsBuilder<OrdersDbContext>(options).AddInterceptors(interceptor).Options);
+        var handler = new RefundCaseHandler(new SqlOrderStore(db), new SqlRefundCaseStore(db), new SqlCancellationRequestStore(db),
+            services.ServiceProvider.GetRequiredService<TravelBooking.Modules.Payments.Contracts.IOrderPayments>(), services.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<RefundOptions>>(),
+            api.Clock, Microsoft.Extensions.Logging.Abstractions.NullLogger<RefundCaseHandler>.Instance);
+
+        var (outcome, _) = await handler.DecideAsync(caseId, approve: true, "TICKET-801 checked", new RefundActor("finance-801", "account-finance-801"),
+            isChecker: true, new TravelBooking.BuildingBlocks.Audit.AuditSource("trace-801", null, null), Ct);
+
+        interceptor.Fired.ShouldBeTrue();
+        outcome.ShouldBe(RefundCaseOutcome.Done);
+        using var check = api.Services.CreateScope();
+        var stored = await check.ServiceProvider.GetRequiredService<OrdersDbContext>().Set<RefundCase>().AsNoTracking().SingleAsync(c => c.Id == caseId, Ct);
+        stored.Status.ShouldBe(RefundCaseStatus.Approved); // the decision itself is saved, with its refund request
+        (await CountOutbox(order, "OrderRefundRequested")).ShouldBe(1);
+    }
+
+    // ADR 0027: Payments' outcome settles the case even when its order load is retried; never "consumed" with the case
+    // left Approved (the event would not come again).
+    [Fact]
+    public async Task A_refund_outcome_while_the_order_changes_settles_the_case_with_its_inbox_mark()
+    {
+        var (order, price) = await CapturedOrder();
+        using var opened = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", Staff(TestStaffTokens.Operations),
+            new { kind = "Goodwill", amount = "5", reason = "TICKET-802" }, NewKey());
+        var caseId = (await Read(opened)).GetProperty("caseId").GetGuid();
+        (await Send(HttpMethod.Post, $"/api/admin/v1/refund-cases/{caseId}/decision", Staff(TestStaffTokens.Finance),
+            new { approve = true, reason = "TICKET-802 checked" })).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var interceptor = new CommitBeforeItemsQuery(async () =>
+        {
+            using var scope = api.Services.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
+            var concurrent = (await store.FindAsync(order, Ct))!;
+            concurrent.NoteRefund([], "A concurrent change", new TransitionContext(api.Clock.GetUtcNow(), "test", null), null);
+            (await store.TrySaveAsync(Ct)).ShouldBeTrue();
+        });
+        using var services = api.Services.CreateScope();
+        var options = services.ServiceProvider.GetRequiredService<DbContextOptions<OrdersDbContext>>();
+        await using var db = new OrdersDbContext(new DbContextOptionsBuilder<OrdersDbContext>(options).AddInterceptors(interceptor).Options);
+        var handler = new TravelBooking.Modules.Orders.Application.PaymentRefundSettledHandler(new SqlOrderStore(db), new SqlRefundCaseStore(db), api.Clock,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TravelBooking.Modules.Orders.Application.PaymentRefundSettledHandler>.Instance);
+        var settled = new TravelBooking.Modules.Payments.Contracts.PaymentRefundSettled(Guid.NewGuid(), api.Clock.GetUtcNow(), order, Guid.NewGuid(), caseId,
+            new Money(5m, price.Currency), Succeeded: true, "trace-802");
+
+        await handler.HandleAsync(settled, Ct);
+
+        interceptor.Fired.ShouldBeTrue();
+        using var check = api.Services.CreateScope();
+        var orders = check.ServiceProvider.GetRequiredService<OrdersDbContext>();
+        (await orders.Set<RefundCase>().AsNoTracking().SingleAsync(c => c.Id == caseId, Ct)).Status.ShouldBe(RefundCaseStatus.Refunded);
+        (await orders.Set<InboxMessage>().AsNoTracking().CountAsync(m => m.MessageId == settled.EventId, Ct)).ShouldBe(1);
+        (await LoadOrder(order)).Timeline.ShouldContain(e => e.Reason.Contains($"Refund case {caseId:N} refunded", StringComparison.Ordinal));
+    }
+
     private sealed class CommitBeforeItemsQuery(Func<Task> change, bool everyTime = false) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
     {
         public bool Fired { get; private set; }

@@ -158,6 +158,9 @@ internal sealed class SqlRefundCaseStore(OrdersDbContext db) : IRefundCaseStore
     public Task<RefundCase?> FindAsync(Guid caseId, CancellationToken cancellationToken) =>
         db.Set<RefundCase>().SingleOrDefaultAsync(r => r.Id == caseId, cancellationToken);
 
+    public Task<RefundCase?> PeekAsync(Guid caseId, CancellationToken cancellationToken) =>
+        db.Set<RefundCase>().AsNoTracking().SingleOrDefaultAsync(r => r.Id == caseId, cancellationToken);
+
     public async Task<IReadOnlyList<RefundCase>> FindForOrderAsync(Guid orderId, CancellationToken cancellationToken) =>
         await db.Set<RefundCase>().AsNoTracking().Where(r => r.OrderId == orderId).OrderBy(r => r.RequestedAt).ToListAsync(cancellationToken);
 
