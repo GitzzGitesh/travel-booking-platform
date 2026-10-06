@@ -26,6 +26,23 @@ public interface IHotelProvider
     /// replaces the one revalidated for every later operation.
     /// </summary>
     Task<Result<HotelOffer, ProviderError>> RevalidateAsync(HotelOfferRef offer, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Books the offer under OUR client reference. A WRITE: never retried blindly (booking rules). Adapters MUST
+    /// guarantee at most one booking per client reference: by the supplier's own idempotency where it has it, otherwise
+    /// by looking the reference up before booking. A repeat returns the existing booking or an error, never a second one.
+    /// Failures are RETURNED, never thrown. Only <see cref="ProviderErrorKind.Rejected"/>,
+    /// <see cref="ProviderErrorKind.PriceChanged"/>, <see cref="ProviderErrorKind.SoldOut"/>,
+    /// <see cref="ProviderErrorKind.OfferExpired"/> and <see cref="ProviderErrorKind.InvalidRequest"/> mean the supplier
+    /// definitely did not book; anything else is an unknown outcome, settled by <see cref="RetrieveBookingAsync"/>.
+    /// </summary>
+    Task<Result<HotelBookingConfirmation, ProviderError>> BookAsync(HotelBookingDetails details, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Looks a booking up by OUR reference: mandatory for reconciliation. An idempotent read. "Not found" is a success
+    /// without a booking; an error means the answer is still unknown.
+    /// </summary>
+    Task<Result<HotelBookingLookup, ProviderError>> RetrieveBookingAsync(string clientReference, CancellationToken cancellationToken);
 }
 
 /// <summary>A provider's opaque offer token, with the provider that issued it. The core stores it verbatim and never parses it.</summary>
@@ -35,7 +52,8 @@ public sealed record HotelOfferRef(string ProviderId, string Value);
 public sealed record HotelSearchResult(IReadOnlyList<HotelOffer> Offers);
 
 /// <summary>
-/// One room for a stay (ADR 0030: one room per booking at launch). The destination is an IATA city code; check-in and
+/// One room for a stay (ADR 0030: one room per booking at launch), with each child's age at check-out (the date traveller
+/// details are checked against). The destination is an IATA city code; check-in and
 /// check-out are the property's local dates.
 /// </summary>
 public sealed record HotelSearchCriteria(string Destination, DateOnly CheckIn, DateOnly CheckOut, int Adults, IReadOnlyList<int> ChildAges)

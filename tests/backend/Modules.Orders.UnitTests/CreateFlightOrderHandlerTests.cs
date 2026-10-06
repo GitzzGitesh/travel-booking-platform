@@ -73,7 +73,7 @@ public sealed class CreateFlightOrderHandlerTests
         var someoneElse = await Handler(store).HandleAsync(Command("key-1", customer: "cust-2"), TestContext.Current.CancellationToken);
 
         // The selection is cust-1's: for anyone else it is simply not found, whether ordered or not.
-        someoneElse.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(FlightSelectionUnavailable.NotFound));
+        someoneElse.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(ItemUnavailable.NotFound));
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class CreateFlightOrderHandlerTests
 
         var result = await Handler(store, new StubSelections(reason)).HandleAsync(Command("key-1"), TestContext.Current.CancellationToken);
 
-        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(reason));
+        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(Enum.Parse<ItemUnavailable>(reason.ToString())));
         store.Orders.ShouldBeEmpty();
     }
 
@@ -141,7 +141,7 @@ public sealed class CreateFlightOrderHandlerTests
     private static CreateFlightOrder Command(string key, string customer = "cust-1") => new(customer, key, _selection, "trace-0");
 
     private static CreateFlightOrderHandler Handler(FakeStore store, IFlightSelections? selections = null) =>
-        new(selections ?? new StubSelections(null), store, new FakeTimeProvider(OrderTests.Now));
+        new(new OrderItemSelections(selections ?? new StubSelections(null), new StubHotelSelections()), store, new FakeTimeProvider(OrderTests.Now));
 
     // The selection belongs to cust-1, as Flights enforces: anyone else gets NotFound.
     private sealed class StubSelections(FlightSelectionUnavailable? unavailable, string owner = "cust-1") : IFlightSelections

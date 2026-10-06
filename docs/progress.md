@@ -290,6 +290,25 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **Offers:** the property (no supplier id exposed), room, board, the total payable now, fees payable at the property (information only), the cancellation terms (non-refundable, or free until a deadline then a penalty) and the expiry. Offers that cannot be sold or stored as stated are dropped, never truncated (F-54). Changed terms at the same price are a quote, and another property ends the selection (F-53).
 - **API:** `POST /api/v1/hotels/searches` (anonymous, supplier rate limit) and `/hotels/selected-offers`, with `/revalidations` and `/price-acceptances`. These follow the same selection rules as flights: an owner or an anonymous selection, F-01..F-03, idempotent per caller, rowversion.
 - **Next (H2):** hotel order items and booking through Orders (`Modules.Hotels.Contracts`, book and lookup by our reference, `PendingConfirmation` and reconciliation), then checkout. Then H3 (customer-web hotel search and booking) and H4 (cancellation by the rate's policy, vouchers, admin). |
+| 22 | **Hotels H2: hotel stays ordered, paid and booked through Orders (ADR 0030 §6)** | **Done, with the mock hotel provider.**
+- **`Modules.Hotels.Contracts`:** `IHotelSelections` (bookable, revalidate) and `IHotelBookings` (book once under our item id; look up by it). The architecture test `Only_orders_books_hotels` keeps the write to Orders.
+- **Port:** `IHotelProvider` gains `BookAsync` and `RetrieveBookingAsync` (at most one booking per client reference). The mock books in memory, with lead-guest scenarios (rejected, timeout booked or not, price mismatch); the shared contract suite covers booking.
+- **Orders:** an order item has a product (`Flight` or `Hotel`). Hotel items keep the one item state machine in the existing `FlightOrderItems` table (new `Product` column, existing rows `Flight`, migration `AddOrderItemProduct`; renaming the table and class is a later, non-destructive clean-up). Checkout revalidates, books, reconciles and reviews each item through its own product's Contracts, never another module and never a fallback. A confirmed hotel item has its confirmation number as the booking reference and no ticketing.
+- **API:** `POST /api/v1/orders` takes an optional `product` (`Flight` by default, or `Hotel`); order items show their `product`. Additive only.
+- **Decisions (delegated):**
+  - every guest is named before payment, with no travel documents;
+  - children's ages are their ages **at check-out** (as large OTAs ask), the date traveller details are checked against, so a birthday during the stay never blocks payment;
+  - guests are counted for traveller details by the Customers age rule (under 2 an infant, 2 to 11 a child, otherwise an adult); the supplier gets the real occupancy instead: adults (18 or over) and each child's age, from their date of birth, which must match the ages the room was priced for or nothing is sent;
+  - the lead guest (an adult) is sent first;
+  - a supplier answer "booked" with no reference is unknown (looked up again), not a mismatch; the property's own confirmation code arriving later stays F-51;
+  - booking emails use product-neutral wording;
+  - guest data is kept until check-out, by the existing retention rule.
+- **Follow-ups (recorded):**
+  - rename the C# types `FlightOrderItem`, `FlightOrderItemStatus`, `FlightBookingOrchestrator` and `CreateFlightOrder*` to product-neutral names, with no migration (the table name stays). The public schema `CreateFlightOrderRequest` keeps its name in v1, deliberately;
+  - before hotel cancellation (H4), read the booked rate's cancellation terms (deadline and penalty) from Hotels for the refund decision;
+  - check the guests' ages against the searched ages before payment, once customer-web collects them (H3); today a mismatch is refused before anything is sent, and the hold is released.
+- **Worker** composes Hotels (and its mock in Development and Staging) to reconcile hotel bookings. Hotels' database is needed only when it is used, so flights never depend on its configuration; E2E and CI apply the Hotels migrations too.
+- **Next:** H3 (customer-web hotel search, selection and checkout, functional only), then H4 (cancellation by the rate's policy, vouchers, admin). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

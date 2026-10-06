@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Modules.Hotels.Application;
+using TravelBooking.Modules.Hotels.Contracts;
 using TravelBooking.Modules.Hotels.Endpoints;
 using TravelBooking.Modules.Hotels.Infrastructure;
 
@@ -27,19 +28,32 @@ public static class HotelsModule
         services.AddScoped<SelectHotelOfferHandler>();
         services.AddScoped<RevalidateHotelSelectionHandler>();
         services.AddScoped<AcceptHotelPriceHandler>();
+        services.AddScoped<IHotelSelections, HotelSelections>();
+        services.AddScoped<IHotelBookings, HotelBookings>();
         services.AddHybridCache(options => options.MaximumPayloadBytes = HotelSearchCache.MaximumPayloadBytes);
         services.AddSingleton<HotelSearchCache>();
 
-        // The module's own schema. The connection string is resolved on first use, so search works without a database.
+        // The module's own schema. The connection string is needed only when the database is first used, never to build
+        // the context: Orders constructs Hotels' contracts for every order (ADR 0030 §6), and a flight order must not
+        // depend on Hotels' configuration. Without it, hotel selection fails on use (a 500); search needs no database.
         // Migrations are never applied at startup (database rules).
-        services.AddDbContext<HotelsDbContext>(options => options.UseSqlServer(
-            configuration.GetConnectionString(HotelsDbContext.ConnectionStringName)
-                ?? throw new InvalidOperationException($"Connection string '{HotelsDbContext.ConnectionStringName}' is not configured."),
-            sql =>
+        services.AddDbContext<HotelsDbContext>(options =>
+        {
+            void Sql(Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder sql)
             {
                 sql.MigrationsHistoryTable("__EFMigrationsHistory", HotelsDbContext.Schema);
                 sql.EnableRetryOnFailure();
-            }));
+            }
+
+            if (configuration.GetConnectionString(HotelsDbContext.ConnectionStringName) is { Length: > 0 } connectionString)
+            {
+                options.UseSqlServer(connectionString, Sql);
+            }
+            else
+            {
+                options.UseSqlServer(Sql);
+            }
+        });
         services.AddScoped<IHotelSelectionStore, SqlHotelSelectionStore>();
         return services;
     }

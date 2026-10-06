@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +30,25 @@ public static class MockHotelScenarios
 
     /// <summary>The search fails as the supplier being unavailable.</summary>
     public const string UnavailableDestination = "ZUN";
+}
+
+/// <summary>
+/// Lead-guest surnames that choose the mock's booking outcome (the same names as the flight mock's). Any other name books
+/// successfully. Timeouts are simulated immediately (no real delay), as an Unknown outcome.
+/// </summary>
+public static class MockHotelBookingScenarios
+{
+    /// <summary>The supplier definitively rejects the booking: nothing is booked.</summary>
+    public const string RejectedSurname = "SCENARIO-REJECTED";
+
+    /// <summary>The call times out, but the booking WAS made: a lookup by our reference finds it.</summary>
+    public const string TimeoutBookedSurname = "SCENARIO-TIMEOUT-BOOKED";
+
+    /// <summary>The call times out and nothing was booked: a lookup by our reference finds nothing.</summary>
+    public const string TimeoutNotBookedSurname = "SCENARIO-TIMEOUT-NOT-BOOKED";
+
+    /// <summary>The supplier books, but at another price than agreed: never charged, a person decides.</summary>
+    public const string PriceMismatchSurname = "SCENARIO-PRICE-MISMATCH";
 }
 
 /// <summary>
@@ -90,6 +110,73 @@ public sealed class MockHotelProvider(TimeProvider timeProvider) : IHotelProvide
             _ => Result<HotelOffer, ProviderError>.Success(Offer(criteria, index, priceFactor: 1m)),
         });
     }
+
+    public Task<Result<HotelBookingConfirmation, ProviderError>> BookAsync(HotelBookingDetails details, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HotelBookingDetails.IsValidClientReference(details.ClientReference))
+        {
+            return Task.FromResult(BookingFailure(ProviderErrorKind.InvalidRequest, "Invalid client reference."));
+        }
+
+        // At most one booking per client reference: a repeat returns the existing booking (the port's rule).
+        if (_bookings.TryGetValue(details.ClientReference, out var existing))
+        {
+            return Task.FromResult(Result<HotelBookingConfirmation, ProviderError>.Success(existing));
+        }
+
+        if (details.Offer.ProviderId != ProviderId || Parse(details.Offer.Value) is not { } parsed)
+        {
+            return Task.FromResult(BookingFailure(ProviderErrorKind.InvalidRequest, "Unknown offer."));
+        }
+
+        var (criteria, index) = parsed;
+        if (details.Guests.Count(g => g.IsAdult) != criteria.Adults || !details.Guests[0].IsAdult
+            || !details.Guests.Where(g => !g.IsAdult).Select(g => g.ChildAge!.Value).Order().SequenceEqual(criteria.ChildAges.Order()))
+        {
+            return Task.FromResult(BookingFailure(ProviderErrorKind.InvalidRequest, "Guests do not match the stay."));
+        }
+
+        var current = Offer(criteria, index, criteria.Destination == MockHotelScenarios.PriceChangedDestination ? 1.1m : 1m);
+        if (current.TotalPrice != details.ExpectedTotalPrice)
+        {
+            return Task.FromResult(BookingFailure(ProviderErrorKind.PriceChanged, "Mock offer price differs from the expected price."));
+        }
+
+        var surname = details.Guests[0].Surname.ToUpperInvariant();
+        var price = surname == MockHotelBookingScenarios.PriceMismatchSurname ? new Money(current.TotalPrice.Amount + 1m, _xts) : current.TotalPrice;
+        var confirmation = new HotelBookingConfirmation(details.ClientReference, ProviderId, ConfirmationNumber(details.ClientReference), price);
+        return Task.FromResult(surname switch
+        {
+            MockHotelBookingScenarios.RejectedSurname => BookingFailure(ProviderErrorKind.Rejected, "Mock booking rejected (scenario)."),
+            MockHotelBookingScenarios.TimeoutNotBookedSurname => BookingFailure(ProviderErrorKind.Unknown, "Mock booking timed out; nothing was booked (scenario)."),
+            MockHotelBookingScenarios.TimeoutBookedSurname => Store(confirmation, BookingFailure(ProviderErrorKind.Unknown, "Mock booking timed out after booking (scenario).")),
+            _ => Store(confirmation, Result<HotelBookingConfirmation, ProviderError>.Success(confirmation)),
+        });
+    }
+
+    public Task<Result<HotelBookingLookup, ProviderError>> RetrieveBookingAsync(string clientReference, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _bookings.TryGetValue(clientReference, out var booking);
+        return Task.FromResult(Result<HotelBookingLookup, ProviderError>.Success(new HotelBookingLookup(booking)));
+    }
+
+    // Bookings made by this mock, by our reference. In memory: they last as long as the process (Development only).
+    private readonly ConcurrentDictionary<string, HotelBookingConfirmation> _bookings = new(StringComparer.Ordinal);
+
+    private Result<HotelBookingConfirmation, ProviderError> Store(HotelBookingConfirmation confirmation, Result<HotelBookingConfirmation, ProviderError> result)
+    {
+        _bookings.TryAdd(confirmation.ClientReference, confirmation);
+        return result;
+    }
+
+    private static Result<HotelBookingConfirmation, ProviderError> BookingFailure(ProviderErrorKind kind, string message) =>
+        Result<HotelBookingConfirmation, ProviderError>.Failure(new ProviderError(kind, message));
+
+    // Deterministic: the same reference always gets the same number.
+    private static string ConfirmationNumber(string clientReference) =>
+        "MH" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(clientReference)))[..8];
 
     private HotelOffer Offer(HotelSearchCriteria criteria, int index, decimal priceFactor)
     {

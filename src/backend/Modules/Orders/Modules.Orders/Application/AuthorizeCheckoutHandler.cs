@@ -159,7 +159,7 @@ internal abstract record CheckoutFailure
 /// only by the request whose move to Booking was saved.
 /// </summary>
 internal sealed class AuthorizeCheckoutHandler(
-    IOrderStore store, IFlightSelections selections, IOrderPayments payments, IOrderTravellers travellers, FlightBookingOrchestrator booking, TimeProvider timeProvider)
+    IOrderStore store, OrderItemSelections selections, IOrderPayments payments, IOrderTravellers travellers, FlightBookingOrchestrator booking, TimeProvider timeProvider)
 {
     /// <summary>
     /// How long an offer must still be valid to start a payment: the authorization and the booking both need time, and
@@ -266,22 +266,21 @@ internal sealed class AuthorizeCheckoutHandler(
     {
         foreach (var item in order.Items)
         {
-            var revalidated = await selections.RevalidateAsync(item.SelectedOfferId, order.CustomerId, cancellationToken);
+            var revalidated = await selections.RevalidateAsync(item.Product, item.SelectedOfferId, order.CustomerId, cancellationToken);
             if (!revalidated.IsSuccess)
             {
                 return revalidated.Error switch
                 {
-                    FlightSelectionUnavailable.NeedsPriceCheck => new CheckoutFailure.PriceChanged(item.Id),
-                    FlightSelectionUnavailable.Expired or FlightSelectionUnavailable.NotFound => new CheckoutFailure.OfferExpired(item.Id),
-                    FlightSelectionUnavailable.SoldOut => new CheckoutFailure.SoldOut(item.Id),
-                    FlightSelectionUnavailable.SupplierCannotBook => new CheckoutFailure.SupplierCannotBook(item.Id),
+                    ItemUnavailable.NeedsPriceCheck => new CheckoutFailure.PriceChanged(item.Id),
+                    ItemUnavailable.Expired or ItemUnavailable.NotFound => new CheckoutFailure.OfferExpired(item.Id),
+                    ItemUnavailable.SoldOut => new CheckoutFailure.SoldOut(item.Id),
+                    ItemUnavailable.SupplierCannotBook => new CheckoutFailure.SupplierCannotBook(item.Id),
                     _ => new CheckoutFailure.TryAgain(),
                 };
             }
 
             var bookable = revalidated.Value;
-            var consent = bookable is { AcceptedPriceQuoteId: { } quote, PriceAcceptedAt: { } acceptedAt } ? new PriceConsent(quote, acceptedAt) : null;
-            var refreshed = order.RefreshOffer(item.Id, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, consent, context, bookable.DocumentsRequired);
+            var refreshed = order.RefreshOffer(item.Id, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, bookable.Consent, context, bookable.DocumentsRequired);
             if (!refreshed.IsSuccess)
             {
                 return refreshed.Error is OrderTransitionError.PriceNotAccepted

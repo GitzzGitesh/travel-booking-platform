@@ -24,6 +24,7 @@
   </Folder>
   <Folder Name="/src/backend/Modules/" />
   <Folder Name="/src/backend/Modules/Hotels/">
+    <Project Path="src/backend/Modules/Hotels/Modules.Hotels.Contracts/Modules.Hotels.Contracts.csproj" />
     <Project Path="src/backend/Modules/Hotels/Modules.Hotels/Modules.Hotels.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Flights/">

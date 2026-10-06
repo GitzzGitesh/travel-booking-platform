@@ -73,7 +73,43 @@ public abstract class HotelProviderContract
         result.Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest);
     }
 
+    [Fact]
+    public async Task A_booking_is_made_once_per_client_reference_and_found_by_it()
+    {
+        var offer = (await Provider.SearchAsync(Criteria, Ct)).Value.Offers[0];
+        var reference = Guid.NewGuid().ToString();
+        var details = Details(offer, reference, "Lovelace");
+
+        var first = await Provider.BookAsync(details, Ct);
+        var again = await Provider.BookAsync(details, Ct);
+        var found = await Provider.RetrieveBookingAsync(reference, Ct);
+
+        first.IsSuccess.ShouldBeTrue();
+        (first.Value.ClientReference, first.Value.ProviderId, first.Value.TotalPrice).ShouldBe((reference, Provider.Id, offer.TotalPrice));
+        first.Value.ConfirmationNumber.ShouldNotBeNullOrWhiteSpace();
+        again.Value.ShouldBe(first.Value); // never a second booking
+        found.Value.Booking.ShouldBe(first.Value);
+    }
+
+    [Fact]
+    public async Task Another_price_than_agreed_is_never_booked_and_an_unknown_reference_is_not_found()
+    {
+        var offer = (await Provider.SearchAsync(Criteria, Ct)).Value.Offers[0];
+        var reference = Guid.NewGuid().ToString();
+
+        var booked = await Provider.BookAsync(Details(offer, reference, "Lovelace") with { ExpectedTotalPrice = offer.TotalPrice with { Amount = offer.TotalPrice.Amount - 1m } }, Ct);
+
+        booked.Error.Kind.ShouldBe(ProviderErrorKind.PriceChanged);
+        (await Provider.RetrieveBookingAsync(reference, Ct)).Value.Booking.ShouldBeNull();
+    }
+
     protected static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    // The searched stay: two adults (the lead guest first) and one child.
+    protected static HotelBookingDetails Details(HotelOffer offer, string reference, string leadSurname) => new(
+        reference, offer.Reference, offer.TotalPrice,
+        [new HotelGuest("Ada", leadSurname, null), new HotelGuest("George", "Byron", null), new HotelGuest("Allegra", "Byron", 8)],
+        "guest@example.com", "+447700900123");
 }
 
 /// <summary>The mock passes the shared contract, and its scenarios behave as documented (MockHotelScenarios).</summary>
@@ -81,7 +117,10 @@ public sealed class MockHotelProviderTests : HotelProviderContract
 {
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2027, 3, 1, 9, 0, 0, TimeSpan.Zero));
 
-    protected override IHotelProvider Provider => new MockHotelProvider(_clock);
+    private MockHotelProvider? _provider;
+
+    // One instance per test: its bookings live in it, as in a host (a singleton).
+    protected override IHotelProvider Provider => _provider ??= new MockHotelProvider(_clock);
 
     protected override DateTimeOffset Now => _clock.GetUtcNow();
 
@@ -125,6 +164,33 @@ public sealed class MockHotelProviderTests : HotelProviderContract
         offers.ShouldContain(o => !o.Cancellation.Refundable);
         offers.ShouldContain(o => o.FeesAtProperty != null);
         offers.ShouldAllBe(o => o.ExpiresAt == Now + MockHotelProvider.OfferLifetime);
+    }
+
+    [Theory]
+    [InlineData(MockHotelBookingScenarios.RejectedSurname, ProviderErrorKind.Rejected, false)]
+    [InlineData(MockHotelBookingScenarios.TimeoutNotBookedSurname, ProviderErrorKind.Unknown, false)]
+    [InlineData(MockHotelBookingScenarios.TimeoutBookedSurname, ProviderErrorKind.Unknown, true)]
+    public async Task Booking_scenarios_refuse_or_time_out_and_a_lookup_tells_what_happened(string surname, ProviderErrorKind kind, bool booked)
+    {
+        var offer = (await Provider.SearchAsync(Criteria, Ct)).Value.Offers[0];
+        var reference = Guid.NewGuid().ToString();
+
+        (await Provider.BookAsync(Details(offer, reference, surname), Ct)).Error.Kind.ShouldBe(kind);
+
+        ((await Provider.RetrieveBookingAsync(reference, Ct)).Value.Booking is not null).ShouldBe(booked);
+    }
+
+    [Fact]
+    public async Task The_price_mismatch_scenario_books_at_another_price_and_guests_must_match_the_stay()
+    {
+        var offer = (await Provider.SearchAsync(Criteria, Ct)).Value.Offers[0];
+
+        (await Provider.BookAsync(Details(offer, Guid.NewGuid().ToString(), MockHotelBookingScenarios.PriceMismatchSurname), Ct)).Value.TotalPrice.ShouldNotBe(offer.TotalPrice);
+        (await Provider.BookAsync(Details(offer, Guid.NewGuid().ToString(), "Lovelace") with { Guests = [new HotelGuest("Ada", "Lovelace", null)] }, Ct))
+            .Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest);
+        var teenAsAdult = Details(offer, Guid.NewGuid().ToString(), "Lovelace");
+        (await Provider.BookAsync(teenAsAdult with { Guests = [.. teenAsAdult.Guests.Select(g => g with { ChildAge = null })] }, Ct))
+            .Error.Kind.ShouldBe(ProviderErrorKind.InvalidRequest); // the child priced at 8 booked as a third adult
     }
 
     [Theory]

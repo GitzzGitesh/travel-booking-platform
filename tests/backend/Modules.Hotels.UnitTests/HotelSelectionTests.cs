@@ -221,6 +221,12 @@ public sealed class HotelSelectionTests
 
         public Task<Result<HotelOffer, ProviderError>> RevalidateAsync(HotelOfferRef offer, CancellationToken cancellationToken) =>
             Task.FromResult(Result<HotelOffer, ProviderError>.Success(Offer(300m)));
+
+        public Task<Result<HotelBookingConfirmation, ProviderError>> BookAsync(HotelBookingDetails details, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<Result<HotelBookingLookup, ProviderError>> RetrieveBookingAsync(string clientReference, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FixedRevalidation : IHotelProvider
@@ -234,6 +240,12 @@ public sealed class HotelSelectionTests
 
         public Task<Result<HotelOffer, ProviderError>> RevalidateAsync(HotelOfferRef offer, CancellationToken cancellationToken) =>
             Task.FromResult(Result<HotelOffer, ProviderError>.Success(Next));
+
+        public Task<Result<HotelBookingConfirmation, ProviderError>> BookAsync(HotelBookingDetails details, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<Result<HotelBookingLookup, ProviderError>> RetrieveBookingAsync(string clientReference, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class SingleSelectionStore(HotelSelection selection) : IHotelSelectionStore

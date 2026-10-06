@@ -24,6 +24,7 @@ public static class OrdersModule
     public static IServiceCollection AddOrdersModule(this IServiceCollection services, IConfiguration configuration)
     {
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<OrderItemSelections>();
         services.AddScoped<CreateFlightOrderHandler>();
         services.AddScoped<AuthorizeCheckoutHandler>();
         services.AddScoped<FlightBookingOrchestrator>();

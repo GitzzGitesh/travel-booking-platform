@@ -100,6 +100,14 @@ public sealed class ModuleBoundaryTests
             .Because("a supplier booking follows an authorized payment for the customer's own order (authorize → book → capture)")
             .Check(_architecture);
 
+    // The same for hotel stays (ADR 0030 §6).
+    [Fact]
+    public void Only_orders_books_hotels() =>
+        Types().That().DoNotResideInNamespaceMatching(@"^TravelBooking\.Modules\.(Orders|Hotels)(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().HaveFullName("TravelBooking.Modules.Hotels.Contracts.IHotelBookings"))
+            .Because("a supplier booking follows an authorized payment for the customer's own order (authorize → book → capture)")
+            .Check(_architecture);
+
     // The travellers' personal data (and decrypted documents) is released only for the supplier booking (ADR 0020, 0021).
     [Fact]
     public void Only_orders_reads_travellers_for_booking() =>

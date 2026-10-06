@@ -1979,6 +1979,13 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "product": {
+            "pattern": "^(Flight|Hotel)$",
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2646,6 +2653,7 @@
       "OrderItemResponse": {
         "required": [
           "itemId",
+          "product",
           "selectedOfferId",
           "status",
           "agreedPrice",
@@ -2660,6 +2668,9 @@
           "itemId": {
             "type": "string",
             "format": "uuid"
+          },
+          "product": {
+            "type": "string"
           },
           "selectedOfferId": {
             "type": "string",
