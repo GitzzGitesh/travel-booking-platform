@@ -22,6 +22,8 @@
     <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Duffel\Integrations.Flights.Duffel.csproj" />
     <ProjectReference Include="..\..\Integrations\Flights\Integrations.Flights.Amadeus\Integrations.Flights.Amadeus.csproj" />
     <ProjectReference Include="..\..\Modules\Flights\Modules.Flights\Modules.Flights.csproj" />
+    <ProjectReference Include="..\..\Modules\Hotels\Modules.Hotels\Modules.Hotels.csproj" />
+    <ProjectReference Include="..\..\Integrations\Hotels\Integrations.Hotels.Mock\Integrations.Hotels.Mock.csproj" />
     <ProjectReference Include="..\..\Modules\Access\Modules.Access\Modules.Access.csproj" />
     <ProjectReference Include="..\..\Modules\Customers\Modules.Customers\Modules.Customers.csproj" />
     <ProjectReference Include="..\..\Modules\Orders\Modules.Orders\Modules.Orders.csproj" />

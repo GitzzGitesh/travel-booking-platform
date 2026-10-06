@@ -81,6 +81,8 @@ Add a new scenario with the next free ID in its category's band, and update this
 | F-50 | Airline schedule change | Booking flagged; customer notified; accept/refund options; ops queue | U, P, E | Planned |
 | F-51 | Hotel confirmation number arrives later | Booking updated; voucher re-issued | U, P | Planned |
 | F-52 | Hotel cannot honour the booking (walk) | Ops workflow; customer contact; refund/compensation | U | Planned |
+| F-53 | Hotel revalidation returns other terms at the same price, or another property | Changed room, board or cancellation terms are a quote the customer must accept; another property ends the selection (sold out) | U | **Done** (ADR 0030 §5; U: HotelSelectionTests) |
+| F-54 | A hotel supplier returns values we cannot store or show (over-long id, bad codes, star rating, time zone) | Offer dropped at search, refused at revalidation as a provider failure; never truncated, never a 500 | U, C | **Done** (ADR 0030 §5; U: HotelSelectionTests; C: HotelProviderContract) |
 
 ## Security
 | ID | Scenario | Expected behaviour | Levels | Status |

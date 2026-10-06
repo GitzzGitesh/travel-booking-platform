@@ -6,11 +6,13 @@ using TravelBooking.Integrations.Flights.Duffel;
 using TravelBooking.Integrations.Flights.Mock;
 using TravelBooking.Integrations.Flights.Sabre;
 using TravelBooking.Integrations.Flights.Travelport;
+using TravelBooking.Integrations.Hotels.Mock;
 using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Integrations.Payments.Stripe;
 using TravelBooking.Modules.Access;
 using TravelBooking.Modules.Customers;
 using TravelBooking.Modules.Flights;
+using TravelBooking.Modules.Hotels;
 using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Payments;
 
@@ -53,6 +55,7 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((doc
     return Task.CompletedTask;
 }));
 builder.Services.AddFlightsModule(builder.Configuration);
+builder.Services.AddHotelsModule(builder.Configuration); // ADR 0030
 builder.Services.AddOrdersModule(builder.Configuration);
 builder.Services.AddPaymentsModule(builder.Configuration);
 
@@ -70,6 +73,9 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
     // The deterministic mock is the only flight provider until a real supplier is chosen (Q6). Allow-listed
     // environments only, matching the mock's own guard, so a production-like environment never gets fake offers.
     builder.Services.AddMockFlightProvider(builder.Configuration);
+
+    // Likewise for hotels (ADR 0030): the mock until a hotel supplier is chosen (Q6).
+    builder.Services.AddMockHotelProvider(builder.Configuration);
 
     // Likewise the payment provider unless Stripe is enabled (ADR 0006): no card data, no network.
     if (!builder.Configuration.IsStripeEnabled())
@@ -152,6 +158,7 @@ if (app.Environment.IsDevelopment())
     // still needs the hosting decision (trusted ingress addresses, AllowedHosts, a distributed limiter for more than
     // one instance, ADR 0011) and Q2 (docs/progress.md). It must only widen together with IFlightProvider registration.
     v1.MapFlightsEndpoints();
+    v1.MapHotelsEndpoints();
 
     // The signed-in customer's endpoints: behind the same gate as the flights they order.
     v1.MapCustomersEndpoints();

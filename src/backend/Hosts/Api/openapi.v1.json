@@ -397,6 +397,368 @@
         }
       }
     },
+    "/api/v1/hotels/searches": {
+      "post": {
+        "tags": [
+          "Hotels"
+        ],
+        "operationId": "SearchHotels",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HotelSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotelSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hotels/selected-offers": {
+      "post": {
+        "tags": [
+          "Hotels"
+        ],
+        "operationId": "SelectHotelOffer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectHotelOfferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedHotelOfferResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedHotelOfferResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hotels/selected-offers/{selectedOfferId}/revalidations": {
+      "post": {
+        "tags": [
+          "Hotels"
+        ],
+        "operationId": "RevalidateSelectedHotelOffer",
+        "parameters": [
+          {
+            "name": "selectedOfferId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmedHotelOfferResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotelSelectionProblemResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hotels/selected-offers/{selectedOfferId}/price-acceptances": {
+      "post": {
+        "tags": [
+          "Hotels"
+        ],
+        "operationId": "AcceptSelectedHotelOfferPrice",
+        "parameters": [
+          {
+            "name": "selectedOfferId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptHotelPriceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmedHotelOfferResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotelSelectionProblemResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orders/{orderId}/travellers": {
       "put": {
         "tags": [
@@ -1328,6 +1690,21 @@
           }
         }
       },
+      "AcceptHotelPriceRequest": {
+        "required": [
+          "priceQuoteId"
+        ],
+        "type": "object",
+        "properties": {
+          "priceQuoteId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "AirportResponse": {
         "required": [
           "code",
@@ -1379,6 +1756,15 @@
             "format": "int32"
           }
         }
+      },
+      "BoardBasis": {
+        "enum": [
+          "RoomOnly",
+          "Breakfast",
+          "HalfBoard",
+          "FullBoard",
+          "AllInclusive"
+        ]
       },
       "CabinClass": {
         "enum": [
@@ -1490,6 +1876,40 @@
           },
           "selectedTotalPrice": {
             "$ref": "#/components/schemas/MoneyResponse"
+          },
+          "offerExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revalidatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConfirmedHotelOfferResponse": {
+        "required": [
+          "selectedOfferId",
+          "totalPrice",
+          "selectedTotalPrice",
+          "cancellation",
+          "offerExpiresAt",
+          "revalidatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "selectedOfferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "totalPrice": {
+            "$ref": "#/components/schemas/HotelAmountResponse"
+          },
+          "selectedTotalPrice": {
+            "$ref": "#/components/schemas/HotelAmountResponse"
+          },
+          "cancellation": {
+            "$ref": "#/components/schemas/HotelCancellationResponse"
           },
           "offerExpiresAt": {
             "type": "string",
@@ -1856,6 +2276,295 @@
             "items": {
               "$ref": "#/components/schemas/FlightSegmentResponse"
             }
+          }
+        }
+      },
+      "HotelAmountResponse": {
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        }
+      },
+      "HotelCancellationResponse": {
+        "required": [
+          "refundable",
+          "freeCancellationUntil",
+          "penaltyAfterDeadline"
+        ],
+        "type": "object",
+        "properties": {
+          "refundable": {
+            "type": "boolean"
+          },
+          "freeCancellationUntil": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "penaltyAfterDeadline": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HotelAmountResponse"
+              }
+            ]
+          }
+        }
+      },
+      "HotelOfferResponse": {
+        "required": [
+          "offerId",
+          "property",
+          "room",
+          "board",
+          "totalPrice",
+          "feesAtProperty",
+          "cancellation",
+          "expiresAt"
+        ],
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "property": {
+            "$ref": "#/components/schemas/HotelPropertyResponse"
+          },
+          "room": {
+            "type": "string"
+          },
+          "board": {
+            "$ref": "#/components/schemas/BoardBasis"
+          },
+          "totalPrice": {
+            "$ref": "#/components/schemas/HotelAmountResponse"
+          },
+          "feesAtProperty": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HotelAmountResponse"
+              }
+            ]
+          },
+          "cancellation": {
+            "$ref": "#/components/schemas/HotelCancellationResponse"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HotelPropertyResponse": {
+        "required": [
+          "name",
+          "addressLine",
+          "cityCode",
+          "countryCode",
+          "starRating",
+          "timeZone"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "addressLine": {
+            "type": "string"
+          },
+          "cityCode": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "starRating": {
+            "type": [
+              "null",
+              "number"
+            ],
+            "format": "double"
+          },
+          "timeZone": {
+            "type": "string"
+          }
+        }
+      },
+      "HotelSearchRequest": {
+        "required": [
+          "destination",
+          "checkIn",
+          "checkOut"
+        ],
+        "type": "object",
+        "properties": {
+          "destination": {
+            "pattern": "^[A-Z]{3}$",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "checkIn": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "checkOut": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "adults": {
+            "maximum": 4,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "childAges": {
+            "maxItems": 3,
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        }
+      },
+      "HotelSearchResponse": {
+        "required": [
+          "searchId",
+          "nights",
+          "offers"
+        ],
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nights": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "offers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HotelOfferResponse"
+            }
+          }
+        }
+      },
+      "HotelSelectionProblemResponse": {
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "traceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "selectedOfferId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "previousTotalPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HotelAmountResponse"
+              }
+            ]
+          },
+          "newTotalPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HotelAmountResponse"
+              }
+            ]
+          },
+          "priceQuoteId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "offerExpiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "requiresConfirmation": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "termsChanged": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "cancellation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HotelCancellationResponse"
+              }
+            ]
           }
         }
       },
@@ -2232,6 +2941,68 @@
           }
         }
       },
+      "SelectedHotelOfferResponse": {
+        "required": [
+          "selectedOfferId",
+          "searchId",
+          "offerId",
+          "property",
+          "room",
+          "board",
+          "checkIn",
+          "checkOut",
+          "nights",
+          "totalPrice",
+          "cancellation",
+          "offerExpiresAt"
+        ],
+        "type": "object",
+        "properties": {
+          "selectedOfferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "property": {
+            "$ref": "#/components/schemas/HotelPropertyResponse"
+          },
+          "room": {
+            "type": "string"
+          },
+          "board": {
+            "$ref": "#/components/schemas/BoardBasis"
+          },
+          "checkIn": {
+            "type": "string",
+            "format": "date"
+          },
+          "checkOut": {
+            "type": "string",
+            "format": "date"
+          },
+          "nights": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPrice": {
+            "$ref": "#/components/schemas/HotelAmountResponse"
+          },
+          "cancellation": {
+            "$ref": "#/components/schemas/HotelCancellationResponse"
+          },
+          "offerExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "SelectedOfferProblemResponse": {
         "required": [
           "type",
@@ -2306,6 +3077,29 @@
         }
       },
       "SelectFlightOfferRequest": {
+        "required": [
+          "searchId",
+          "offerId"
+        ],
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "offerId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "SelectHotelOfferRequest": {
         "required": [
           "searchId",
           "offerId"
@@ -2556,6 +3350,9 @@
     },
     {
       "name": "Flights"
+    },
+    {
+      "name": "Hotels"
     },
     {
       "name": "Travellers"

@@ -43,6 +43,12 @@ public sealed class EndpointAuthorizationTests(WebApplicationFactory<Program> fa
         "/api/v1/flights/selected-offers/{selectedOfferId:guid}/revalidations",
         "/api/v1/flights/selected-offers/{selectedOfferId:guid}/price-acceptances",
 
+        // Hotels (ADR 0030): the same public search and selection as flights.
+        "/api/v1/hotels/searches",
+        "/api/v1/hotels/selected-offers",
+        "/api/v1/hotels/selected-offers/{selectedOfferId:guid}/revalidations",
+        "/api/v1/hotels/selected-offers/{selectedOfferId:guid}/price-acceptances",
+
         // The payment provider's webhook: authenticated by the provider's signature, mapped only when Stripe is enabled.
         "/api/v1/payments/notifications/{providerId}",
 
