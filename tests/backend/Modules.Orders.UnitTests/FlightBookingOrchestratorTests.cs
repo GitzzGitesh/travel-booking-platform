@@ -4,6 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Customers.Contracts;
 using TravelBooking.Modules.Flights.Contracts;
+using TravelBooking.Modules.Hotels.Contracts;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
@@ -20,6 +21,7 @@ public sealed class FlightBookingOrchestratorTests
     private static readonly Guid _paymentId = Guid.NewGuid();
     private readonly FakeTimeProvider _clock = new(OrderTests.Now.AddMinutes(1));
     private readonly StubBookings _bookings = new();
+    private readonly StubHotelBookings _hotelBookings = new();
     private readonly FakeStore _store = new();
     private readonly Order _order = OrderTests.NewOrder();
 
@@ -235,6 +237,62 @@ public sealed class FlightBookingOrchestratorTests
         _order.SettlePayment(context).ShouldBe(new PaymentSettlement.Release(_paymentId));
     }
 
+    [Fact]
+    public async Task A_hotel_item_is_booked_through_hotels_with_the_lead_adult_first_and_no_tickets()
+    {
+        var order = HotelOrder();
+
+        await Orchestrator(new Guests()).BookAsync(order, new TransitionContext(_clock.GetUtcNow(), "customer:cust-1"), TestContext.Current.CancellationToken);
+
+        _bookings.Booked.ShouldBeEmpty(); // never Flights for a hotel stay
+        var request = _hotelBookings.Booked.ShouldHaveSingleItem();
+        request.ClientReference.ShouldBe(order.Items[0].Id.ToString());
+        request.AgreedPrice.ShouldBe(OrderTests.Price);
+        request.Guests.Select(g => (g.Surname, g.ChildAge)).ShouldBe([("Lovelace", (int?)null), ("Byron", null), ("Lovelace", 7), ("Byron", 14)]);
+        var item = order.Items[0];
+        (item.Status, item.SupplierLocator, item.Ticketing).ShouldBe((FlightOrderItemStatus.Confirmed, "MH123", (TicketingStatus?)null));
+        _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem().Amount.ShouldBe(OrderTests.Price);
+    }
+
+    [Fact]
+    public async Task A_pending_hotel_booking_is_looked_up_through_hotels_and_a_mismatch_is_never_charged()
+    {
+        var order = HotelOrder();
+        order.AwaitConfirmation(order.Items[0].Id, "unknown", new TransitionContext(_clock.GetUtcNow(), "test")).IsSuccess.ShouldBeTrue();
+        _hotelBookings.NextLookup = new HotelBookingResult(HotelBookingStatus.Mismatch, "mockhotels", "MH999");
+
+        await Orchestrator(new NoTravellers()).ReconcileAsync(order.Id, TestContext.Current.CancellationToken);
+
+        _hotelBookings.LookedUp.ShouldBe([order.Items[0].Id.ToString()]);
+        (_bookings.LookedUp.Count, _hotelBookings.Booked.Count).ShouldBe((0, 0)); // looked up with Hotels only, never booked again
+        order.Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+        _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_pending_hotel_booking_found_is_confirmed_and_charged()
+    {
+        var order = HotelOrder();
+        order.AwaitConfirmation(order.Items[0].Id, "unknown", new TransitionContext(_clock.GetUtcNow(), "test")).IsSuccess.ShouldBeTrue();
+        _hotelBookings.NextLookup = new HotelBookingResult(HotelBookingStatus.Booked, "mockhotels", "MH123");
+
+        await Orchestrator(new NoTravellers()).ReconcileAsync(order.Id, TestContext.Current.CancellationToken);
+
+        (order.Items[0].Status, order.Items[0].SupplierLocator).ShouldBe((FlightOrderItemStatus.Confirmed, "MH123"));
+        _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
+    }
+
+    private Order HotelOrder()
+    {
+        var order = Order.CreateForHotel("cust-1", "key-h", Guid.NewGuid(), OrderTests.Price, OrderTests.Now.AddMinutes(30), null,
+            new TransitionContext(OrderTests.Now, "customer", "trace-h"), new TravellerNeeds(3, 1, 0, false, new DateOnly(2027, 4, 13)));
+        order.Items[0].Product.ShouldBe(OrderProduct.Hotel);
+        order.Timeline[0].Reason.ShouldBe("Order created from a confirmed hotel selection");
+        order.StartBooking(_paymentId.ToString(), new TransitionContext(_clock.GetUtcNow(), "customer:cust-1"));
+        _store.Orders.Add(order);
+        return order;
+    }
+
     private void InReview()
     {
         Pending();
@@ -251,7 +309,7 @@ public sealed class FlightBookingOrchestratorTests
     private Task<bool> Reconcile() => Orchestrator(new NoTravellers()).ReconcileAsync(_order.Id, TestContext.Current.CancellationToken);
 
     private FlightBookingOrchestrator Orchestrator(IOrderTravellers travellers) =>
-        new(_store, _bookings, travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<FlightBookingOrchestrator>.Instance);
+        new(_store, _bookings, _hotelBookings, travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<FlightBookingOrchestrator>.Instance);
 
     private sealed class Travellers : IOrderTravellers
     {
@@ -260,6 +318,22 @@ public sealed class FlightBookingOrchestratorTests
         public Task<BookingTravellers?> GetForBookingAsync(Guid orderId, string customerId, string? correlationId, CancellationToken cancellationToken) =>
             Task.FromResult<BookingTravellers?>(new("ada@example.com", "+447700900123",
                 [new BookingTraveller(TravellerType.Adult, "Ada", "Lovelace", new DateOnly(1990, 12, 10), TravellerGenderType.Female, null)]));
+    }
+
+    // A child named before the adults, and a teenager the airline rule calls an adult: the lead guest (an adult) still comes
+    // first, and the teenager is a child of 14 to the hotel.
+    private sealed class Guests : IOrderTravellers
+    {
+        public Task<OrderTravellersReadiness> GetReadinessAsync(Guid orderId, string customerId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BookingTravellers?> GetForBookingAsync(Guid orderId, string customerId, string? correlationId, CancellationToken cancellationToken) =>
+            Task.FromResult<BookingTravellers?>(new("ada@example.com", "+447700900123",
+            [
+                new BookingTraveller(TravellerType.Child, "Ada", "Lovelace", new DateOnly(2019, 12, 10), TravellerGenderType.Female, null),
+                new BookingTraveller(TravellerType.Adult, "Ada", "Lovelace", new DateOnly(1990, 12, 10), TravellerGenderType.Female, null),
+                new BookingTraveller(TravellerType.Adult, "George", "Byron", new DateOnly(1988, 1, 22), TravellerGenderType.Male, null),
+                new BookingTraveller(TravellerType.Adult, "Allegra", "Byron", new DateOnly(2012, 6, 1), TravellerGenderType.Female, null), // 14 at check-out
+            ]));
     }
 
     private sealed class NoTravellers : IOrderTravellers

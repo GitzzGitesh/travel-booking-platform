@@ -33,7 +33,7 @@ public sealed class HotelSearchRequest : IValidatableObject
     [Range(1, HotelSearchCriteria.MaxAdults)]
     public int Adults { get; init; } = 2;
 
-    /// <summary>Each child's age on check-in (0 to 17); at most three children.</summary>
+    /// <summary>Each child's age at check-out (0 to 17), as their date of birth will show; at most three children.</summary>
     [MaxLength(HotelSearchCriteria.MaxChildren)]
     public List<int>? ChildAges { get; init; }
 

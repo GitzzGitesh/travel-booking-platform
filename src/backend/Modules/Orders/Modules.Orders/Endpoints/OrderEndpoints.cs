@@ -12,14 +12,19 @@ using TravelBooking.Modules.Orders.Domain;
 namespace TravelBooking.Modules.Orders.Endpoints;
 
 /// <summary>
-/// Creates the signed-in customer's order for a flight selection that was revalidated (and, if its price changed,
-/// accepted). Only the selection id is sent: the price comes from Flights, never from the client. Public because the
-/// .NET 10 validation source generator skips internal types (ADR 0003).
+/// Creates the signed-in customer's order for a flight or hotel selection that was revalidated (and, if its price
+/// changed, accepted). Only the selection id is sent: the price comes from Flights or Hotels, never from the client.
+/// Public because the .NET 10 validation source generator skips internal types (ADR 0003). The name keeps "Flight"
+/// deliberately: it is the v1 contract's schema name, and renaming it would break generated clients within v1.
 /// </summary>
 public sealed class CreateFlightOrderRequest
 {
     [Required]
     public Guid? SelectedOfferId { get; init; }
+
+    /// <summary>What the selection is: "Flight" (the default) or "Hotel" (ADR 0030), selected through its own endpoints.</summary>
+    [RegularExpression("^(Flight|Hotel)$")]
+    public string? Product { get; init; }
 }
 
 /// <summary>
@@ -53,7 +58,8 @@ internal static class OrderEndpoints
     {
         // The W3C trace id, so timeline entries line up with traces (observability.md).
         var correlationId = System.Diagnostics.Activity.Current?.TraceId.ToString() ?? http.TraceIdentifier;
-        var command = new CreateFlightOrder(user.CustomerId()!, idempotencyKey ?? string.Empty, request.SelectedOfferId!.Value, correlationId);
+        var product = request.Product is "Hotel" ? OrderProduct.Hotel : OrderProduct.Flight;
+        var command = new CreateFlightOrder(user.CustomerId()!, idempotencyKey ?? string.Empty, request.SelectedOfferId!.Value, correlationId, product);
         var result = await handler.HandleAsync(command, cancellationToken);
         if (result.IsSuccess)
         {
@@ -66,10 +72,10 @@ internal static class OrderEndpoints
             CreateFlightOrderFailure.InvalidIdempotencyKey => Problem(StatusCodes.Status400BadRequest, "idempotency-key-required",
                 $"Send a unique {IdempotencyKeyHeader} header (1 to {CreateFlightOrderHandler.MaxIdempotencyKeyLength} visible characters) and reuse it when retrying."),
             CreateFlightOrderFailure.IdempotencyKeyReused => Problem(StatusCodes.Status409Conflict, "idempotency-conflict",
-                "This idempotency key was already used for another flight selection."),
+                "This idempotency key was already used for another selection."),
             CreateFlightOrderFailure.SelectionAlreadyOrdered already => Problem(StatusCodes.Status409Conflict, "selection-already-ordered",
-                "This flight selection already has an order.", new Dictionary<string, object?> { ["orderId"] = already.OrderId }),
-            CreateFlightOrderFailure.SelectionUnavailable unavailable => Unavailable(unavailable.Reason),
+                "This selection already has an order.", new Dictionary<string, object?> { ["orderId"] = already.OrderId }),
+            CreateFlightOrderFailure.SelectionUnavailable unavailable => Unavailable(unavailable.Reason, product),
             CreateFlightOrderFailure.CustomerRequired => Problem(StatusCodes.Status403Forbidden, "customer-required", "Sign in to create an order."),
             _ => throw new InvalidOperationException($"Unmapped order failure {result.Error.GetType().Name}."),
         };
@@ -140,16 +146,18 @@ internal static class OrderEndpoints
     };
 
     // What the customer can do next, per failure-scenarios.md (F-01..F-03); supplier details are never passed on.
-    private static ProblemHttpResult Unavailable(FlightSelectionUnavailable reason) => reason switch
+    private static ProblemHttpResult Unavailable(ItemUnavailable reason, OrderProduct product) => reason switch
     {
-        FlightSelectionUnavailable.NeedsPriceCheck => Problem(StatusCodes.Status409Conflict, "price-check-required",
-            "Confirm the price with the airline (and accept any change) before ordering."),
-        FlightSelectionUnavailable.Expired or FlightSelectionUnavailable.NotFound => Problem(StatusCodes.Status422UnprocessableEntity, "offer-expired",
+        ItemUnavailable.NeedsPriceCheck => Problem(StatusCodes.Status409Conflict, "price-check-required",
+            product is OrderProduct.Hotel
+                ? "Confirm the price with the hotel (and accept any change) before ordering."
+                : "Confirm the price with the airline (and accept any change) before ordering."),
+        ItemUnavailable.Expired or ItemUnavailable.NotFound => Problem(StatusCodes.Status422UnprocessableEntity, "offer-expired",
             "This offer is no longer available. Please search again."),
-        FlightSelectionUnavailable.SoldOut => Problem(StatusCodes.Status422UnprocessableEntity, "sold-out",
-            "This flight is no longer available. Please search again."),
-        FlightSelectionUnavailable.SupplierCannotBook => Problem(StatusCodes.Status422UnprocessableEntity, "not-bookable",
-            "This flight cannot be booked online yet. Please search again."),
+        ItemUnavailable.SoldOut => Problem(StatusCodes.Status422UnprocessableEntity, "sold-out",
+            product is OrderProduct.Hotel ? "This room is no longer available. Please search again." : "This flight is no longer available. Please search again."),
+        ItemUnavailable.SupplierCannotBook => Problem(StatusCodes.Status422UnprocessableEntity, "not-bookable",
+            product is OrderProduct.Hotel ? "This stay cannot be booked online yet. Please search again." : "This flight cannot be booked online yet. Please search again."),
         _ => Problem(StatusCodes.Status503ServiceUnavailable, "try-again", "We could not check this flight right now. Please try again."),
     };
 
@@ -168,6 +176,7 @@ internal sealed record OrderResponse(
         order.CreatedAt,
         order.Items.Select(item => new OrderItemResponse(
             item.Id,
+            item.Product.ToString(),
             item.SelectedOfferId,
             item.Status.ToString(),
             new OrderAmountResponse(item.AgreedPrice.Amount.ToString(CultureInfo.InvariantCulture), item.AgreedPrice.Currency.Value),
@@ -183,10 +192,11 @@ internal sealed record OrderResponse(
 
 /// <param name="PriceChangeAccepted">The customer accepted a changed price for this item before ordering (F-01).</param>
 /// <param name="Travellers">The travellers to give before payment (Q9); null for an order made before this was recorded.</param>
-/// <param name="BookingReference">The supplier's booking reference (PNR), once confirmed.</param>
-/// <param name="Ticketing">Pending or Issued, once confirmed.</param>
+/// <param name="Product">Flight or Hotel.</param>
+/// <param name="BookingReference">The supplier's booking reference (a PNR, or a hotel confirmation number), once confirmed.</param>
+/// <param name="Ticketing">Pending or Issued, once a flight is confirmed; null for a hotel stay.</param>
 internal sealed record OrderItemResponse(
-    Guid ItemId, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, DateTimeOffset OfferExpiresAt, bool PriceChangeAccepted,
+    Guid ItemId, string Product, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, DateTimeOffset OfferExpiresAt, bool PriceChangeAccepted,
     string? BookingReference, string? Ticketing, TravellersNeededResponse? Travellers);
 
 /// <param name="Outcome">Booked, BookingPending, BookingFailed, ActionRequired, Declined, PaymentPending, PaymentFailed or PaymentUnavailable.</param>

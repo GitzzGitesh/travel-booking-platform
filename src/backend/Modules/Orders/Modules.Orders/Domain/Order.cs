@@ -3,6 +3,17 @@ using TravelBooking.BuildingBlocks;
 namespace TravelBooking.Modules.Orders.Domain;
 
 /// <summary>
+/// What an order item books (ADR 0030 §6). One item lifecycle for every product: only the module that books it
+/// (Flights or Hotels, through its Contracts) and the confirmation documents differ (tickets for a flight; none tracked
+/// for a hotel, whose confirmation number is the voucher reference).
+/// </summary>
+internal enum OrderProduct
+{
+    Flight,
+    Hotel,
+}
+
+/// <summary>
 /// The flight order item lifecycle (booking-lifecycle.md, ADR 0005), up to the booking outcome. Fulfilment and
 /// cancellation states come with their stories. Draft is transient: an item is only created from a selection Flights has
 /// already revalidated, so price changes and expiry before ordering are handled there (F-01, F-02).
@@ -150,7 +161,21 @@ internal sealed class Order
     public static Order CreateForFlight(
         string customerId,
         string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context,
-        TravellerNeeds? needs = null)
+        TravellerNeeds? needs = null) =>
+        Create(OrderProduct.Flight, customerId, idempotencyKey, selectedOfferId, agreedPrice, offerExpiresAt, consent, context, needs);
+
+    /// <summary>An order for one confirmed hotel selection (ADR 0030): the same rules as <see cref="CreateForFlight"/>.</summary>
+    public static Order CreateForHotel(
+        string customerId,
+        string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context,
+        TravellerNeeds needs) =>
+        Create(OrderProduct.Hotel, customerId, idempotencyKey, selectedOfferId, agreedPrice, offerExpiresAt, consent, context, needs);
+
+    private static Order Create(
+        OrderProduct product,
+        string customerId,
+        string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context,
+        TravellerNeeds? needs)
     {
         var order = new Order
         {
@@ -160,16 +185,17 @@ internal sealed class Order
             CreatedAt = context.At,
             UpdatedAt = context.At,
         };
-        var item = new FlightOrderItem(Guid.NewGuid(), selectedOfferId, agreedPrice, offerExpiresAt, consent);
+        var item = new FlightOrderItem(Guid.NewGuid(), selectedOfferId, agreedPrice, offerExpiresAt, consent, product);
         if (needs is not null)
         {
             item.SetTravellerNeeds(needs);
         }
 
         order._items.Add(item);
+        var selection = product is OrderProduct.Hotel ? "hotel" : "flight";
         var reason = consent is null
-            ? "Order created from a confirmed flight selection"
-            : $"Order created from a confirmed flight selection at an accepted changed price (quote {consent.AcceptedPriceQuoteId}, accepted {consent.AcceptedAt:O})";
+            ? $"Order created from a confirmed {selection} selection"
+            : $"Order created from a confirmed {selection} selection at an accepted changed price (quote {consent.AcceptedPriceQuoteId}, accepted {consent.AcceptedAt:O})";
         order.Record(item, null, reason, context, providerReference: null);
         order.Move(item, FlightOrderItemStatus.AwaitingPayment, "Price confirmed with the supplier", context, providerReference: null);
         return order;
@@ -311,7 +337,7 @@ internal sealed class Order
 
     /// <summary>The supplier confirmed the booking at the agreed price, directly or found by reconciliation.</summary>
     public Result<FlightOrderItemStatus, OrderTransitionError> Confirm(
-        Guid itemId, string providerId, string supplierLocator, TransitionContext context, TicketingStatus ticketing = TicketingStatus.Pending)
+        Guid itemId, string providerId, string supplierLocator, TransitionContext context, TicketingStatus? ticketing = TicketingStatus.Pending)
     {
         if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(supplierLocator))
         {
@@ -573,9 +599,10 @@ internal sealed class FlightOrderItem
     {
     }
 
-    internal FlightOrderItem(Guid id, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent)
+    internal FlightOrderItem(Guid id, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, OrderProduct product = OrderProduct.Flight)
     {
         Id = id;
+        Product = product;
         SelectedOfferId = selectedOfferId;
         AgreedPrice = agreedPrice;
         OfferExpiresAt = offerExpiresAt;
@@ -586,7 +613,10 @@ internal sealed class FlightOrderItem
 
     public Guid Id { get; private set; }
 
-    /// <summary>The Flights selection this item books (at most one order item per selection).</summary>
+    /// <summary>What the item books: a flight (the default, for items created before hotels) or a hotel stay.</summary>
+    public OrderProduct Product { get; private set; }
+
+    /// <summary>The Flights or Hotels selection this item books (at most one order item per selection).</summary>
     public Guid SelectedOfferId { get; private set; }
 
     /// <summary>The supplier-confirmed price the customer agreed to: the amount to authorize and, once booked, capture.</summary>
@@ -606,7 +636,7 @@ internal sealed class FlightOrderItem
     /// <summary>The supplier's booking locator (PNR or order id), once confirmed.</summary>
     public string? SupplierLocator { get; private set; }
 
-    /// <summary>Whether the supplier has issued the tickets, once confirmed.</summary>
+    /// <summary>Whether the supplier has issued the tickets, once a flight is confirmed; null for a hotel.</summary>
     public TicketingStatus? Ticketing { get; private set; }
 
     /// <summary>
@@ -633,7 +663,7 @@ internal sealed class FlightOrderItem
         }
     }
 
-    internal void RecordSupplierBooking(string providerId, string supplierLocator, TicketingStatus ticketing)
+    internal void RecordSupplierBooking(string providerId, string supplierLocator, TicketingStatus? ticketing)
     {
         ProviderId = providerId;
         SupplierLocator = supplierLocator;

@@ -266,7 +266,7 @@ public sealed class AuthorizeCheckoutHandlerTests
     [InlineData("cust-1", "pay-1", "")]
     public async Task Invalid_requests_are_refused(string customer, string key, string token)
     {
-        var result = await new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, Orchestrator(), _clock)
+        var result = await new AuthorizeCheckoutHandler(_store, new OrderItemSelections(_selections, new StubHotelSelections()), _payments, _travellers, Orchestrator(), _clock)
             .HandleAsync(new AuthorizeCheckout(_order.Id, customer, key, token, "trace-1"), TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<CheckoutFailure.InvalidRequest>();
@@ -310,7 +310,7 @@ public sealed class AuthorizeCheckoutHandlerTests
     }
 
     private Task<Result<CheckoutResult, CheckoutFailure>> Handle(string customer = "cust-1", string key = "pay-1") =>
-        new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, Orchestrator(), _clock)
+        new AuthorizeCheckoutHandler(_store, new OrderItemSelections(_selections, new StubHotelSelections()), _payments, _travellers, Orchestrator(), _clock)
             .HandleAsync(new AuthorizeCheckout(_order.Id, customer, key, "pm_test", "trace-1"), TestContext.Current.CancellationToken);
 
     private Result<BookableFlightSelection, FlightSelectionUnavailable> Bookable(Money? price = null, DateTimeOffset? expiresAt = null, Guid? quote = null) =>
@@ -353,7 +353,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         var legacy = Order.CreateForFlight("cust-1", "key-1", Guid.NewGuid(), OrderTests.Price, OrderTests.Now.AddMinutes(30), null, new TransitionContext(OrderTests.Now, "customer"));
         _store.Orders.Add(legacy);
 
-        var result = await new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, Orchestrator(), _clock)
+        var result = await new AuthorizeCheckoutHandler(_store, new OrderItemSelections(_selections, new StubHotelSelections()), _payments, _travellers, Orchestrator(), _clock)
             .HandleAsync(new AuthorizeCheckout(legacy.Id, "cust-1", "pay-1", "pm_test", "trace-1"), TestContext.Current.CancellationToken);
 
         result.Error.ShouldBeOfType<CheckoutFailure.TravellersIncomplete>();
@@ -396,7 +396,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         _store.Orders.Add(legacy);
         _payments.Resumable = true;
 
-        var result = await new AuthorizeCheckoutHandler(_store, _selections, _payments, _travellers, Orchestrator(), _clock)
+        var result = await new AuthorizeCheckoutHandler(_store, new OrderItemSelections(_selections, new StubHotelSelections()), _payments, _travellers, Orchestrator(), _clock)
             .HandleAsync(new AuthorizeCheckout(legacy.Id, "cust-1", "pay-1", "pm_test", "trace-1"), TestContext.Current.CancellationToken);
 
         result.Error.ShouldBe(new CheckoutFailure.AuthorizedButNotBookable(_payments.PaymentId));
@@ -455,7 +455,7 @@ public sealed class AuthorizeCheckoutHandlerTests
     }
 
     private FlightBookingOrchestrator Orchestrator() =>
-        new(_store, _bookings, _travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<FlightBookingOrchestrator>.Instance);
+        new(_store, _bookings, new StubHotelBookings(), _travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<FlightBookingOrchestrator>.Instance);
 
     private sealed class StubTravellers : IOrderTravellers
     {

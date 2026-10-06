@@ -134,7 +134,7 @@ internal sealed record NoticeTexts(
     public static readonly NoticeTexts English = new(
         "en",
         "Your booking is confirmed",
-        "Your flight booking is confirmed. Keep the booking reference for your trip.",
+        "Your booking is confirmed. Keep the booking reference for your trip.",
         "Part of your booking is confirmed",
         "Part of your booking is confirmed. You are charged only for what is booked; the rest of the amount held on your card is being released.",
         "We could not complete your booking",
@@ -152,7 +152,7 @@ internal sealed record NoticeTexts(
         "Your refund is delayed",
         "We could not complete your refund yet. Our team is looking into it and will contact you; you do not need to do anything.",
         "We have received your cancellation request",
-        "We have received your request to cancel your booking. Our team handles it with the airline; your booking stays as it is until we confirm the cancellation by email.",
+        "We have received your request to cancel your booking. Our team handles it with the airline or hotel; your booking stays as it is until we confirm the cancellation by email.",
         "We could not cancel your booking",
         "We could not cancel your booking as requested. Your booking stays as it is, and our support team will contact you about it.",
         "This is an automated message about your order. Your trip details are in your account.");

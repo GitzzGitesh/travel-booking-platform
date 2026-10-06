@@ -55,6 +55,8 @@ export default defineConfig({
         ConnectionStrings__Payments: process.env['E2E_FLIGHTS_DB'] ?? '',
         // The customer booking journey: travellers and contact (Customers migrations applied too).
         ConnectionStrings__Customers: process.env['E2E_FLIGHTS_DB'] ?? '',
+        // Hotel stays (ADR 0030): search, selection and orders (Hotels migrations applied too).
+        ConnectionStrings__Hotels: process.env['E2E_FLIGHTS_DB'] ?? '',
         Authentication__StaffSession__DevelopmentSignIn: 'true',
         // customer-web journeys sign in with the customer stand-in (ADR 0028), as synthetic accounts.
         Authentication__CustomerSession__DevelopmentSignIn: 'true',

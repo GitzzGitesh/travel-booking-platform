@@ -88,9 +88,16 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         order.Navigation(o => o.Timeline).HasField("_timeline").UsePropertyAccessMode(PropertyAccessMode.Field);
 
         var item = modelBuilder.Entity<FlightOrderItem>();
-        item.ToTable("FlightOrderItems", table => table.HasCheckConstraint(
-            "CK_FlightOrderItems_Status",
-            $"[Status] IN ({string.Join(", ", Enum.GetNames<FlightOrderItemStatus>().Select(name => $"'{name}'"))})"));
+        // The table keeps its name: items of every product live in it (ADR 0030 §6), told apart by Product.
+        item.ToTable("FlightOrderItems", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_FlightOrderItems_Status",
+                $"[Status] IN ({string.Join(", ", Enum.GetNames<FlightOrderItemStatus>().Select(name => $"'{name}'"))})");
+            table.HasCheckConstraint(
+                "CK_FlightOrderItems_Product",
+                $"[Product] IN ({string.Join(", ", Enum.GetNames<OrderProduct>().Select(name => $"'{name}'"))})");
+        });
         item.HasKey(i => i.Id);
         item.Property(i => i.Id).ValueGeneratedNever();
         item.HasIndex(i => i.SelectedOfferId).IsUnique(); // at most one order item books a selection
@@ -102,6 +109,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
                 .HasConversion(code => code.Value, value => new CurrencyCode(value));
         });
         item.Property(i => i.Status).HasConversion<string>().HasMaxLength(30);
+        item.Property(i => i.Product).HasConversion<string>().HasMaxLength(10).IsUnicode(false);
         item.Property(i => i.ProviderId).HasMaxLength(50);
         item.Property(i => i.SupplierLocator).HasMaxLength(100);
         item.Property(i => i.Ticketing).HasConversion<string>().HasMaxLength(10);

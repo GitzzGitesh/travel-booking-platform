@@ -9,6 +9,7 @@ export interface OrderItemResponse {
   itemId: string;
   offerExpiresAt: string;
   priceChangeAccepted: boolean;
+  product: string;
   selectedOfferId: string;
   status: string;
   ticketing: (string | null);

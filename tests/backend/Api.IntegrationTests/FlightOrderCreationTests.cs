@@ -108,7 +108,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         var sameKey = await Create(key, (await ConfirmedSelection("JFK", owner: "test-customer-2")).Id, customer: "test-customer-2");
 
         // Another customer's selection is simply not found: nothing tells whether it exists or is ordered.
-        theirs.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(FlightSelectionUnavailable.NotFound));
+        theirs.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(ItemUnavailable.NotFound));
         sameKey.Value.Created.ShouldBeTrue(); // keys are per customer
         using var scope = api.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
@@ -124,7 +124,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
         var result = await Create(NewKey(), selected);
 
-        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(FlightSelectionUnavailable.NeedsPriceCheck));
+        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(ItemUnavailable.NeedsPriceCheck));
     }
 
     [Theory]
@@ -139,7 +139,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
         var result = await Create(NewKey(), selected);
 
-        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(reason));
+        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(Enum.Parse<ItemUnavailable>(reason.ToString())));
     }
 
     [Fact]

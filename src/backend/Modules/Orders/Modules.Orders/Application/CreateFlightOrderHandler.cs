@@ -1,6 +1,5 @@
 using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Background;
-using TravelBooking.Modules.Flights.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 
 namespace TravelBooking.Modules.Orders.Application;
@@ -66,7 +65,7 @@ internal interface IOrderStore
 }
 
 /// <summary><paramref name="CustomerId"/> is the authenticated customer (Q8); the actor recorded on the timeline.</summary>
-internal sealed record CreateFlightOrder(string CustomerId, string IdempotencyKey, Guid SelectedOfferId, string? CorrelationId);
+internal sealed record CreateFlightOrder(string CustomerId, string IdempotencyKey, Guid SelectedOfferId, string? CorrelationId, OrderProduct Product = OrderProduct.Flight);
 
 internal sealed record CreatedOrder(Order Order, bool Created);
 
@@ -90,7 +89,7 @@ internal abstract record CreateFlightOrderFailure
     /// </summary>
     internal sealed record SelectionAlreadyOrdered(Guid OrderId) : CreateFlightOrderFailure;
 
-    internal sealed record SelectionUnavailable(FlightSelectionUnavailable Reason) : CreateFlightOrderFailure;
+    internal sealed record SelectionUnavailable(ItemUnavailable Reason) : CreateFlightOrderFailure;
 }
 
 /// <summary>
@@ -98,7 +97,7 @@ internal abstract record CreateFlightOrderFailure
 /// return the original order, enforced by unique constraints on the key and on the selection, not by a check alone.
 /// No supplier or payment call is made here; the price comes from Flights, never from the client.
 /// </summary>
-internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOrderStore store, TimeProvider timeProvider)
+internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, IOrderStore store, TimeProvider timeProvider)
 {
     public const int MaxIdempotencyKeyLength = 100;
 
@@ -119,24 +118,20 @@ internal sealed class CreateFlightOrderHandler(IFlightSelections selections, IOr
             return replayed;
         }
 
-        var selection = await selections.GetBookableAsync(command.SelectedOfferId, command.CustomerId, cancellationToken);
+        var selection = await selections.GetBookableAsync(command.Product, command.SelectedOfferId, command.CustomerId, cancellationToken);
         if (!selection.IsSuccess)
         {
             return Failure(new CreateFlightOrderFailure.SelectionUnavailable(selection.Error));
         }
 
         var bookable = selection.Value;
-        var order = Order.CreateForFlight(
-            command.CustomerId,
-            command.IdempotencyKey,
-            bookable.SelectedOfferId,
-            bookable.AgreedTotalPrice,
-            bookable.OfferExpiresAt,
-            bookable is { AcceptedPriceQuoteId: { } quote, PriceAcceptedAt: { } acceptedAt } ? new PriceConsent(quote, acceptedAt) : null,
-            new TransitionContext(timeProvider.GetUtcNow(), Actor(command.CustomerId), command.CorrelationId),
-            bookable.LastTravelDate is { } lastTravelDate
-                ? new TravellerNeeds(bookable.Adults, bookable.Children, bookable.Infants, bookable.DocumentsRequired, lastTravelDate)
-                : null);
+        var context = new TransitionContext(timeProvider.GetUtcNow(), Actor(command.CustomerId), command.CorrelationId);
+        var order = command.Product is OrderProduct.Hotel
+            ? Order.CreateForHotel(
+                command.CustomerId, command.IdempotencyKey, bookable.SelectedOfferId, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, bookable.Consent, context,
+                bookable.Needs ?? throw new InvalidOperationException("A hotel selection always states its guests."))
+            : Order.CreateForFlight(
+                command.CustomerId, command.IdempotencyKey, bookable.SelectedOfferId, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, bookable.Consent, context, bookable.Needs);
 
         if (await store.TryAddAsync(order, cancellationToken))
         {

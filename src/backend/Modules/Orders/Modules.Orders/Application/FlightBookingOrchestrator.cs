@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Customers.Contracts;
 using TravelBooking.Modules.Flights.Contracts;
+using TravelBooking.Modules.Hotels.Contracts;
 using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 
@@ -30,6 +31,19 @@ internal sealed class BookingReconciliationOptions
     public TimeSpan ManualReviewAfter { get; set; } = TimeSpan.FromHours(24);
 }
 
+/// <summary>A booking outcome, whatever the product (ADR 0030 §6): each product's Contracts result, mapped.</summary>
+internal enum ItemBookingStatus
+{
+    Booked,
+    NotBooked,
+    Unknown,
+    NotFound,
+    Mismatch,
+}
+
+/// <param name="Ticketing">For a booked flight: whether its tickets are issued. Null for a hotel stay.</param>
+internal sealed record ItemBookingOutcome(ItemBookingStatus Status, string? ProviderId = null, string? Locator = null, TicketingStatus? Ticketing = null, string? Detail = null);
+
 /// <summary>
 /// Books an order's items with their suppliers and settles its payment (ADR 0005, ADR 0021): authorize → book → capture.
 /// Each item is booked once, under its own id as our client reference, and only by the request that moved the order to
@@ -41,11 +55,13 @@ internal sealed class BookingReconciliationOptions
 /// Once every item is settled, the payment is charged for the confirmed items (never before a confirmed booking), or
 /// released when nothing was booked, through the outbox in the same save (F-25). Reconciliation settles the unknown
 /// ones by lookup: found → Confirmed; not found after the supplier's consistency window → Failed; unresolved after its
-/// limit → ManualReview, with an alert.
+/// limit → ManualReview, with an alert. Each item is booked and looked up through its own product's Contracts (Flights
+/// or Hotels, ADR 0030 §6): never another module, never a fallback between them.
 /// </summary>
 internal sealed partial class FlightBookingOrchestrator(
     IOrderStore store,
-    IFlightBookings bookings,
+    IFlightBookings flights,
+    IHotelBookings hotels,
     IOrderTravellers travellers,
     TimeProvider timeProvider,
     IOptions<BookingReconciliationOptions> options,
@@ -68,15 +84,15 @@ internal sealed partial class FlightBookingOrchestrator(
         }
 
         var people = await travellers.GetForBookingAsync(order.Id, order.CustomerId, context.CorrelationId, cancellationToken);
-        var outcomes = new Dictionary<Guid, FlightBookingResult>();
+        var outcomes = new Dictionary<Guid, ItemBookingOutcome>();
         foreach (var item in items)
         {
             outcomes[item.Id] = people is null
-                ? new FlightBookingResult(FlightBookingStatus.NotBooked, Detail: "The travellers could not be read for the booking; nothing was sent to the supplier")
+                ? new ItemBookingOutcome(ItemBookingStatus.NotBooked, Detail: "The travellers could not be read for the booking; nothing was sent to the supplier")
                 : TooLateToSend(item)
                     // Reconciliation's windows count from the start of booking: a send this late could land after it
                     // concluded "not booked" and released the hold. Nothing is sent, so nothing is booked.
-                    ? new FlightBookingResult(FlightBookingStatus.NotBooked, Detail: "The booking could not be sent in time; nothing was sent to the supplier")
+                    ? new ItemBookingOutcome(ItemBookingStatus.NotBooked, Detail: "The booking could not be sent in time; nothing was sent to the supplier")
                     : await BookItemAsync(order, item, people, context, cancellationToken);
         }
 
@@ -95,10 +111,10 @@ internal sealed partial class FlightBookingOrchestrator(
             return false;
         }
 
-        var outcomes = new Dictionary<Guid, FlightBookingResult>();
+        var outcomes = new Dictionary<Guid, ItemBookingOutcome>();
         foreach (var item in order.Items.Where(i => NeedsLookup(i, now)))
         {
-            outcomes[item.Id] = await bookings.ReconcileAsync(item.SelectedOfferId, order.CustomerId, item.Id.ToString(), item.AgreedPrice, cancellationToken);
+            outcomes[item.Id] = await LookupAsync(order, item, cancellationToken);
         }
 
         if (outcomes.Count == 0)
@@ -124,25 +140,25 @@ internal sealed partial class FlightBookingOrchestrator(
     public async Task<FlightOrderItemStatus> CheckReviewAsync(Order order, Guid itemId, string reason, TransitionContext context, CancellationToken cancellationToken)
     {
         var item = order.Items.Single(i => i.Id == itemId);
-        FlightBookingResult outcome;
+        ItemBookingOutcome outcome;
         try
         {
-            outcome = await bookings.ReconcileAsync(item.SelectedOfferId, order.CustomerId, item.Id.ToString(), item.AgreedPrice, cancellationToken);
+            outcome = await LookupAsync(order, item, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             LogReviewLookupFailed(logger, order.Id, itemId, exception.GetType().Name);
-            outcome = new FlightBookingResult(FlightBookingStatus.Unknown); // the lookup failed: nothing is concluded
+            outcome = new ItemBookingOutcome(ItemBookingStatus.Unknown); // the lookup failed: nothing is concluded
         }
 
         // Items whose booking start was never recorded predate booking (nothing was sent then): every window has passed.
         var sinceStart = item.BookingStartedAt is { } started ? context.At - started : TimeSpan.MaxValue;
         switch (outcome.Status)
         {
-            case FlightBookingStatus.Booked when outcome is { ProviderId: { } providerId, Locator: { } locator }:
-                order.Confirm(itemId, providerId, locator, context, outcome.Ticketing is FlightTicketingStatus.Issued ? TicketingStatus.Issued : TicketingStatus.Pending);
+            case ItemBookingStatus.Booked when outcome is { ProviderId: { } providerId, Locator: { } locator }:
+                order.Confirm(itemId, providerId, locator, context, outcome.Ticketing);
                 break;
-            case FlightBookingStatus.NotFound when sinceStart >= options.Value.NotFoundConclusiveAfter && !order.HadSupplierMismatch(itemId):
+            case ItemBookingStatus.NotFound when sinceStart >= options.Value.NotFoundConclusiveAfter && !order.HadSupplierMismatch(itemId):
                 order.Fail(itemId, $"Checked with the supplier: no booking under our reference; nothing was booked ({reason})", context);
                 break;
             default:
@@ -164,30 +180,91 @@ internal sealed partial class FlightBookingOrchestrator(
         && (item.Status is FlightOrderItemStatus.PendingConfirmation
             || (item.Status is FlightOrderItemStatus.Booking && (item.BookingStartedAt is not { } started || now - started >= options.Value.LookupAfter)));
 
-    private async Task<FlightBookingResult> BookItemAsync(Order order, FlightOrderItem item, BookingTravellers people, TransitionContext context, CancellationToken cancellationToken)
+    private async Task<ItemBookingOutcome> BookItemAsync(Order order, FlightOrderItem item, BookingTravellers people, TransitionContext context, CancellationToken cancellationToken)
     {
-        var request = new FlightBookingRequest(
-            item.SelectedOfferId,
-            order.CustomerId,
-            item.Id.ToString(),
-            item.AgreedPrice,
-            [.. people.Travellers.Select(Passenger)],
-            new FlightBookingContact(people.Email, people.Phone),
-            context.CorrelationId);
         try
         {
-            return await bookings.BookAsync(request, cancellationToken);
+            if (item.Product is OrderProduct.Hotel)
+            {
+                // The occupancy the room was priced for: each guest's age at check-out (the needs' last travel date) from
+                // their date of birth, 18 or over an adult; the lead guest (an adult) first, as hotels require.
+                var checkOut = item.TravellerNeeds?.LastTravelDate ?? DateOnly.FromDateTime(context.At.UtcDateTime);
+                var guests = people.Travellers
+                    .Select(t => new HotelBookingGuest(t.GivenNames, t.Surname, AgeOn(t.DateOfBirth, checkOut) is var age and < 18 ? age : null))
+                    .OrderBy(g => g.IsAdult ? 0 : 1);
+                return Map(await hotels.BookAsync(
+                    new HotelBookingRequest(
+                        item.SelectedOfferId,
+                        order.CustomerId,
+                        item.Id.ToString(),
+                        item.AgreedPrice,
+                        [.. guests],
+                        new HotelBookingContact(people.Email, people.Phone),
+                        context.CorrelationId),
+                    cancellationToken));
+            }
+
+            return Map(await flights.BookAsync(
+                new FlightBookingRequest(
+                    item.SelectedOfferId,
+                    order.CustomerId,
+                    item.Id.ToString(),
+                    item.AgreedPrice,
+                    [.. people.Travellers.Select(Passenger)],
+                    new FlightBookingContact(people.Email, people.Phone),
+                    context.CorrelationId),
+                cancellationToken));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // Flights classifies supplier failures itself; anything escaping it may still hide a booking: unknown.
+            // Flights and Hotels classify supplier failures themselves; anything escaping them may still hide a booking: unknown.
             LogBookingCallFailed(logger, order.Id, item.Id, exception.GetType().Name);
-            return new FlightBookingResult(FlightBookingStatus.Unknown);
+            return new ItemBookingOutcome(ItemBookingStatus.Unknown);
         }
     }
 
+    private static int AgeOn(DateOnly dateOfBirth, DateOnly on)
+    {
+        var age = on.Year - dateOfBirth.Year;
+        return dateOfBirth.AddYears(age) > on ? age - 1 : age;
+    }
+
+    // A lookup by our reference (the item id), with the product's own module. A read: safe to repeat.
+    private async Task<ItemBookingOutcome> LookupAsync(Order order, FlightOrderItem item, CancellationToken cancellationToken) =>
+        item.Product is OrderProduct.Hotel
+            ? Map(await hotels.ReconcileAsync(item.SelectedOfferId, order.CustomerId, item.Id.ToString(), item.AgreedPrice, cancellationToken))
+            : Map(await flights.ReconcileAsync(item.SelectedOfferId, order.CustomerId, item.Id.ToString(), item.AgreedPrice, cancellationToken));
+
+    private static ItemBookingOutcome Map(FlightBookingResult result) => new(
+        result.Status switch
+        {
+            FlightBookingStatus.Booked => ItemBookingStatus.Booked,
+            FlightBookingStatus.NotBooked => ItemBookingStatus.NotBooked,
+            FlightBookingStatus.NotFound => ItemBookingStatus.NotFound,
+            FlightBookingStatus.Mismatch => ItemBookingStatus.Mismatch,
+            _ => ItemBookingStatus.Unknown,
+        },
+        result.ProviderId,
+        result.Locator,
+        result.Ticketing is FlightTicketingStatus.Issued ? TicketingStatus.Issued : TicketingStatus.Pending,
+        result.Detail);
+
+    private static ItemBookingOutcome Map(HotelBookingResult result) => new(
+        result.Status switch
+        {
+            HotelBookingStatus.Booked => ItemBookingStatus.Booked,
+            HotelBookingStatus.NotBooked => ItemBookingStatus.NotBooked,
+            HotelBookingStatus.NotFound => ItemBookingStatus.NotFound,
+            HotelBookingStatus.Mismatch => ItemBookingStatus.Mismatch,
+            _ => ItemBookingStatus.Unknown,
+        },
+        result.ProviderId,
+        result.ConfirmationNumber,
+        Ticketing: null,
+        result.Detail);
+
     private async Task<Order> ApplyAndSaveAsync(
-        Order order, IReadOnlyDictionary<Guid, FlightBookingResult> outcomes, TransitionContext context, bool reconciling, CancellationToken cancellationToken)
+        Order order, IReadOnlyDictionary<Guid, ItemBookingOutcome> outcomes, TransitionContext context, bool reconciling, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -219,7 +296,7 @@ internal sealed partial class FlightBookingOrchestrator(
         }
     }
 
-    private void Apply(Order order, Guid itemId, FlightBookingResult outcome, TransitionContext context, bool reconciling)
+    private void Apply(Order order, Guid itemId, ItemBookingOutcome outcome, TransitionContext context, bool reconciling)
     {
         if (order.Items.SingleOrDefault(i => i.Id == itemId) is not { } item)
         {
@@ -230,22 +307,21 @@ internal sealed partial class FlightBookingOrchestrator(
         var sinceStart = item.BookingStartedAt is { } started ? context.At - started : TimeSpan.MaxValue;
         switch (outcome.Status)
         {
-            case FlightBookingStatus.Booked when outcome is { ProviderId: { } providerId, Locator: { } locator }:
-                var ticketing = outcome.Ticketing is FlightTicketingStatus.Issued ? TicketingStatus.Issued : TicketingStatus.Pending;
-                if (!order.Confirm(itemId, providerId, locator, context, ticketing).IsSuccess && item.Status is FlightOrderItemStatus.Failed)
+            case ItemBookingStatus.Booked when outcome is { ProviderId: { } providerId, Locator: { } locator }:
+                if (!order.Confirm(itemId, providerId, locator, context, outcome.Ticketing).IsSuccess && item.Status is FlightOrderItemStatus.Failed)
                 {
                     // Found after it was concluded absent: its hold may be released already. A person must act now.
                     LogBookingFoundAfterFailure(logger, order.Id, itemId);
                 }
 
                 break;
-            case FlightBookingStatus.NotBooked when !reconciling:
+            case ItemBookingStatus.NotBooked when !reconciling:
                 order.Fail(itemId, outcome.Detail ?? "The supplier refused the booking; nothing was booked", context);
                 break;
-            case FlightBookingStatus.NotFound when reconciling && sinceStart >= options.Value.NotFoundConclusiveAfter:
+            case ItemBookingStatus.NotFound when reconciling && sinceStart >= options.Value.NotFoundConclusiveAfter:
                 order.Fail(itemId, "The supplier has no booking under our reference after its consistency window; nothing was booked", context);
                 break;
-            case FlightBookingStatus.Mismatch:
+            case ItemBookingStatus.Mismatch:
                 order.RequireManualReview(itemId, "A booking exists at the supplier but not as agreed; it is never charged until a person decides", context,
                     outcome is { ProviderId: { } mismatchProvider, Locator: { } mismatchLocator } ? $"{mismatchProvider}:{mismatchLocator}" : null);
                 LogMismatch(logger, order.Id, itemId);
