@@ -279,6 +279,17 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - Stripe's approval (P2) and test-mode keys (P3), which are needed to run the card step against Stripe;
   - the production CSP and webhook endpoint with hosting (Q2, P4);
   - live keys (P10). |
+| 21 | **Hotels H1: search, offers, selection and price check (ADR 0030)** | **Done, with the mock hotel provider.**
+- **Decisions (ADR 0030, delegated):**
+  - merchant of record with prepaid rates only, through the same payment flow as flights;
+  - pay-at-property rates not sold at launch;
+  - one room per booking at launch;
+  - no real hotel supplier assumed (Q6).
+- **New projects:** `Modules.Hotels` (schema `hotels`, migration `InitialHotels`), `Integrations.Hotels.Mock` (Development and Staging only), and `Modules.Hotels.UnitTests`.
+- **Port `IHotelProvider`** (search, revalidate) with a shared contract suite (`ProviderContracts/Hotels`), which the mock passes.
+- **Offers:** the property (no supplier id exposed), room, board, the total payable now, fees payable at the property (information only), the cancellation terms (non-refundable, or free until a deadline then a penalty) and the expiry. Offers that cannot be sold or stored as stated are dropped, never truncated (F-54). Changed terms at the same price are a quote, and another property ends the selection (F-53).
+- **API:** `POST /api/v1/hotels/searches` (anonymous, supplier rate limit) and `/hotels/selected-offers`, with `/revalidations` and `/price-acceptances`. These follow the same selection rules as flights: an owner or an anonymous selection, F-01..F-03, idempotent per caller, rowversion.
+- **Next (H2):** hotel order items and booking through Orders (`Modules.Hotels.Contracts`, book and lookup by our reference, `PendingConfirmation` and reconciliation), then checkout. Then H3 (customer-web hotel search and booking) and H4 (cancellation by the rate's policy, vouchers, admin). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

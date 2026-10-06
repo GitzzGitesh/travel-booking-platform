@@ -8,6 +8,9 @@
     <Project Path="src/backend/Hosts/Worker/Worker.csproj" />
   </Folder>
   <Folder Name="/src/backend/Integrations/" />
+  <Folder Name="/src/backend/Integrations/Hotels/">
+    <Project Path="src/backend/Integrations/Hotels/Integrations.Hotels.Mock/Integrations.Hotels.Mock.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Integrations/Flights/">
     <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Amadeus/Integrations.Flights.Amadeus.csproj" />
     <Project Path="src/backend/Integrations/Flights/Integrations.Flights.Duffel/Integrations.Flights.Duffel.csproj" />
@@ -20,6 +23,9 @@
     <Project Path="src/backend/Integrations/Payments/Integrations.Payments.Stripe/Integrations.Payments.Stripe.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/" />
+  <Folder Name="/src/backend/Modules/Hotels/">
+    <Project Path="src/backend/Modules/Hotels/Modules.Hotels/Modules.Hotels.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Flights/">
     <Project Path="src/backend/Modules/Flights/Modules.Flights.Contracts/Modules.Flights.Contracts.csproj" />
     <Project Path="src/backend/Modules/Flights/Modules.Flights/Modules.Flights.csproj" />
@@ -50,6 +56,7 @@
     <Project Path="tests/backend/BuildingBlocks.UnitTests/BuildingBlocks.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.IntegrationTests/Modules.Flights.IntegrationTests.csproj" />
     <Project Path="tests/backend/Modules.Flights.UnitTests/Modules.Flights.UnitTests.csproj" />
+    <Project Path="tests/backend/Modules.Hotels.UnitTests/Modules.Hotels.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Customers.UnitTests/Modules.Customers.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Orders.UnitTests/Modules.Orders.UnitTests.csproj" />
     <Project Path="tests/backend/Modules.Payments.UnitTests/Modules.Payments.UnitTests.csproj" />

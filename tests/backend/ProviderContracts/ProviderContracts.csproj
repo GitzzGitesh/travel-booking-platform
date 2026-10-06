@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Mock\Integrations.Flights.Mock.csproj" />
+    <ProjectReference Include="..\..\..\src\backend\Integrations\Hotels\Integrations.Hotels.Mock\Integrations.Hotels.Mock.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Travelport\Integrations.Flights.Travelport.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Sabre\Integrations.Flights.Sabre.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Integrations\Flights\Integrations.Flights.Duffel\Integrations.Flights.Duffel.csproj" />

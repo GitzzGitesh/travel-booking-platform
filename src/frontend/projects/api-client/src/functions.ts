@@ -11,6 +11,14 @@ export type { RevalidateSelectedFlightOffer$Params as RevalidateSelectedFlightOf
 export { revalidateSelectedFlightOffer as revalidateSelectedFlightOffer } from './fn/flights/revalidate-selected-flight-offer';
 export type { AcceptSelectedFlightOfferPrice$Params as AcceptSelectedFlightOfferPrice$Params } from './fn/flights/accept-selected-flight-offer-price';
 export { acceptSelectedFlightOfferPrice as acceptSelectedFlightOfferPrice } from './fn/flights/accept-selected-flight-offer-price';
+export type { SearchHotels$Params as SearchHotels$Params } from './fn/hotels/search-hotels';
+export { searchHotels as searchHotels } from './fn/hotels/search-hotels';
+export type { SelectHotelOffer$Params as SelectHotelOffer$Params } from './fn/hotels/select-hotel-offer';
+export { selectHotelOffer as selectHotelOffer } from './fn/hotels/select-hotel-offer';
+export type { RevalidateSelectedHotelOffer$Params as RevalidateSelectedHotelOffer$Params } from './fn/hotels/revalidate-selected-hotel-offer';
+export { revalidateSelectedHotelOffer as revalidateSelectedHotelOffer } from './fn/hotels/revalidate-selected-hotel-offer';
+export type { AcceptSelectedHotelOfferPrice$Params as AcceptSelectedHotelOfferPrice$Params } from './fn/hotels/accept-selected-hotel-offer-price';
+export { acceptSelectedHotelOfferPrice as acceptSelectedHotelOfferPrice } from './fn/hotels/accept-selected-hotel-offer-price';
 export type { GetOrderTravellers$Params as GetOrderTravellers$Params } from './fn/travellers/get-order-travellers';
 export { getOrderTravellers as getOrderTravellers } from './fn/travellers/get-order-travellers';
 export type { SaveOrderTravellers$Params as SaveOrderTravellers$Params } from './fn/travellers/save-order-travellers';

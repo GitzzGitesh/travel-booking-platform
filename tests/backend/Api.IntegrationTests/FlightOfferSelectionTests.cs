@@ -33,6 +33,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await _sql.StartAsync();
         using var scope = Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<FlightsDbContext>().Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Hotels.Infrastructure.HotelsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<CustomersDbContext>().Database.MigrateAsync();
@@ -55,6 +56,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:Flights", _sql.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:Hotels", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Orders", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Payments", _sql.GetConnectionString());
         builder.UseSetting("ConnectionStrings:Customers", _sql.GetConnectionString());
