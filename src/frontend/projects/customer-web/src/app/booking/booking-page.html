@@ -1,5 +1,11 @@
 <div class="page booking">
-  <p><a routerLink="/">Back to flight search</a></p>
+  <p>
+    @if (isHotel()) {
+      <a routerLink="/hotels">Back to hotel search</a>
+    } @else {
+      <a routerLink="/">Back to flight search</a>
+    }
+  </p>
 
   @switch (state().kind) {
     @case ('loading') {
@@ -60,7 +66,7 @@
         <p>
           We have emailed your confirmation. Keep the booking reference for your trip.
           @if (state.order.status === 'PartiallyConfirmed') {
-            You are charged only for what the airline confirmed.
+            You are charged only for what the {{ supplier() }} confirmed.
           }
         </p>
 
@@ -71,7 +77,8 @@
               <p>
                 You asked to cancel this booking on
                 {{ state.order.cancellationRequest!.requestedAt.slice(0, 10) }}. Our team is
-                handling it with the airline; your booking stays as it is until we email you.
+                handling it with the {{ supplier() }}; your booking stays as it is until we email
+                you.
               </p>
               <button
                 type="button"
@@ -89,8 +96,8 @@
                 </p>
               }
               <p class="note">
-                Our team cancels with the airline and tells you by email what, if anything, is
-                refunded. Asking does not cancel the booking by itself.
+                Our team cancels with the {{ supplier() }} and tells you by email what, if anything,
+                is refunded. Asking does not cancel the booking by itself.
               </p>
               <button
                 type="button"
@@ -109,7 +116,14 @@
         @if (step() === 'travellers') {
           <form class="step" (submit)="$event.preventDefault(); saveTravellers()" novalidate>
             <h2 #stepHeading tabindex="-1">Who is travelling</h2>
-            <p class="note">Enter names exactly as on the travel document, in Latin letters.</p>
+            @if (isHotel()) {
+              <p class="note">
+                Enter every guest's name in Latin letters, the lead guest (an adult) first. Each
+                child's age at check-out must match your search.
+              </p>
+            } @else {
+              <p class="note">Enter names exactly as on the travel document, in Latin letters.</p>
+            }
 
             @for (traveller of travellers.controls; track $index; let i = $index) {
               <fieldset class="card traveller" [formGroup]="traveller">
@@ -260,7 +274,7 @@
                 @if (priceChange(); as change) {
                   <div class="alert alert-warning" role="alert">
                     <p>
-                      The airline's price has changed to {{ formatMoney(change.next) }}
+                      The {{ supplier() }}'s price has changed to {{ formatMoney(change.next) }}
                       @if (change.previous; as previous) {
                         (was {{ formatMoney(previous) }})
                       }
@@ -285,7 +299,8 @@
                   </button>
                 }
                 <p class="note">
-                  The amount is held on your card and charged only once the airline confirms.
+                  The amount is held on your card and charged only once the
+                  {{ supplier() }} confirms.
                 </p>
               } @else {
                 <p class="alert alert-info" role="status">

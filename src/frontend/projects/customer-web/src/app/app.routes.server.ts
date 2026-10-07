@@ -9,6 +9,11 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Prerender,
   },
   {
+    // Hotel search (ADR 0030): a public page like flight search; searching happens in the browser.
+    path: 'hotels',
+    renderMode: RenderMode.Prerender,
+  },
+  {
     path: '**',
     renderMode: RenderMode.Client,
   },

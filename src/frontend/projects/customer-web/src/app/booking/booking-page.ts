@@ -121,6 +121,12 @@ export class BookingPage {
     const state = this.state();
     return state.kind === 'ready' ? state.order.items[0] : null;
   });
+  /** A hotel stay (ADR 0030) or a flight: only the wording differs, never the booking rules. */
+  protected readonly isHotel = computed(() => this.item()?.product === 'Hotel');
+  /** Who confirms the booking: "the airline" or "the hotel". */
+  protected readonly supplier = computed(() => (this.isHotel() ? 'hotel' : 'airline'));
+  /** What is booked: "flight" or "room". */
+  protected readonly product = computed(() => (this.isHotel() ? 'room' : 'flight'));
   protected readonly documentsRequired = computed(
     () => this.item()?.travellers?.documentsRequired ?? false,
   );
@@ -279,7 +285,7 @@ export class BookingPage {
       });
       this.message.set({
         tone: 'success',
-        text: 'Your request is withdrawn. If our team had already cancelled with the airline, we will contact you.',
+        text: `Your request is withdrawn. If our team had already cancelled with the ${this.supplier()}, we will contact you.`,
       });
       await this.reload();
     });
@@ -460,7 +466,7 @@ export class BookingPage {
         this.endAttempt();
         this.message.set({
           tone: 'info',
-          text: 'We are confirming your booking with the airline. This page updates by itself.',
+          text: `We are confirming your booking with the ${this.supplier()}. This page updates by itself.`,
         });
         await this.pollOrder();
         return;
@@ -481,7 +487,7 @@ export class BookingPage {
         this.endAttempt();
         this.message.set({
           tone: 'error',
-          text: 'The airline could not book this flight. You have not been charged, and the amount held on your card is being released.',
+          text: `The ${this.supplier()} could not book this ${this.product()}. You have not been charged, and the amount held on your card is being released.`,
         });
         return;
       case 'Declined':
@@ -533,7 +539,7 @@ export class BookingPage {
     }
     this.message.set({
       tone: 'info',
-      text: 'The airline has not confirmed yet. We will email you, and this booking shows the result.',
+      text: `The ${this.supplier()} has not confirmed yet. We will email you, and this booking shows the result.`,
     });
   }
 
@@ -571,7 +577,7 @@ export class BookingPage {
       case 'not-bookable':
         this.endAttempt();
         this.searchAgain.set(true);
-        return `${problem.title ?? 'This flight is no longer available.'} Your card has not been charged.`;
+        return `${problem.title ?? `This ${this.product()} is no longer available.`} Your card has not been charged.`;
       case 'order-not-bookable':
         // The hold is being released: this attempt is over, and nothing is retried.
         this.endAttempt();
@@ -620,7 +626,7 @@ export class BookingPage {
         return 'The price has changed. Your card has not been charged.';
       }
       this.searchAgain.set(true);
-      return 'This flight is no longer available at that price. Your card has not been charged. Please search again.';
+      return `This ${this.product()} is no longer available at that price. Your card has not been charged. Please search again.`;
     }
   }
 

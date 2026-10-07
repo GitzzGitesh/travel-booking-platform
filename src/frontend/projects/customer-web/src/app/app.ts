@@ -18,8 +18,8 @@ import { closeOnBackdropClick, openSheet } from './ui/dialog';
   templateUrl: './app.html',
 })
 export class App {
-  /** Products shown as coming soon: navigation placeholders only, with no routes behind them. */
-  protected readonly comingSoon = ['Hotels'] as const;
+  /** Products shown as coming soon: navigation placeholders only, with no routes behind them (none today). */
+  protected readonly comingSoon: readonly string[] = [];
   protected readonly menuOpen = signal(false);
   protected readonly session = inject(CustomerSession);
   protected readonly signingOut = signal(false);

@@ -158,7 +158,8 @@ internal static class OrderEndpoints
             product is OrderProduct.Hotel ? "This room is no longer available. Please search again." : "This flight is no longer available. Please search again."),
         ItemUnavailable.SupplierCannotBook => Problem(StatusCodes.Status422UnprocessableEntity, "not-bookable",
             product is OrderProduct.Hotel ? "This stay cannot be booked online yet. Please search again." : "This flight cannot be booked online yet. Please search again."),
-        _ => Problem(StatusCodes.Status503ServiceUnavailable, "try-again", "We could not check this flight right now. Please try again."),
+        _ => Problem(StatusCodes.Status503ServiceUnavailable, "try-again",
+            product is OrderProduct.Hotel ? "We could not check this stay right now. Please try again." : "We could not check this flight right now. Please try again."),
     };
 
     private static ProblemHttpResult Problem(int status, string type, string title, IDictionary<string, object?>? extensions = null) =>

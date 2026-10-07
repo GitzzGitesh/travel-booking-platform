@@ -92,6 +92,9 @@ public sealed class HotelSearchSelectionTests(SqlApiFactory api) : IClassFixture
         var problem = await Read(changed);
         problem.GetProperty("type").GetString().ShouldBe("price-changed");
         problem.GetProperty("previousTotalPrice").GetProperty("amount").GetString().ShouldBe(price);
+        // Everything the customer is asked to accept is in the quote (F-53): the room, board and cancellation terms.
+        (problem.GetProperty("room").GetString(), problem.GetProperty("board").GetString()).ShouldBe(("Double room", "Breakfast"));
+        problem.GetProperty("cancellation").GetProperty("refundable").GetBoolean().ShouldBeTrue();
         var quote = problem.GetProperty("priceQuoteId").GetGuid();
 
         (await Send(HttpMethod.Post, $"{_selections}/{selectionId}/price-acceptances", token, new { priceQuoteId = Guid.NewGuid() }))

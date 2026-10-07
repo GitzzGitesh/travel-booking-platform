@@ -1,0 +1,480 @@
+<section class="hero" aria-labelledby="search-heading">
+  <div class="page">
+    <div class="hero-copy">
+      <h1 id="search-heading">Search hotels</h1>
+      <p class="lede">
+        Compare prepaid rooms, choose your stay, and keep your selection while the rate is
+        available.
+      </p>
+    </div>
+
+    <form class="search card" [formGroup]="form" (ngSubmit)="search()" novalidate>
+      <div class="fields">
+        <div class="cell">
+          <div class="tile" [class.invalid]="showError('destination')">
+            <label class="field-label" for="destination">Destination</label>
+            <input
+              #destinationInput
+              id="destination"
+              class="code-input"
+              formControlName="destination"
+              placeholder="Add city"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              maxlength="3"
+              [attr.aria-invalid]="showError('destination')"
+              [attr.aria-describedby]="
+                showError('destination') ? 'destination-hint destination-error' : 'destination-hint'
+              "
+            />
+            <span class="sub" id="destination-hint">3-letter city code, e.g. PAR</span>
+          </div>
+          <div class="errors">
+            @if (showError('destination')) {
+              <p class="field-error" id="destination-error">
+                Destination: enter a three-letter city code.
+              </p>
+            }
+          </div>
+        </div>
+
+        <div class="cell">
+          <div class="pair">
+            <div class="tile" [class.invalid]="showError('checkIn')">
+              <label class="field-label" for="checkIn">Check-in</label>
+              <input
+                id="checkIn"
+                type="date"
+                formControlName="checkIn"
+                [min]="today"
+                [attr.aria-invalid]="showError('checkIn')"
+                [attr.aria-describedby]="showError('checkIn') ? 'checkIn-error' : null"
+              />
+            </div>
+            <div
+              class="tile"
+              [class.invalid]="
+                showError('checkOut') ||
+                showGroupError('checkOutBeforeCheckIn') ||
+                showGroupError('tooManyNights')
+              "
+            >
+              <label class="field-label" for="checkOut">Check-out</label>
+              <input
+                id="checkOut"
+                type="date"
+                formControlName="checkOut"
+                [min]="form.controls.checkIn.value || today"
+                [attr.aria-invalid]="
+                  showError('checkOut') ||
+                  showGroupError('checkOutBeforeCheckIn') ||
+                  showGroupError('tooManyNights')
+                "
+                [attr.aria-describedby]="
+                  showError('checkOut') ||
+                  showGroupError('checkOutBeforeCheckIn') ||
+                  showGroupError('tooManyNights')
+                    ? 'checkOut-error'
+                    : null
+                "
+              />
+            </div>
+          </div>
+          <div class="errors">
+            @if (showError('checkIn')) {
+              <p class="field-error" id="checkIn-error">Choose a check-in date.</p>
+            }
+            @if (showError('checkOut')) {
+              <p class="field-error" id="checkOut-error">Choose a check-out date.</p>
+            } @else if (showGroupError('checkOutBeforeCheckIn')) {
+              <p class="field-error" id="checkOut-error">Check-out must be after check-in.</p>
+            } @else if (showGroupError('tooManyNights')) {
+              <p class="field-error" id="checkOut-error">Stays are 1 to 30 nights.</p>
+            }
+          </div>
+        </div>
+
+        <div class="cell">
+          <fieldset class="tile guests">
+            <legend class="field-label">Guests (one room)</legend>
+            <label>
+              <span class="sub">Adults</span>
+              <select formControlName="adults">
+                @for (n of adultOptions; track n) {
+                  <option [ngValue]="n">{{ n }}</option>
+                }
+              </select>
+            </label>
+            @for (age of form.controls.childAges.controls; track $index; let i = $index) {
+              <span class="child-age">
+                <label>
+                  <span class="sub">Child {{ i + 1 }}: age at check-out</span>
+                  <select [formControl]="age">
+                    @for (a of ageOptions; track a) {
+                      <option [ngValue]="a">{{ a }}</option>
+                    }
+                  </select>
+                </label>
+                <button type="button" class="btn btn-ghost btn-sm" (click)="removeChild(i)">
+                  Remove<span class="visually-hidden"> child {{ i + 1 }}</span>
+                </button>
+              </span>
+            }
+            @if (form.controls.childAges.length < maxChildren) {
+              <button type="button" class="btn btn-outline btn-sm" (click)="addChild()">
+                Add a child
+              </button>
+            }
+          </fieldset>
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <button
+          type="submit"
+          class="btn btn-primary btn-lg"
+          [disabled]="state().kind === 'loading' || booking().kind === 'creating'"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          {{ state().kind === 'loading' ? 'Searching…' : 'Search hotels' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
+
+@let current = state();
+<div class="page content">
+  @if (current.kind !== 'idle') {
+    <section
+      class="outcome"
+      aria-labelledby="results-heading"
+      [attr.aria-busy]="current.kind === 'loading'"
+    >
+      <div class="results-head">
+        <div>
+          <h2 id="results-heading" tabindex="-1" #resultsHeading>
+            @switch (current.kind) {
+              @case ('loading') {
+                Searching…
+              }
+              @case ('results') {
+                {{ current.offers.length === 0 ? 'No rooms found' : 'Available rooms' }}
+              }
+              @case ('error') {
+                {{ current.title }}
+              }
+            }
+          </h2>
+          @if (current.kind === 'results') {
+            <p class="search-summary">{{ summary(current.query, current.nights) }}</p>
+          }
+        </div>
+        @if (current.kind !== 'loading') {
+          <button type="button" class="btn btn-outline btn-sm" (click)="modifySearch()">
+            Modify search
+          </button>
+        }
+      </div>
+
+      @switch (current.kind) {
+        @case ('results') {
+          @if (current.offers.length === 0) {
+            <div class="card empty">
+              <p>No rooms match this search. Try different dates or another city.</p>
+              <button type="button" class="btn btn-dark" (click)="modifySearch()">
+                Change search
+              </button>
+            </div>
+          } @else {
+            <p class="count">
+              <span class="time-note"
+                >Prices are the total for the stay, paid now. Cancellation deadlines are in the
+                hotel's local time.</span
+              >
+            </p>
+            <ol class="offers">
+              @for (offer of current.offers; track offer.offerId; let offerIndex = $index) {
+                @let isSelected = selectedOfferId() === offer.offerId;
+                <li class="offer card" [class.selected]="isSelected">
+                  @if (isSelected) {
+                    <span class="badge badge-dark selected-badge" aria-hidden="true">Selected</span>
+                  }
+                  <div class="itinerary">
+                    <h3 class="slice-label">{{ offer.property.name }}</h3>
+                    <p>
+                      @if (offer.property.starRating !== null) {
+                        {{ stars(offer.property.starRating) }} ·
+                      }
+                      {{ offer.property.addressLine }}
+                    </p>
+                    <p>{{ offer.room }} · {{ board(offer.board) }}</p>
+                    <p>{{ cancellation(offer.cancellation, offer.property.timeZone) }}</p>
+                    @if (offer.feesAtProperty) {
+                      <p class="price-note">
+                        Plus {{ formatMoney(offer.feesAtProperty) }} payable at the hotel.
+                      </p>
+                    }
+                  </div>
+                  <div class="fare">
+                    <p class="price">
+                      <span class="amount tabular" [id]="'offer-' + offerIndex + '-price'">{{
+                        formatMoney(offer.totalPrice)
+                      }}</span>
+                      <span class="price-note">Total for the stay</span>
+                    </p>
+                    <button
+                      type="button"
+                      class="btn select"
+                      [class.btn-primary]="!isSelected"
+                      [class.btn-dark]="isSelected"
+                      [attr.aria-pressed]="isSelected"
+                      [attr.aria-describedby]="'offer-' + offerIndex + '-price'"
+                      [disabled]="savingOfferId() !== null || booking().kind === 'creating'"
+                      (click)="selectOffer(offer.offerId)"
+                    >
+                      @if (savingOfferId() === offer.offerId) {
+                        Saving…
+                      } @else if (isSelected) {
+                        Selected
+                      } @else {
+                        Select<span class="visually-hidden"> {{ offer.property.name }}</span>
+                      }
+                    </button>
+                  </div>
+                </li>
+              }
+            </ol>
+
+            @let chosen = selection();
+            @if (chosen.kind !== 'none' && chosen.kind !== 'saving') {
+              <section
+                class="selection"
+                [class.saved]="chosen.kind === 'saved'"
+                aria-labelledby="selection-heading"
+              >
+                @switch (chosen.kind) {
+                  @case ('saved') {
+                    <div class="sel-main">
+                      <h3 id="selection-heading" tabindex="-1" #selectionHeading>Your selection</h3>
+                      <p class="sel-route">
+                        {{ chosen.selection.property.name }} ·
+                        {{ shortDate(chosen.selection.checkIn) }} –
+                        {{ shortDate(chosen.selection.checkOut) }}
+                      </p>
+                      <p class="sel-room">{{ agreedRoom(chosen.selection) }}</p>
+                      <p>
+                        {{
+                          cancellation(
+                            agreedCancellation(chosen.selection),
+                            chosen.selection.property.timeZone
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <p class="sel-price">
+                      <span class="amount tabular">{{
+                        formatMoney(agreedPrice(chosen.selection))
+                      }}</span>
+                      <span>Total for the stay</span>
+                    </p>
+                    <p class="note">
+                      <span
+                        >Held until {{ heldUntil(chosen.selection) }}. The price and terms are
+                        confirmed again with the hotel before you pay.</span
+                      >
+                    </p>
+
+                    @let check = priceCheck();
+                    <div class="price-check">
+                      @switch (check.kind) {
+                        @case ('confirmed') {
+                          <p
+                            class="confirmed"
+                            id="price-check-heading"
+                            tabindex="-1"
+                            #priceCheckHeading
+                          >
+                            Price confirmed with the hotel:
+                            {{ formatMoney(check.confirmed.totalPrice) }}.
+                          </p>
+                          @if (session.signedIn()) {
+                            <button
+                              type="button"
+                              class="btn btn-primary"
+                              [disabled]="booking().kind === 'creating'"
+                              (click)="book()"
+                            >
+                              {{
+                                booking().kind === 'creating'
+                                  ? 'Starting your booking…'
+                                  : 'Continue to booking'
+                              }}
+                            </button>
+                            @if (booking(); as booking) {
+                              @if (booking.kind === 'error') {
+                                <p class="alert alert-error" role="alert">
+                                  {{ booking.message }}
+                                </p>
+                              }
+                            }
+                          } @else {
+                            <p class="note">Sign in to book this room, then select it again.</p>
+                            <button type="button" class="btn btn-outline" (click)="signIn()">
+                              Sign in
+                            </button>
+                          }
+                        }
+                        @default {
+                          @if (check.kind === 'changed' || check.kind === 'accepting') {
+                            <div class="alert alert-warning price-change" role="alert">
+                              <div>
+                                <h4 id="price-check-heading" tabindex="-1" #priceCheckHeading>
+                                  {{
+                                    check.termsChanged
+                                      ? 'The price or terms have changed'
+                                      : 'The price has changed'
+                                  }}
+                                </h4>
+                                <p class="tabular">
+                                  Was <s>{{ formatMoney(check.previous) }}</s
+                                  >, now <strong>{{ formatMoney(check.next) }}</strong> in total.
+                                </p>
+                                @if (check.room && check.board) {
+                                  @let quoted = check.room + ' · ' + board(check.board);
+                                  <p class="quoted-room">
+                                    {{ quoted }}
+                                    @if (quoted !== agreedRoom(chosen.selection)) {
+                                      (you selected {{ agreedRoom(chosen.selection) }})
+                                    }
+                                  </p>
+                                }
+                                @if (check.cancellation) {
+                                  <p>
+                                    {{
+                                      cancellation(
+                                        check.cancellation,
+                                        chosen.selection.property.timeZone
+                                      )
+                                    }}
+                                  </p>
+                                }
+                                <p>Accept to continue, or choose another room.</p>
+                                <div class="actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-primary btn-sm"
+                                    [disabled]="check.kind === 'accepting'"
+                                    (click)="acceptNewPrice()"
+                                  >
+                                    {{ check.kind === 'accepting' ? 'Accepting…' : 'Accept' }}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-outline btn-sm"
+                                    (click)="chooseAnotherRoom()"
+                                  >
+                                    Choose another room
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          } @else {
+                            @if (check.kind === 'error' || check.kind === 'stale') {
+                              <p
+                                class="check-problem"
+                                id="price-check-heading"
+                                tabindex="-1"
+                                #priceCheckHeading
+                                role="alert"
+                              >
+                                {{
+                                  check.kind === 'stale'
+                                    ? 'The price changed again. Please check the latest price.'
+                                    : "We couldn't check the price right now. Please try again."
+                                }}
+                              </p>
+                            }
+                            <button
+                              type="button"
+                              class="btn btn-primary btn-sm"
+                              [disabled]="check.kind === 'checking'"
+                              (click)="confirmPrice()"
+                            >
+                              {{ check.kind === 'checking' ? 'Checking price…' : 'Confirm price' }}
+                            </button>
+                          }
+                        }
+                      }
+                    </div>
+                  }
+                  @case ('soldOut') {
+                    <div class="alert alert-warning" role="alert">
+                      <div>
+                        <h3 id="selection-heading" tabindex="-1" #selectionHeading>
+                          This room is no longer available
+                        </h3>
+                        <p>Please search again for other rooms.</p>
+                        <button type="button" class="btn btn-dark btn-sm action" (click)="search()">
+                          Search again
+                        </button>
+                      </div>
+                    </div>
+                  }
+                  @case ('expired') {
+                    <div class="alert alert-warning" role="alert">
+                      <div>
+                        <h3 id="selection-heading" tabindex="-1" #selectionHeading>
+                          Offer no longer available
+                        </h3>
+                        <p>This offer has expired. Please search again for current prices.</p>
+                        <button type="button" class="btn btn-dark btn-sm action" (click)="search()">
+                          Search again
+                        </button>
+                      </div>
+                    </div>
+                  }
+                  @case ('error') {
+                    <div class="alert alert-error" role="alert">
+                      <div>
+                        <h3 id="selection-heading" tabindex="-1" #selectionHeading>
+                          Selection not saved
+                        </h3>
+                        <p>We couldn't save your selection. Please try again.</p>
+                      </div>
+                    </div>
+                  }
+                }
+              </section>
+            }
+          }
+        }
+        @case ('error') {
+          <div class="alert alert-error" role="alert">
+            <div>
+              <p>{{ current.message }}</p>
+              @if (current.details.length) {
+                <ul>
+                  @for (detail of current.details; track $index) {
+                    <li>{{ detail }}</li>
+                  }
+                </ul>
+              }
+              @if (current.retryable) {
+                <button type="button" class="btn btn-dark btn-sm action" (click)="search()">
+                  Try again
+                </button>
+              }
+            </div>
+          </div>
+        }
+      }
+    </section>
+  }
+</div>

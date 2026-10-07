@@ -13,12 +13,20 @@
     <nav class="primary-nav" aria-label="Main">
       <ul>
         <li>
-          <a routerLink="/" routerLinkActive="active" ariaCurrentWhenActive="page">
+          <a
+            routerLink="/"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: true }"
+            ariaCurrentWhenActive="page"
+          >
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M2 16l20-6-3 9-5-3-4 3 1-5z" />
             </svg>
             Flights
           </a>
+        </li>
+        <li>
+          <a routerLink="/hotels" routerLinkActive="active" ariaCurrentWhenActive="page">Hotels</a>
         </li>
         <li>
           <a routerLink="/trips" routerLinkActive="active" ariaCurrentWhenActive="page">My trips</a>
@@ -86,9 +94,19 @@
         <a
           routerLink="/"
           routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: true }"
           ariaCurrentWhenActive="page"
           (click)="menu.close()"
           >Flights</a
+        >
+      </li>
+      <li>
+        <a
+          routerLink="/hotels"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          (click)="menu.close()"
+          >Hotels</a
         >
       </li>
       <li>
@@ -126,8 +144,8 @@
 <footer class="site-footer">
   <div class="page">
     <p>
-      Prices are shown in the currency the fare is offered in. Flight times are local to each
-      airport.
+      Prices are shown in the currency the fare or rate is offered in. Flight times are local to
+      each airport; hotel deadlines are in the hotel's local time.
     </p>
   </div>
 </footer>

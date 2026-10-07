@@ -1894,7 +1894,9 @@
           "selectedTotalPrice",
           "cancellation",
           "offerExpiresAt",
-          "revalidatedAt"
+          "revalidatedAt",
+          "room",
+          "board"
         ],
         "type": "object",
         "properties": {
@@ -1918,6 +1920,12 @@
           "revalidatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "room": {
+            "type": "string"
+          },
+          "board": {
+            "$ref": "#/components/schemas/BoardBasis"
           }
         }
       },
@@ -2570,6 +2578,22 @@
               },
               {
                 "$ref": "#/components/schemas/HotelCancellationResponse"
+              }
+            ]
+          },
+          "room": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "board": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BoardBasis"
               }
             ]
           }
