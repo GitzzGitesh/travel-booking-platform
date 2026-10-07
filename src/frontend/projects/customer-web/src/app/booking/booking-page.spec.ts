@@ -516,6 +516,43 @@ describe('BookingPage', () => {
     });
   });
 
+  // ADR 0030 §7: a confirmed hotel stay shows the agreed terms its refund follows, in hotel wording.
+  it.each([
+    [
+      { refundable: true, freeCancellationUntil: '2026-11-08T12:00:00+00:00', penaltyAfterDeadline: { amount: '120', currency: 'XTS' } },
+      /Free cancellation if you ask before .*2026.*; after that, .*120.* is kept./,
+    ],
+    [{ refundable: false, freeCancellationUntil: null, penaltyAfterDeadline: null }, /This rate is non-refundable/],
+  ])('shows a hotel stay its agreed cancellation terms (%#)', async (cancellation, expected) => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } } },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(BookingPage);
+    fixture.detectChanges();
+    await settle();
+    http.expectOne('/api/v1/session').flush({ customerId: 'cust-1' });
+    await settle();
+    const confirmed = order('Confirmed');
+    http.expectOne(`/api/v1/orders/${orderId}`).flush({
+      ...confirmed,
+      items: [{ ...confirmed.items[0], product: 'Hotel', bookingReference: 'MH1234', cancellation }],
+      cancellationRequest: null,
+    });
+    await settle();
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+
+    expect(element.querySelector('.cancellation-terms')?.textContent).toMatch(expected);
+    expect(element.textContent).toContain('Our team cancels with the hotel');
+    expect(element.textContent).toContain('Back to hotel search');
+  });
+
   it('turns an amount into minor units by text, never by floating point', () => {
     expect([minorUnits('122.00'), minorUnits('0.1'), minorUnits('19.99'), minorUnits('5')]).toEqual(
       [12200, 10, 1999, 500],

@@ -127,6 +127,28 @@ export class BookingPage {
   protected readonly supplier = computed(() => (this.isHotel() ? 'hotel' : 'airline'));
   /** What is booked: "flight" or "room". */
   protected readonly product = computed(() => (this.isHotel() ? 'room' : 'flight'));
+  /** A hotel stay's agreed cancellation terms, which its refund follows (ADR 0030 §7); the deadline in the customer's own zone, labelled. */
+  protected readonly cancellationTerms = computed(() => {
+    const terms = this.item()?.cancellation;
+    if (!terms) {
+      return null;
+    }
+    if (!terms.refundable || !terms.freeCancellationUntil) {
+      return 'This rate is non-refundable: nothing is refunded if you cancel.';
+    }
+    const deadline = new Intl.DateTimeFormat(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(new Date(terms.freeCancellationUntil));
+    const after = terms.penaltyAfterDeadline
+      ? `after that, ${formatMoney(terms.penaltyAfterDeadline)} is kept`
+      : 'after that, nothing is refunded';
+    return `Free cancellation if you ask before ${deadline}; ${after}.`;
+  });
   protected readonly documentsRequired = computed(
     () => this.item()?.travellers?.documentsRequired ?? false,
   );

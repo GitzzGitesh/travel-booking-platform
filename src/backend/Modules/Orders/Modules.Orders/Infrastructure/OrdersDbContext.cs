@@ -126,6 +126,14 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
             needs.Ignore(n => n.IsKnown);
         });
 
+        // A hotel rate's agreed cancellation terms (ADR 0030 §7): optional, since flights have none.
+        item.OwnsOne(i => i.CancellationTerms, terms =>
+        {
+            terms.Property(t => t.Refundable).HasColumnName("CancellationRefundable");
+            terms.Property(t => t.FreeUntil).HasColumnName("FreeCancellationUntil");
+            terms.Property(t => t.PenaltyAmount).HasColumnName("CancellationPenaltyAmount").HasPrecision(19, 4);
+        });
+
         var timeline = modelBuilder.Entity<OrderTimelineEntry>();
         timeline.ToTable("OrderTimeline");
         timeline.HasKey(e => e.Id);

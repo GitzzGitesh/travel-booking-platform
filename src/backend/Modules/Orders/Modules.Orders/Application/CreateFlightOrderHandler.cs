@@ -129,7 +129,8 @@ internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, I
         var order = command.Product is OrderProduct.Hotel
             ? Order.CreateForHotel(
                 command.CustomerId, command.IdempotencyKey, bookable.SelectedOfferId, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, bookable.Consent, context,
-                bookable.Needs ?? throw new InvalidOperationException("A hotel selection always states its guests."))
+                bookable.Needs ?? throw new InvalidOperationException("A hotel selection always states its guests."),
+                bookable.Terms ?? throw new InvalidOperationException("A hotel selection always states its cancellation terms."))
             : Order.CreateForFlight(
                 command.CustomerId, command.IdempotencyKey, bookable.SelectedOfferId, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, bookable.Consent, context, bookable.Needs);
 

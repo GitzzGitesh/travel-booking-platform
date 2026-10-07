@@ -117,7 +117,8 @@ internal enum RefundCaseOutcome
 /// supplier desk's reference) together with its refund case; the refund's amount is computed by the server: what the
 /// supplier refunds for those items (never more than the customer paid for them), less our disclosed fee, never more than
 /// can still be refunded. A different person approves it unless the policy lets it through; only then does Payments refund
-/// it, once, under the case's id. Every step is audited in the same save.
+/// it, once, under the case's id. A hotel stay's refund follows the booked rate's agreed terms instead (ADR 0030 §7).
+/// Every step is audited in the same save.
 /// </summary>
 internal sealed partial class RefundCaseHandler(
     IOrderStore orders, IRefundCaseStore cases, ICancellationRequestStore requests, IOrderPayments payments, IOptions<RefundOptions> options,
@@ -164,6 +165,7 @@ internal sealed partial class RefundCaseHandler(
         Money amount;
         Money fee = new(0, currency);
         Money? supplierRefund = null;
+        var basis = string.Empty;
         if (command.Kind is RefundCaseKind.Cancellation)
         {
             var items = command.ItemIds.Select(id => order.Items.SingleOrDefault(i => i.Id == id)).ToList();
@@ -174,8 +176,40 @@ internal sealed partial class RefundCaseHandler(
 
             var paidForItems = items.Sum(i => i!.AgreedPrice.Amount);
             supplierRefund = new Money(command.SupplierRefund!.Value, currency);
-            fee = options.Value.FeeFor(currency);
-            var computed = Math.Max(0, Math.Min(command.SupplierRefund.Value, paidForItems) - fee.Amount);
+            decimal computed;
+            if (items.Any(i => i!.Product is OrderProduct.Hotel))
+            {
+                // A hotel stay is refunded by the booked rate's terms (ADR 0030 §7), as the customer agreed to them, at the
+                // moment they asked to cancel (their open request), else now: a desk delay never costs them the deadline.
+                // Never less than the supplier returns us for it (a cancellation by the hotel or the supplier, a walk), and
+                // no fee: free cancellation was advertised. Items booked before terms were recorded follow the supplier's refund.
+                if (items.Any(i => i!.Product is not OrderProduct.Hotel))
+                {
+                    return (RefundCaseOutcome.ItemNotCancellable, null);
+                }
+
+                var request = await requests.FindLatestForOrderAsync(order.Id, cancellationToken);
+                var askedAt = request is { Status: CancellationRequestStatus.Open } ? request.RequestedAt : now;
+                var byTerms = items.Sum(i => i!.CancellationTerms?.RefundOf(i.AgreedPrice.Amount, askedAt) ?? 0);
+                var bySupplier = Math.Min(command.SupplierRefund.Value, paidForItems);
+                computed = Math.Max(byTerms, bySupplier);
+                basis = items.All(i => i!.CancellationTerms is not null)
+                    ? $"; by the rate's terms ({string.Join("; ", items.Select(i => i!.CancellationTerms!.Describe(currency.Value)))}), asked {askedAt:O}"
+                      + (bySupplier > byTerms ? $", raised to the supplier's refund {bySupplier}" : string.Empty)
+                    : "; terms not recorded for this booking: by the supplier's refund";
+                if (command.SupplierRefund.Value < computed)
+                {
+                    // We refund more than the supplier returns (a late desk cancellation): visible, never taken from the customer.
+                    basis += $"; shortfall {computed - command.SupplierRefund.Value} {currency.Value} against the supplier's refund";
+                    LogHotelCancellationShortfall(logger, order.Id, computed - command.SupplierRefund.Value);
+                }
+            }
+            else
+            {
+                fee = options.Value.FeeFor(currency);
+                computed = Math.Max(0, Math.Min(command.SupplierRefund.Value, paidForItems) - fee.Amount);
+            }
+
             if (computed > available)
             {
                 // Never shrunk silently: other refunds or open cases hold the money; settle them first.
@@ -206,7 +240,7 @@ internal sealed partial class RefundCaseHandler(
         var refundCase = RefundCase.Open(order.Id, balance.PaymentId, command.Kind, command.ItemIds, amount, supplierRefund, fee,
             command.SupplierReference, command.Reason, command.Actor.StaffId, command.Actor.Account, command.IdempotencyKey, command.Fingerprint, now);
         cases.Add(refundCase);
-        order.NoteRefund(command.ItemIds, $"Refund case {refundCase.Id:N} opened: {refundCase.Kind}, {amount.Amount} {amount.Currency.Value} ({refundCase.Status})",
+        order.NoteRefund(command.ItemIds, $"Refund case {refundCase.Id:N} opened: {refundCase.Kind}, {amount.Amount} {amount.Currency.Value} ({refundCase.Status}){basis}",
             context, command.SupplierReference);
         if (command.Kind is RefundCaseKind.Cancellation)
         {
@@ -231,7 +265,7 @@ internal sealed partial class RefundCaseHandler(
         }
 
         orders.Audit(AuditEntry.For(command.Source, now, staff, OpenAction, $"refund-case:{refundCase.Id}", null,
-            $"{refundCase.Kind} {amount.Amount} {amount.Currency.Value} ({refundCase.Status}; supplier refund {supplierRefund?.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}, fee {fee.Amount}, items {refundCase.ItemIds}, supplier reference {command.SupplierReference ?? "-"}); {command.Reason}"));
+            $"{refundCase.Kind} {amount.Amount} {amount.Currency.Value} ({refundCase.Status}; supplier refund {supplierRefund?.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}, fee {fee.Amount}, items {refundCase.ItemIds}, supplier reference {command.SupplierReference ?? "-"}{basis}); {command.Reason}"));
         if (await orders.TrySaveAsync(cancellationToken))
         {
             return (RefundCaseOutcome.Done, refundCase);
@@ -307,6 +341,10 @@ internal sealed partial class RefundCaseHandler(
             correlationId);
 
     // Security event (ADR 0022: maker-checker refusals): ids only.
+    [LoggerMessage(Level = LogLevel.Warning, EventName = "HotelCancellationShortfall",
+        Message = "Alert: order {OrderId}'s hotel cancellation refunds {Shortfall} more than the supplier returns (desk delay or supplier penalty); review the desk's timing")]
+    private static partial void LogHotelCancellationShortfall(ILogger logger, Guid orderId, decimal shortfall);
+
     [LoggerMessage(Level = LogLevel.Warning, EventName = "RefundDecisionRefused",
         Message = "Security: staff member {StaffId} was refused on refund case {CaseId} ({Why})")]
     private static partial void LogRefused(ILogger logger, string staffId, Guid caseId, string why);

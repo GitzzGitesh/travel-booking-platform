@@ -95,6 +95,9 @@
                   We could not cancel this booking as you asked. Our support team will contact you.
                 </p>
               }
+              @if (cancellationTerms(); as terms) {
+                <p class="cancellation-terms">{{ terms }}</p>
+              }
               <p class="note">
                 Our team cancels with the {{ supplier() }} and tells you by email what, if anything,
                 is refunded. Asking does not cancel the booking by itself.

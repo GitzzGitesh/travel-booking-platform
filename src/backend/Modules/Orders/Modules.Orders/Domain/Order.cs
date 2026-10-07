@@ -77,6 +77,30 @@ internal sealed record TravellerNeeds(int Adults, int Children, int Infants, boo
     public bool IsKnown => Adults > 0;
 }
 
+/// <summary>
+/// A hotel rate's cancellation terms as the customer agreed to them (ADR 0030 §7), snapshotted on the order item when it
+/// is created and when it is paid: the refund on cancellation follows them, whatever the supplier's selection says later.
+/// The penalty is in the item's currency.
+/// </summary>
+internal sealed record CancellationTerms(bool Refundable, DateTimeOffset? FreeUntil, decimal? PenaltyAmount)
+{
+    public static CancellationTerms NonRefundable { get; } = new(false, null, null);
+
+    /// <summary>
+    /// What the terms refund of <paramref name="paid"/> when the customer asked at <paramref name="askedAt"/>: all of it
+    /// before the deadline; after it, the price less the penalty (the whole price when none is stated); nothing for a
+    /// non-refundable rate. Never negative, never more than was paid.
+    /// </summary>
+    public decimal RefundOf(decimal paid, DateTimeOffset askedAt) =>
+        !Refundable || FreeUntil is not { } deadline ? 0
+        : askedAt < deadline ? paid
+        : Math.Max(0, paid - Math.Min(paid, PenaltyAmount ?? paid));
+
+    public string Describe(string currency) =>
+        !Refundable || FreeUntil is null ? "non-refundable"
+        : $"free cancellation until {FreeUntil:O}, then {(PenaltyAmount is { } p ? $"a {p} {currency} charge" : "no refund")}";
+}
+
 /// <summary>The customer's consent to a changed price (F-01), snapshotted from Flights when the order is created.</summary>
 internal sealed record PriceConsent(Guid AcceptedPriceQuoteId, DateTimeOffset AcceptedAt);
 
@@ -168,8 +192,12 @@ internal sealed class Order
     public static Order CreateForHotel(
         string customerId,
         string idempotencyKey, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context,
-        TravellerNeeds needs) =>
-        Create(OrderProduct.Hotel, customerId, idempotencyKey, selectedOfferId, agreedPrice, offerExpiresAt, consent, context, needs);
+        TravellerNeeds needs, CancellationTerms terms)
+    {
+        var order = Create(OrderProduct.Hotel, customerId, idempotencyKey, selectedOfferId, agreedPrice, offerExpiresAt, consent, context, needs);
+        order._items[0].SetCancellationTerms(terms);
+        return order;
+    }
 
     private static Order Create(
         OrderProduct product,
@@ -215,7 +243,8 @@ internal sealed class Order
     /// without a newly accepted quote is refused. Only while the item awaits payment; a price change is on the timeline.
     /// </summary>
     public Result<FlightOrderItemStatus, OrderTransitionError> RefreshOffer(
-        Guid itemId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context, bool? documentsRequired = null)
+        Guid itemId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context, bool? documentsRequired = null,
+        CancellationTerms? terms = null)
     {
         if (Find(itemId) is not { } item)
         {
@@ -238,6 +267,26 @@ internal sealed class Order
         if (repriced && (agreedPrice.Currency != item.AgreedPrice.Currency || consent is null || consent.AcceptedPriceQuoteId == item.AcceptedPriceQuoteId))
         {
             return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
+        }
+
+        // A hotel's terms as agreed right before payment (the supplier's selection is Confirmed only once the customer
+        // accepted any change, F-53): what a cancellation is refunded by.
+        if (terms is not null && item.Product is OrderProduct.Hotel && terms != item.CancellationTerms)
+        {
+            if (consent is null || (!repriced && consent.AcceptedPriceQuoteId == item.AcceptedPriceQuoteId))
+            {
+                return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
+            }
+
+            item.SetCancellationTerms(terms);
+            if (!repriced)
+            {
+                item.RecordConsent(consent); // a repricing records it below
+            }
+
+            Record(item, item.Status,
+                $"Cancellation terms now {terms.Describe(item.AgreedPrice.Currency.Value)} (quote {consent.AcceptedPriceQuoteId}, accepted {consent.AcceptedAt:O})",
+                context, providerReference: null);
         }
 
         if (!repriced && offerExpiresAt == item.OfferExpiresAt)
@@ -650,6 +699,11 @@ internal sealed class FlightOrderItem
 
     internal void SetTravellerNeeds(TravellerNeeds needs) => TravellerNeeds = needs;
 
+    /// <summary>A hotel rate's agreed cancellation terms (ADR 0030 §7); null for a flight.</summary>
+    public CancellationTerms? CancellationTerms { get; private set; }
+
+    internal void SetCancellationTerms(CancellationTerms terms) => CancellationTerms = terms;
+
     internal void MoveTo(FlightOrderItemStatus status) => Status = status;
 
     internal void RefreshTerms(DateTimeOffset offerExpiresAt, Money? agreedPrice, PriceConsent? consent)
@@ -661,6 +715,12 @@ internal sealed class FlightOrderItem
             AcceptedPriceQuoteId = consent.AcceptedPriceQuoteId;
             PriceAcceptedAt = consent.AcceptedAt;
         }
+    }
+
+    internal void RecordConsent(PriceConsent consent)
+    {
+        AcceptedPriceQuoteId = consent.AcceptedPriceQuoteId;
+        PriceAcceptedAt = consent.AcceptedAt;
     }
 
     internal void RecordSupplierBooking(string providerId, string supplierLocator, TicketingStatus? ticketing)

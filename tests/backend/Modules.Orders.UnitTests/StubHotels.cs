@@ -27,7 +27,8 @@ internal sealed class StubHotelSelections(HotelSelectionUnavailable? unavailable
             : Unavailable is { } reason
                 ? Result<BookableHotelSelection, HotelSelectionUnavailable>.Failure(reason)
                 : Result<BookableHotelSelection, HotelSelectionUnavailable>.Success(new BookableHotelSelection(
-                    selectedOfferId, Price, OrderTests.Now.AddMinutes(30), null, null, 2, 1, 0, new DateOnly(2027, 4, 10), new DateOnly(2027, 4, 13)));
+                    selectedOfferId, Price, OrderTests.Now.AddMinutes(30), null, null, 2, 1, 0, new DateOnly(2027, 4, 10), new DateOnly(2027, 4, 13),
+                    new HotelCancellationTerms(true, OrderTests.Now.AddDays(30), new Money(100m, new CurrencyCode("XTS")))));
 }
 
 /// <summary>The Hotels booking contract, scripted: every booking and lookup is recorded, and answers as told.</summary>
