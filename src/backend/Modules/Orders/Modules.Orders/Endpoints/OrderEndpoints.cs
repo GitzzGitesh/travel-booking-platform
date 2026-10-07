@@ -187,6 +187,14 @@ internal sealed record OrderResponse(
             item.Ticketing?.ToString(),
             item.TravellerNeeds is { IsKnown: true } needs
                 ? new TravellersNeededResponse(needs.Adults, needs.Children, needs.Infants, needs.DocumentsRequired)
+                : null,
+            item.CancellationTerms is { } terms
+                ? new CancellationTermsResponse(
+                    terms.Refundable,
+                    terms.FreeUntil,
+                    terms.PenaltyAmount is { } penalty
+                        ? new OrderAmountResponse(penalty.ToString(CultureInfo.InvariantCulture), item.AgreedPrice.Currency.Value)
+                        : null)
                 : null)).ToList(),
         cancellation is null ? null : CancellationRequestResponse.From(cancellation));
 }
@@ -196,9 +204,16 @@ internal sealed record OrderResponse(
 /// <param name="Product">Flight or Hotel.</param>
 /// <param name="BookingReference">The supplier's booking reference (a PNR, or a hotel confirmation number), once confirmed.</param>
 /// <param name="Ticketing">Pending or Issued, once a flight is confirmed; null for a hotel stay.</param>
+/// <param name="Cancellation">A hotel stay's agreed cancellation terms; null for a flight.</param>
 internal sealed record OrderItemResponse(
     Guid ItemId, string Product, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, DateTimeOffset OfferExpiresAt, bool PriceChangeAccepted,
-    string? BookingReference, string? Ticketing, TravellersNeededResponse? Travellers);
+    string? BookingReference, string? Ticketing, TravellersNeededResponse? Travellers, CancellationTermsResponse? Cancellation = null);
+
+/// <summary>
+/// A hotel rate's cancellation terms as agreed (ADR 0030 §7): the refund on cancellation follows them. Null for a flight.
+/// After <paramref name="FreeCancellationUntil"/>, <paramref name="PenaltyAfterDeadline"/> is kept (the whole price when null).
+/// </summary>
+internal sealed record CancellationTermsResponse(bool Refundable, DateTimeOffset? FreeCancellationUntil, OrderAmountResponse? PenaltyAfterDeadline);
 
 /// <param name="Outcome">Booked, BookingPending, BookingFailed, ActionRequired, Declined, PaymentPending, PaymentFailed or PaymentUnavailable.</param>
 /// <param name="Payment">What the customer may be told about the payment: Accepted, Released, ActionRequired, Declined, Pending or Unavailable.</param>

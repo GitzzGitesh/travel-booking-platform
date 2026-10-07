@@ -80,7 +80,8 @@ internal sealed class HotelSelections(IHotelSelectionStore store, RevalidateHote
             children,
             infants,
             selection.CheckIn,
-            selection.CheckOut));
+            selection.CheckOut,
+            new HotelCancellationTerms(selection.Refundable, selection.FreeCancellationUntil, selection.PenaltyAfterDeadline)));
     }
 
     private static Result<BookableHotelSelection, HotelSelectionUnavailable> Failure(HotelSelectionUnavailable reason) =>

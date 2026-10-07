@@ -8,6 +8,7 @@ export type { BaggageAllowanceResponse } from './models/baggage-allowance-respon
 export type { BoardBasis } from './models/board-basis';
 export type { CabinClass } from './models/cabin-class';
 export type { CancellationRequestResponse } from './models/cancellation-request-response';
+export type { CancellationTermsResponse } from './models/cancellation-terms-response';
 export type { CheckoutRequest } from './models/checkout-request';
 export type { CheckoutResponse } from './models/checkout-response';
 export type { ConfirmedFlightOfferResponse } from './models/confirmed-flight-offer-response';

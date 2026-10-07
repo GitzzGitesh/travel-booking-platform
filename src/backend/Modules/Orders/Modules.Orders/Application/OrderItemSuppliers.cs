@@ -17,7 +17,9 @@ internal enum ItemUnavailable
 }
 
 /// <summary>A confirmed selection, whatever the product: the agreed price, its consent evidence, and the travellers it needs.</summary>
-internal sealed record BookableItem(Guid SelectedOfferId, Money AgreedTotalPrice, DateTimeOffset OfferExpiresAt, PriceConsent? Consent, TravellerNeeds? Needs, bool DocumentsRequired);
+internal sealed record BookableItem(
+    Guid SelectedOfferId, Money AgreedTotalPrice, DateTimeOffset OfferExpiresAt, PriceConsent? Consent, TravellerNeeds? Needs, bool DocumentsRequired,
+    CancellationTerms? Terms = null);
 
 /// <summary>
 /// The selection side of each product's Contracts (ADR 0030 §6), by the item's product: Flights for a flight, Hotels for
@@ -83,7 +85,8 @@ internal sealed class OrderItemSelections(IFlightSelections flights, IHotelSelec
             s.OfferExpiresAt,
             Consent(s.AcceptedPriceQuoteId, s.PriceAcceptedAt),
             new TravellerNeeds(s.Adults, s.Children, s.Infants, DocumentsRequired: false, s.CheckOut),
-            DocumentsRequired: false));
+            DocumentsRequired: false,
+            new CancellationTerms(s.Cancellation.Refundable, s.Cancellation.FreeCancellationUntil, s.Cancellation.PenaltyAfterDeadline?.Amount)));
     }
 
     private static PriceConsent? Consent(Guid? quote, DateTimeOffset? acceptedAt) =>

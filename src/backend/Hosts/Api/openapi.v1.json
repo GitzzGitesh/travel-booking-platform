@@ -1803,6 +1803,36 @@
           }
         }
       },
+      "CancellationTermsResponse": {
+        "required": [
+          "refundable",
+          "freeCancellationUntil",
+          "penaltyAfterDeadline"
+        ],
+        "type": "object",
+        "properties": {
+          "refundable": {
+            "type": "boolean"
+          },
+          "freeCancellationUntil": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "penaltyAfterDeadline": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrderAmountResponse"
+              }
+            ]
+          }
+        }
+      },
       "CheckoutRequest": {
         "required": [
           "paymentMethodToken"
@@ -2732,6 +2762,16 @@
               },
               {
                 "$ref": "#/components/schemas/TravellersNeededResponse"
+              }
+            ]
+          },
+          "cancellation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CancellationTermsResponse"
               }
             ]
           }

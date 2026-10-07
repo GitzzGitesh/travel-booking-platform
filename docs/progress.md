@@ -322,6 +322,19 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - customer-web unit tests for the hotel page: search request and validation, offer details, F-53 acceptance, ordering as a hotel once, sold out;
   - Playwright: the hotels page (navigation, accessibility) and a full hotel booking against the Api with the mocks.
 - **Next:** H4 (hotel cancellation by the booked rate's terms, vouchers, admin views). |
+| 24 | **Hotels H4: cancellation refunded by the booked rate's terms (ADR 0030 §7)** | **Done.**
+- **Snapshot:** a hotel order item keeps the cancellation terms the customer agreed to (refundable, free-cancellation deadline, penalty), at order creation and again right before payment. Migration `AddHotelCancellationTerms` adds three nullable columns. The supplier's selection can change afterwards; the order's terms do not.
+- **Refund:** a cancellation case for a hotel stay computes the refund from those terms. Staff still record the desk's refund for the books; a second person approves, as for every refund (ADR 0027).
+- **Decisions (delegated):**
+  - refund in full before the deadline; after it, the price less the stated penalty (nothing when none is stated, the port's rule); nothing for a non-refundable rate;
+  - the deadline is checked against when the customer asked to cancel (their open request), else when staff record it, so a desk delay never costs the customer;
+  - no cancellation fee on hotel stays, because free cancellation is advertised. Consumer-law rules per market stay pending legal confirmation (ADR 0030 §7);
+  - never less than the supplier returns us (a cancellation by the hotel or the supplier, a walk): the refund is the larger of the terms' refund and the supplier's, capped at the price;
+  - when we refund more than the supplier returns (a late desk), the shortfall is on the timeline and raises the `HotelCancellationShortfall` alert;
+  - changed terms at payment need the customer's new quote, recorded on the order like a price change;
+  - hotel bookings made before terms were recorded follow the supplier's refund, labelled as such.
+- **Customer:** the order shows its agreed terms (`cancellation` on order items, additive), and the booking page states them next to "Ask to cancel".
+- **Still to come:** comparing the terms a supplier confirms at booking with the agreed ones (the port carries none yet; with a real supplier, Q6); supplier cancellation through the adapter (only once a real supplier's capability is verified, Q6); hotel details in the confirmation email (voucher); hotel details in admin views. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

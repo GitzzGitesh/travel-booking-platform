@@ -285,7 +285,7 @@ public sealed class FlightBookingOrchestratorTests
     private Order HotelOrder()
     {
         var order = Order.CreateForHotel("cust-1", "key-h", Guid.NewGuid(), OrderTests.Price, OrderTests.Now.AddMinutes(30), null,
-            new TransitionContext(OrderTests.Now, "customer", "trace-h"), new TravellerNeeds(3, 1, 0, false, new DateOnly(2027, 4, 13)));
+            new TransitionContext(OrderTests.Now, "customer", "trace-h"), new TravellerNeeds(3, 1, 0, false, new DateOnly(2027, 4, 13)), CancellationTerms.NonRefundable);
         order.Items[0].Product.ShouldBe(OrderProduct.Hotel);
         order.Timeline[0].Reason.ShouldBe("Order created from a confirmed hotel selection");
         order.StartBooking(_paymentId.ToString(), new TransitionContext(_clock.GetUtcNow(), "customer:cust-1"));

@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using TravelBooking.BuildingBlocks;
 using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Integrations.Hotels.Mock;
@@ -126,6 +128,75 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
         (await PaymentOf(order)).Status.ShouldBe(PaymentAttemptStatus.Captured);
     }
 
+    // ADR 0030 §7: a cancelled stay is refunded by the booked rate's agreed terms, not by what the supplier's desk returns,
+    // with no cancellation fee (free cancellation was advertised); a second person approves it as for any refund.
+    [Fact]
+    public async Task A_stay_cancelled_before_its_deadline_is_refunded_in_full_whatever_the_desk_returns()
+    {
+        var token = Token();
+        var (order, price) = await CapturedOrder(token);
+        (await LoadOrder(order)).Items[0].CancellationTerms.ShouldNotBeNull().Refundable.ShouldBeTrue();
+        using var mine = await Send(HttpMethod.Get, $"/api/v1/orders/{order}", token);
+        var terms = (await Read(mine)).GetProperty("items")[0].GetProperty("cancellation");
+        (terms.GetProperty("refundable").GetBoolean(), terms.GetProperty("freeCancellationUntil").ValueKind).ShouldBe((true, JsonValueKind.String));
+        (await Send(HttpMethod.Post, $"/api/v1/orders/{order}/cancellation-requests", token, key: $"cxl-{Guid.NewGuid():N}")).StatusCode
+            .ShouldBe(HttpStatusCode.Created);
+
+        var refundCase = await RecordCancellation(order, supplierRefund: "1");
+
+        refundCase.GetProperty("amount").GetProperty("amount").GetString().ShouldBe(price.Amount.ToString(CultureInfo.InvariantCulture));
+        (refundCase.GetProperty("fee").GetString(), refundCase.GetProperty("status").GetString()).ShouldBe(("0", "PendingApproval"));
+        var stored = await LoadOrder(order);
+        stored.Items[0].Status.ShouldBe(FlightOrderItemStatus.Cancelled);
+        stored.Timeline.ShouldContain(e => e.Reason.Contains("by the rate's terms (free cancellation until", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_non_refundable_stay_is_cancelled_with_nothing_to_refund()
+    {
+        var token = Token();
+        var (order, _) = await CapturedOrder(token, offerIndex: 1); // the mock's non-refundable rate
+
+        var refundCase = await RecordCancellation(order, supplierRefund: "0");
+
+        (refundCase.GetProperty("amount").GetProperty("amount").GetString(), refundCase.GetProperty("status").GetString()).ShouldBe(("0", "NoRefund"));
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Cancelled);
+    }
+
+    // The deadline is judged when the customer asked (their open request), so a late desk never costs them: we refund in
+    // full and the shortfall against the supplier is noted. Without a request, the penalty after the deadline applies.
+    // The mock's deadline is noon UTC two days before check-in (40 days ahead), so 39 days later it has passed.
+    [Fact]
+    public async Task The_deadline_is_judged_when_the_customer_asked_and_without_a_request_the_penalty_applies()
+    {
+        var asking = Token();
+        var (askedInTime, price) = await CapturedOrder(asking);
+        (await Send(HttpMethod.Post, $"/api/v1/orders/{askedInTime}/cancellation-requests", asking, key: $"cxl-{Guid.NewGuid():N}")).Dispose();
+        var (notAsked, _) = await CapturedOrder(Token());
+        var penalty = (await LoadOrder(notAsked)).Items[0].CancellationTerms!.PenaltyAmount!.Value;
+
+        api.Clock.Advance(TimeSpan.FromDays(39));
+        var late = await RecordCancellation(askedInTime, supplierRefund: "0"); // the supplier kept everything
+        var afterDeadline = await RecordCancellation(notAsked, supplierRefund: "0");
+
+        late.GetProperty("amount").GetProperty("amount").GetString().ShouldBe(price.Amount.ToString(CultureInfo.InvariantCulture));
+        (await LoadOrder(askedInTime)).Timeline.ShouldContain(e => e.Reason.Contains("shortfall", StringComparison.Ordinal));
+        afterDeadline.GetProperty("amount").GetProperty("amount").GetString()
+            .ShouldBe((price.Amount - penalty).ToString(CultureInfo.InvariantCulture));
+    }
+
+    // A cancellation by the hotel or the supplier (a walk, a closure): the customer gets at least what the supplier returns.
+    [Fact]
+    public async Task A_non_refundable_stay_the_supplier_refunds_in_full_is_refunded_in_full()
+    {
+        var (order, price) = await CapturedOrder(Token(), offerIndex: 1);
+
+        var refundCase = await RecordCancellation(order, supplierRefund: price.Amount.ToString(CultureInfo.InvariantCulture));
+
+        refundCase.GetProperty("amount").GetProperty("amount").GetString().ShouldBe(price.Amount.ToString(CultureInfo.InvariantCulture));
+        refundCase.GetProperty("status").GetString().ShouldBe("PendingApproval"); // a second person still approves
+    }
+
     [Fact]
     public async Task A_selection_ordered_as_another_product_is_not_found_and_an_unknown_product_is_refused()
     {
@@ -146,7 +217,7 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
     // Two adults and a child aged 8 at check-out, in 40 days.
     private DateOnly CheckIn => DateOnly.FromDateTime(api.Clock.GetUtcNow().UtcDateTime).AddDays(40);
 
-    private async Task<Guid> ConfirmedSelection(string token)
+    private async Task<Guid> ConfirmedSelection(string token, int offerIndex = 0)
     {
         using var search = await Send(HttpMethod.Post, "/api/v1/hotels/searches", token, new
         {
@@ -158,7 +229,7 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
         });
         var found = await Read(search);
         var searchId = found.GetProperty("searchId").GetGuid();
-        var offerId = found.GetProperty("offers")[0].GetProperty("offerId").GetGuid();
+        var offerId = found.GetProperty("offers")[offerIndex].GetProperty("offerId").GetGuid();
 
         using var select = await Send(HttpMethod.Post, "/api/v1/hotels/selected-offers", token, new { searchId, offerId });
         var selected = (await Read(select)).GetProperty("selectedOfferId").GetGuid();
@@ -168,9 +239,9 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
     }
 
     // Search, select, revalidate, order as a hotel stay, and name its guests with the contact: ready to pay.
-    private async Task<Guid> ReadyOrder(string token, string leadSurname = "Lovelace")
+    private async Task<Guid> ReadyOrder(string token, string leadSurname = "Lovelace", int offerIndex = 0)
     {
-        var selection = await ConfirmedSelection(token);
+        var selection = await ConfirmedSelection(token, offerIndex);
         using var created = await Send(HttpMethod.Post, "/api/v1/orders", token, new { selectedOfferId = selection, product = "Hotel" }, $"order-{Guid.NewGuid():N}");
         created.StatusCode.ShouldBe(HttpStatusCode.Created);
         var body = await Read(created);
@@ -191,6 +262,32 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
         });
         travellers.StatusCode.ShouldBe(HttpStatusCode.OK);
         return orderId;
+    }
+
+    private async Task<(Guid Order, Money Price)> CapturedOrder(string token, int offerIndex = 0)
+    {
+        var order = await ReadyOrder(token, offerIndex: offerIndex);
+        (await Checkout(token, order)).Dispose();
+        await Run("orders.outbox");
+        await Run(ReconcilePaymentAttemptsJob.Name);
+        (await PaymentOf(order)).Status.ShouldBe(PaymentAttemptStatus.Captured);
+        return (order, (await LoadOrder(order)).Items[0].AgreedPrice);
+    }
+
+    // Operations cancel at the supplier's desk and record it (ADR 0027): the refund case, with its computed amount.
+    private async Task<JsonElement> RecordCancellation(Guid order, string supplierRefund)
+    {
+        var item = (await LoadOrder(order)).Items[0].Id;
+        using var recorded = await Send(HttpMethod.Post, $"/api/admin/v1/orders/{order}/refund-cases", TestStaffTokens.For(TestStaffTokens.Operations), new
+        {
+            kind = "Cancellation",
+            itemIds = new[] { item },
+            supplierReference = "DESK-HTL-1",
+            supplierRefund,
+            reason = "TICKET-801",
+        }, $"case-{Guid.NewGuid():N}");
+        recorded.StatusCode.ShouldBe(HttpStatusCode.Created);
+        return await Read(recorded);
     }
 
     private Task<HttpResponseMessage> Checkout(string token, Guid orderId, string? key = null) =>
@@ -220,7 +317,7 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
     {
         using var scope = api.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Orders.AsNoTracking()
-            .Include(o => o.Items).SingleAsync(o => o.Id == orderId, Ct);
+            .Include(o => o.Items).Include(o => o.Timeline).AsSplitQuery().SingleAsync(o => o.Id == orderId, Ct);
     }
 
     private async Task<PaymentAttempt> PaymentOf(Guid orderId)

@@ -24,7 +24,7 @@ public interface IHotelSelections
 }
 
 /// <summary>
-/// A confirmed hotel selection: the price the customer agreed to, until the supplier's offer expires, with the consent
+/// A confirmed hotel selection: the price and cancellation terms the customer agreed to, until the supplier's offer expires, with the consent
 /// evidence when that price (or its terms) was an accepted change. The guests are counted as travellers are counted (by
 /// age at check-out: under 2 an infant, 2 to 11 a child, otherwise an adult), so that each guest can be named.
 /// </summary>
@@ -38,7 +38,14 @@ public sealed record BookableHotelSelection(
     int Children,
     int Infants,
     DateOnly CheckIn,
-    DateOnly CheckOut);
+    DateOnly CheckOut,
+    HotelCancellationTerms Cancellation);
+
+/// <summary>
+/// The rate's cancellation terms the customer agreed to (ADR 0030 §7): non-refundable, or free until a deadline (an
+/// instant), after which <paramref name="PenaltyAfterDeadline"/> is charged (the whole price when not stated).
+/// </summary>
+public sealed record HotelCancellationTerms(bool Refundable, DateTimeOffset? FreeCancellationUntil, Money? PenaltyAfterDeadline);
 
 public enum HotelSelectionUnavailable
 {

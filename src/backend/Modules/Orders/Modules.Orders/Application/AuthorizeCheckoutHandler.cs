@@ -280,7 +280,7 @@ internal sealed class AuthorizeCheckoutHandler(
             }
 
             var bookable = revalidated.Value;
-            var refreshed = order.RefreshOffer(item.Id, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, bookable.Consent, context, bookable.DocumentsRequired);
+            var refreshed = order.RefreshOffer(item.Id, bookable.AgreedTotalPrice, bookable.OfferExpiresAt, bookable.Consent, context, bookable.DocumentsRequired, bookable.Terms);
             if (!refreshed.IsSuccess)
             {
                 return refreshed.Error is OrderTransitionError.PriceNotAccepted
