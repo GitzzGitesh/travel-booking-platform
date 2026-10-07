@@ -309,6 +309,19 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - check the guests' ages against the searched ages before payment, once customer-web collects them (H3); today a mismatch is refused before anything is sent, and the hold is released.
 - **Worker** composes Hotels (and its mock in Development and Staging) to reconcile hotel bookings. Hotels' database is needed only when it is used, so flights never depend on its configuration; E2E and CI apply the Hotels migrations too.
 - **Next:** H3 (customer-web hotel search, selection and checkout, functional only), then H4 (cancellation by the rate's policy, vouchers, admin). |
+| 23 | **Hotels H3: hotel search, selection and booking in customer-web (ADR 0030)** | **Done, functional only (the visual design stays frozen; the page reuses the flight page's styles).**
+- **`/hotels`** (prerendered, linked from the navigation; Hotels is no longer "Soon"):
+  - search by city code, dates and guests, with each child's age at check-out;
+  - rooms with board, cancellation terms (the deadline in the hotel's own time zone), fees payable at the hotel, and the total for the stay;
+  - selection, then the price and terms check. A changed price, or changed terms at the same price (F-53), is shown and accepted only by its quote id;
+  - the order is created as a hotel (`product: Hotel`) with one idempotency key per selection, then the existing booking page (guests, payment).
+- **Review fixes:** a quote now carries the room and board (`room`, `board` in the price-changed problem and the confirmed response, additive), shown next to what was selected before acceptance (F-53); ordering problems lead to a new price check or a new search; rooms cannot be switched while an order is created; a booking error belongs to its selection.
+- **Booking page:** wording follows the product (the hotel or the airline, room or flight, back to hotel search, guest instructions); the booking rules are unchanged.
+- **Navigation:** Flights is marked current on its own page only.
+- **Tests:**
+  - customer-web unit tests for the hotel page: search request and validation, offer details, F-53 acceptance, ordering as a hotel once, sold out;
+  - Playwright: the hotels page (navigation, accessibility) and a full hotel booking against the Api with the mocks.
+- **Next:** H4 (hotel cancellation by the booked rate's terms, vouchers, admin views). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

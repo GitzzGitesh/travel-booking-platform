@@ -159,6 +159,8 @@ internal static class HotelEndpoints
                 ["requiresConfirmation"] = true,
                 ["termsChanged"] = changed.Selection.TermsChanged,
                 ["cancellation"] = HotelCancellationResponse.From(changed.Selection.Cancellation),
+                ["room"] = changed.Selection.RoomDescription,
+                ["board"] = changed.Selection.Board.ToString(),
             }),
         HotelSelectionFailure.NotFound => Problem(StatusCodes.Status404NotFound, "selected-offer-not-found", "This selection was not found. Please search again."),
         HotelSelectionFailure.OfferExpired => Problem(StatusCodes.Status422UnprocessableEntity, "offer-expired", "This offer is no longer available. Please search again."),
@@ -230,13 +232,16 @@ internal sealed record SelectedHotelOfferResponse(
 }
 
 /// <summary>The selection once the supplier confirmed the price and the customer agreed to it: ready for booking (H2).</summary>
+/// <param name="Room">The room confirmed (and, after a quote, accepted): what the customer books.</param>
+/// <param name="Board">The board confirmed (and, after a quote, accepted).</param>
 internal sealed record ConfirmedHotelOfferResponse(
     Guid SelectedOfferId, HotelAmountResponse TotalPrice, HotelAmountResponse SelectedTotalPrice, HotelCancellationResponse Cancellation,
-    DateTimeOffset OfferExpiresAt, DateTimeOffset RevalidatedAt)
+    DateTimeOffset OfferExpiresAt, DateTimeOffset RevalidatedAt, string Room, BoardBasis Board)
 {
     public static ConfirmedHotelOfferResponse From(HotelSelection s) => new(
         s.Id, HotelAmountResponse.From(s.AgreedPrice), HotelAmountResponse.From(s.TotalPrice), HotelCancellationResponse.From(s.Cancellation),
-        s.OfferExpiresAt, s.RevalidatedAt ?? throw new InvalidOperationException("A confirmed selection has been revalidated."));
+        s.OfferExpiresAt, s.RevalidatedAt ?? throw new InvalidOperationException("A confirmed selection has been revalidated."),
+        s.RoomDescription, s.Board);
 }
 
 /// <summary>
@@ -270,4 +275,10 @@ internal sealed class HotelSelectionProblemResponse
 
     /// <summary>The cancellation terms the customer is asked to accept.</summary>
     public HotelCancellationResponse? Cancellation { get; init; }
+
+    /// <summary>The room the customer is asked to accept (it may differ from the one selected, F-53).</summary>
+    public string? Room { get; init; }
+
+    /// <summary>The board the customer is asked to accept (it may differ from the one selected, F-53).</summary>
+    public BoardBasis? Board { get; init; }
 }

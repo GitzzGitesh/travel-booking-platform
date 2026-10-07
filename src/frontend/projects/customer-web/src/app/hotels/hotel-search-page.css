@@ -1,0 +1,20 @@
+/* Layout only: the hotel page reuses the flight search and results styles (the customer-web design is frozen). */
+.guests {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  border: 0;
+  margin: 0;
+}
+
+.guests label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.child-age {
+  display: flex;
+  gap: 0.5rem;
+  align-items: end;
+}

@@ -7,6 +7,11 @@ export const routes: Routes = [
     loadComponent: () => import('./flights/flight-search-page').then((m) => m.FlightSearchPage),
   },
   {
+    path: 'hotels',
+    title: 'Search hotels | Travel booking',
+    loadComponent: () => import('./hotels/hotel-search-page').then((m) => m.HotelSearchPage),
+  },
+  {
     path: 'trips',
     title: 'My trips | Travel booking',
     loadComponent: () => import('./trips/trips-page').then((m) => m.TripsPage),
