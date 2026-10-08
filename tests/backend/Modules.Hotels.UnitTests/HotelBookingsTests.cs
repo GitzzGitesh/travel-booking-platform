@@ -49,6 +49,17 @@ public sealed class HotelBookingsTests
     }
 
     [Fact]
+    public async Task A_booked_stay_freezes_its_selection_and_its_facts_are_readable()
+    {
+        await _bookings.BookAsync(Request(), Ct);
+
+        _selection.Status.ShouldBe(HotelSelectionStatus.Booked);
+        var stay = (await new HotelStays(new Store(_selection)).GetStayAsync(_selection.Id, Ct)).ShouldNotBeNull();
+        (stay.PropertyName, stay.Nights, stay.Room, stay.Board, stay.Booked).ShouldBe(("Hotel A", 3, "Double room", "Breakfast", true));
+        stay.Cancellation.PenaltyAfterDeadline.ShouldBe(Money(100m));
+    }
+
+    [Fact]
     public async Task Nothing_is_sent_for_another_customer_an_unconfirmed_selection_or_guests_that_do_not_match_the_stay()
     {
         (await _bookings.BookAsync(Request() with { CustomerId = "cust-2" }, Ct)).Status.ShouldBe(HotelBookingStatus.NotBooked);
@@ -80,15 +91,25 @@ public sealed class HotelBookingsTests
     }
 
     [Fact]
-    public async Task A_throwing_write_is_unknown_and_a_booking_not_as_agreed_is_a_mismatch()
+    public async Task A_throwing_write_is_unknown_and_the_selection_is_never_sent_twice()
     {
         _provider.Throws = true;
         (await _bookings.BookAsync(Request(), Ct)).Status.ShouldBe(HotelBookingStatus.Unknown);
+        _selection.Status.ShouldBe(HotelSelectionStatus.Booking); // frozen: a price check now gets 409
 
         _provider.Throws = false;
+        (await _bookings.BookAsync(Request(), Ct)).Status.ShouldBe(HotelBookingStatus.NotBooked); // one write per selection, ever
+        _provider.Sent.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_booking_not_as_agreed_is_a_mismatch_and_never_marked_booked()
+    {
         _provider.BookedPrice = Money(301m);
+
         (await _bookings.BookAsync(Request(), Ct)).ShouldBe(new HotelBookingResult(HotelBookingStatus.Mismatch, "stub", "CONF-1"));
         (await _bookings.ReconcileAsync(_selection.Id, "cust-1", "item-1", Money(300m), Ct)).Status.ShouldBe(HotelBookingStatus.Mismatch);
+        _selection.Status.ShouldBe(HotelSelectionStatus.Booking); // still frozen; a person decides
     }
 
     [Fact]
@@ -196,5 +217,7 @@ public sealed class HotelBookingsTests
             Task.FromResult<HotelSelection?>(selectionId == selection.Id ? selection : null);
 
         public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<HotelSelection?> FindByIdAsync(Guid selectionId, CancellationToken cancellationToken) => FindForUpdateAsync(selectionId, cancellationToken);
     }
 }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TravelBooking.Modules.Hotels.Infrastructure;
 
@@ -12,9 +13,11 @@ using TravelBooking.Modules.Hotels.Infrastructure;
 namespace TravelBooking.Modules.Hotels.Infrastructure.Migrations
 {
     [DbContext(typeof(HotelsDbContext))]
-    partial class HotelsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261007132947_AddBookedSelectionStatus")]
+    partial class AddBookedSelectionStatus
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

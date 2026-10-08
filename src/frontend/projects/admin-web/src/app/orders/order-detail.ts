@@ -76,6 +76,7 @@ import { ReviewOutcomeForm } from './review-outcome-form';
           <thead>
             <tr>
               <th scope="col">Item</th>
+              <th scope="col">Product</th>
               <th scope="col">Status</th>
               <th scope="col">Agreed price</th>
               <th scope="col">Supplier</th>
@@ -86,6 +87,7 @@ import { ReviewOutcomeForm } from './review-outcome-form';
             @for (item of detail.order.items; track item.itemId) {
               <tr>
                 <td class="mono">{{ item.itemId }}</td>
+                <td>{{ item.product }}</td>
                 <td>{{ item.status }}</td>
                 <td>{{ item.agreedPrice.amount }} {{ item.agreedPrice.currency }}</td>
                 <td>{{ item.providerId ?? '—' }}</td>
@@ -95,6 +97,41 @@ import { ReviewOutcomeForm } from './review-outcome-form';
           </tbody>
         </table>
       </div>
+
+      @for (stay of detail.stays; track stay.itemId) {
+        <section class="stay" [attr.aria-labelledby]="'stay-' + stay.itemId">
+          <h2 [id]="'stay-' + stay.itemId">Hotel stay</h2>
+          <dl class="summary">
+            <dt>Hotel</dt>
+            <dd>
+              {{ stay.hotel }}, {{ stay.address }} ({{ stay.cityCode }}, {{ stay.countryCode }})
+            </dd>
+            <dt>Dates</dt>
+            <dd>{{ stay.checkIn }} to {{ stay.checkOut }} ({{ stay.nights }} nights)</dd>
+            <dt>Room</dt>
+            <dd>{{ stay.room }}, {{ stay.board }}</dd>
+            <dt>Agreed cancellation terms</dt>
+            <dd>
+              @if (stay.agreedCancellation; as terms) {
+                @if (terms.refundable && terms.freeCancellationUntil) {
+                  Free until
+                  {{ terms.freeCancellationUntil | date: 'yyyy-MM-dd HH:mm' : 'UTC' }} UTC (hotel
+                  zone {{ stay.timeZone }}); after that
+                  @if (terms.penaltyAfterDeadline; as penalty) {
+                    {{ penalty.amount }} {{ penalty.currency }} is kept.
+                  } @else {
+                    nothing is refunded.
+                  }
+                } @else {
+                  Non-refundable.
+                }
+              } @else {
+                Not recorded: a cancellation follows the supplier's refund.
+              }
+            </dd>
+          </dl>
+        </section>
+      }
 
       @if (session.can('bookings.review.resolve')) {
         @for (item of detail.order.items; track item.itemId) {

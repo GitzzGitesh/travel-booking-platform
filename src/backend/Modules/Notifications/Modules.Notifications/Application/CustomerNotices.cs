@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.Modules.Customers.Contracts;
+using TravelBooking.Modules.Hotels.Contracts;
 using TravelBooking.Modules.Notifications.Domain;
 using TravelBooking.Modules.Notifications.Ports;
 using TravelBooking.Modules.Orders.Contracts;
@@ -24,9 +25,11 @@ internal interface INotificationStore
 
 /// <summary>
 /// The customer's notice for a settled booking (ADR 0024): recorded once per event (a redelivery finds the unique
-/// constraint and does nothing), then sent by <see cref="SendNotificationsJob"/>.
+/// constraint and does nothing), then sent by <see cref="SendNotificationsJob"/>. A booked hotel stay's facts are read
+/// from Hotels (its frozen selection) and stored on the notice: the voucher (ADR 0030), never guest data.
 /// </summary>
-internal sealed class OrderBookingSettledHandler(INotificationStore store, TimeProvider timeProvider) : IIntegrationEventHandler<OrderBookingSettled>
+internal sealed partial class OrderBookingSettledHandler(INotificationStore store, IHotelStays stays, TimeProvider timeProvider, ILogger<OrderBookingSettledHandler> logger)
+    : IIntegrationEventHandler<OrderBookingSettled>
 {
     public async Task HandleAsync(OrderBookingSettled integrationEvent, CancellationToken cancellationToken)
     {
@@ -40,13 +43,88 @@ internal sealed class OrderBookingSettledHandler(INotificationStore store, TimeP
             integrationEvent.OrderId,
             integrationEvent.BookingReferences,
             integrationEvent.Charged?.Amount.ToString(CultureInfo.InvariantCulture),
-            integrationEvent.Charged?.Currency.Value);
+            integrationEvent.Charged?.Currency.Value,
+            await Stays(integrationEvent, cancellationToken));
 
         // The customer's language is not known yet (Q2): the default culture until it is.
         await store.TryAddAsync(
             Notification.For(kind, integrationEvent.OrderId, integrationEvent.EventId, NoticeTemplates.Version, values.ToJson(), NoticeTemplates.DefaultCulture, timeProvider.GetUtcNow()),
             cancellationToken);
     }
+
+    private async Task<IReadOnlyList<StayNotice>?> Stays(OrderBookingSettled integrationEvent, CancellationToken cancellationToken)
+    {
+        var hotels = (integrationEvent.Items ?? []).Where(i => i.Product == "Hotel").ToList();
+        if (hotels.Count == 0)
+        {
+            return null;
+        }
+
+        // The confirmation is never lost for a stay's facts: a stay that cannot be read is left out, with an alert.
+        var facts = new List<StayNotice>();
+        foreach (var item in hotels)
+        {
+            HotelStay? stay;
+            try
+            {
+                stay = await stays.GetStayAsync(item.SelectedOfferId, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                LogStayUnreadable(logger, integrationEvent.OrderId, exception.GetType().Name);
+                continue;
+            }
+
+            if (stay is null)
+            {
+                LogStayUnreadable(logger, integrationEvent.OrderId, "not found");
+                continue;
+            }
+
+            facts.Add(StayFacts.From(stay, item));
+        }
+
+        return facts;
+    }
+
+    [LoggerMessage(Level = LogLevel.Error, EventName = "VoucherStayUnreadable",
+        Message = "Alert: order {OrderId}'s confirmation is sent without a hotel stay's details ({Reason}); send the voucher by hand")]
+    private static partial void LogStayUnreadable(ILogger logger, Guid orderId, string reason);
+}
+
+internal static class StayFacts
+{
+    /// <summary>The stay's facts from Hotels; its cancellation terms from the order (what the customer agreed to).</summary>
+    public static StayNotice From(HotelStay stay, BookedItem item) => item.CancellationRefundable is { } refundable
+        ? new(
+            stay.PropertyName,
+            stay.AddressLine,
+            stay.CheckIn,
+            stay.CheckOut,
+            stay.Nights,
+            stay.Room,
+            stay.Board,
+            refundable && item.FreeCancellationUntil is not null,
+            item.FreeCancellationUntil,
+            item.CancellationPenalty?.ToString(CultureInfo.InvariantCulture),
+            item.CancellationPenalty is null ? null : item.Currency,
+            stay.TimeZone)
+        : From(stay);
+
+    // An order without recorded terms (booked before they were): the booked selection's (frozen) terms.
+    private static StayNotice From(HotelStay stay) => new(
+        stay.PropertyName,
+        stay.AddressLine,
+        stay.CheckIn,
+        stay.CheckOut,
+        stay.Nights,
+        stay.Room,
+        stay.Board,
+        stay.Cancellation.Refundable && stay.Cancellation.FreeCancellationUntil is not null,
+        stay.Cancellation.FreeCancellationUntil,
+        stay.Cancellation.PenaltyAfterDeadline?.Amount.ToString(CultureInfo.InvariantCulture),
+        stay.Cancellation.PenaltyAfterDeadline?.Currency.Value,
+        stay.TimeZone);
 }
 
 /// <summary>

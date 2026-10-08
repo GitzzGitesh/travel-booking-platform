@@ -10,6 +10,8 @@ using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Integrations.Hotels.Mock;
 using TravelBooking.Integrations.Payments.Mock;
+using TravelBooking.Modules.Notifications.Application;
+using TravelBooking.Modules.Notifications.Infrastructure;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Domain;
 using TravelBooking.Modules.Orders.Infrastructure;
@@ -61,6 +63,13 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
         checkout.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         (await Read(checkout)).GetProperty("outcome").GetString().ShouldBe("BookingPending");
         (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.PendingConfirmation);
+        // Frozen while the booking is unresolved: a price check can never change what is being booked.
+        var selection = (await LoadOrder(order)).Items[0].SelectedOfferId;
+        using (var check = await Send(HttpMethod.Post, $"/api/v1/hotels/selected-offers/{selection}/revalidations", token))
+        {
+            check.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+
 
         await Run(ReconcileBookingsJob.Name);
         await Run("orders.outbox");
@@ -195,6 +204,40 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
 
         refundCase.GetProperty("amount").GetProperty("amount").GetString().ShouldBe(price.Amount.ToString(CultureInfo.InvariantCulture));
         refundCase.GetProperty("status").GetString().ShouldBe("PendingApproval"); // a second person still approves
+    }
+
+    // The voucher (ADR 0030): the confirmation email states the stay as booked; the booked selection is frozen, and
+    // operations see the stay with the agreed terms. Never guest data in the email.
+    [Fact]
+    public async Task A_booked_stay_is_frozen_emailed_as_a_voucher_and_shown_to_operations()
+    {
+        var token = Token();
+        var (order, _) = await CapturedOrder(token);
+        var selection = (await LoadOrder(order)).Items[0].SelectedOfferId;
+
+        using var revalidate = await Send(HttpMethod.Post, $"/api/v1/hotels/selected-offers/{selection}/revalidations", token);
+        revalidate.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await Read(revalidate)).GetProperty("type").GetString().ShouldBe("selection-booked");
+
+        await Run("orders.outbox");
+        await Run(SendNotificationsJob.Name);
+        var email = api.Services.GetRequiredService<RecordingEmailSender>().Sent
+            .Single(m => m.TextBody.Contains(order.ToString(), StringComparison.Ordinal));
+        email.Subject.ShouldBe("Your booking is confirmed");
+        email.TextBody.ShouldContain("Hotel: Mock Central Hotel, 1 Mock Street");
+        email.TextBody.ShouldContain("(3 nights)");
+        email.TextBody.ShouldContain("Room: Double room, breakfast included");
+        email.TextBody.ShouldContain("Cancellation: Free cancellation if you ask before");
+        email.TextBody.ShouldNotContain("Lovelace"); // no guest names
+        email.HtmlBody.ShouldContain("Mock Central Hotel");
+
+        using var detail = await Send(HttpMethod.Get, $"/api/admin/v1/orders/{order}", TestStaffTokens.For(TestStaffTokens.Operations));
+        var body = await Read(detail);
+        body.GetProperty("order").GetProperty("items")[0].GetProperty("product").GetString().ShouldBe("Hotel");
+        var stay = body.GetProperty("stays").EnumerateArray().ShouldHaveSingleItem();
+        (stay.GetProperty("hotel").GetString(), stay.GetProperty("nights").GetInt32(), stay.GetProperty("booked").GetBoolean())
+            .ShouldBe(("Mock Central Hotel", 3, true));
+        stay.GetProperty("agreedCancellation").GetProperty("refundable").GetBoolean().ShouldBeTrue();
     }
 
     [Fact]

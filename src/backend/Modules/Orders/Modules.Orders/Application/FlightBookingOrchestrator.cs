@@ -355,7 +355,10 @@ internal sealed partial class FlightBookingOrchestrator(
                 store.Publish(new OrderBookingSettled(Guid.NewGuid(), context.At, order.Id,
                     order.Status is OrderStatus.Confirmed ? BookingOutcome.Confirmed : BookingOutcome.PartiallyConfirmed,
                     [.. order.Items.Where(i => i.Status is FlightOrderItemStatus.Confirmed && i.SupplierLocator is not null).Select(i => i.SupplierLocator!)],
-                    capture.Amount, context.CorrelationId), context.CorrelationId);
+                    capture.Amount, context.CorrelationId,
+                    [.. order.Items.Where(i => i.Status is FlightOrderItemStatus.Confirmed && i.SupplierLocator is not null)
+                        .Select(i => new BookedItem(i.Product.ToString(), i.SelectedOfferId, i.SupplierLocator!, i.CancellationTerms?.Refundable,
+                            i.CancellationTerms?.FreeUntil, i.CancellationTerms?.PenaltyAmount, i.AgreedPrice.Currency.Value))]), context.CorrelationId);
                 break;
             case PaymentSettlement.Release release:
                 PaymentHolds.Publish(store, order.Id, release.PaymentId, "nothing was booked", context);

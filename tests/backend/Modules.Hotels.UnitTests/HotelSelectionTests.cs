@@ -182,6 +182,33 @@ public sealed class HotelSelectionTests
         store.Selection.PropertyId.ShouldBe("p-1");
     }
 
+    [Fact]
+    public void Only_a_confirmed_selection_is_booked_and_a_booked_one_is_frozen()
+    {
+        var selection = Select(Offer(300m));
+        selection.MarkBooked().ShouldBeFalse(); // not confirmed yet
+        selection.Revalidate(Offer(300m), _now.AddMinutes(1));
+
+        selection.StartBooking().ShouldBeTrue();
+        selection.StartBooking().ShouldBeFalse(); // once
+        selection.IsFrozen.ShouldBeTrue();
+        RevalidateHotelSelectionHandler.Unavailable(selection).ShouldBeOfType<HotelSelectionFailure.Booked>(); // a price check while booking: refused
+        selection.AcceptPrice(Guid.NewGuid(), _now.AddMinutes(1)).Error.ShouldBe(HotelPriceAcceptanceFailure.Booked);
+
+        selection.MarkBooked().ShouldBeTrue();
+        selection.MarkBooked().ShouldBeFalse(); // again: a no-op
+        selection.Status.ShouldBe(HotelSelectionStatus.Booked);
+        selection.IsAvailable.ShouldBeFalse();
+        Should.Throw<InvalidOperationException>(() => selection.Revalidate(Offer(300m) with { Board = BoardBasis.RoomOnly }, _now.AddMinutes(2)));
+        selection.AcceptPrice(Guid.NewGuid(), _now.AddMinutes(2)).Error.ShouldBe(HotelPriceAcceptanceFailure.Booked);
+        selection.Board.ShouldBe(BoardBasis.Breakfast);
+        RevalidateHotelSelectionHandler.Unavailable(selection).ShouldBeOfType<HotelSelectionFailure.Booked>();
+
+        var soldOut = Select(Offer(300m));
+        soldOut.MarkUnavailable(HotelSelectionStatus.SoldOut);
+        (soldOut.StartBooking(), soldOut.MarkBooked()).ShouldBe((false, false)); // never from an unavailable selection
+    }
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static Money Money(decimal amount) => new(amount, _xts);
@@ -261,5 +288,7 @@ public sealed class HotelSelectionTests
             Task.FromResult<HotelSelection?>(selectionId == selection.Id ? selection : null);
 
         public Task<bool> TrySaveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<HotelSelection?> FindByIdAsync(Guid selectionId, CancellationToken cancellationToken) => FindForUpdateAsync(selectionId, cancellationToken);
     }
 }

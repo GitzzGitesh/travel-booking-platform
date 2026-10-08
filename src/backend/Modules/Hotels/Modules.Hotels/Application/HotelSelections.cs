@@ -152,6 +152,9 @@ internal interface IHotelSelectionStore
 
     Task<HotelSelection?> FindForUpdateAsync(Guid selectionId, CancellationToken cancellationToken);
 
+    /// <summary>A read (not tracked).</summary>
+    Task<HotelSelection?> FindByIdAsync(Guid selectionId, CancellationToken cancellationToken);
+
     /// <summary>False if another request changed it first (optimistic concurrency).</summary>
     Task<bool> TrySaveAsync(CancellationToken cancellationToken);
 }
@@ -210,6 +213,9 @@ internal abstract record HotelSelectionFailure
     internal sealed record StaleQuote : HotelSelectionFailure;
 
     internal sealed record Conflict : HotelSelectionFailure;
+
+    /// <summary>The stay is booked (or its booking was sent): the selection is frozen and never revalidated or repriced again.</summary>
+    internal sealed record Booked : HotelSelectionFailure;
 
     internal sealed record ProviderFailed(ProviderError Error) : HotelSelectionFailure;
 }
@@ -287,6 +293,7 @@ internal sealed class RevalidateHotelSelectionHandler(IHotelSelectionStore store
     {
         HotelSelectionStatus.Expired => new HotelSelectionFailure.OfferExpired(),
         HotelSelectionStatus.SoldOut => new HotelSelectionFailure.SoldOut(),
+        HotelSelectionStatus.Booking or HotelSelectionStatus.Booked => new HotelSelectionFailure.Booked(),
         _ => null,
     };
 
@@ -324,6 +331,7 @@ internal sealed class AcceptHotelPriceHandler(IHotelSelectionStore store, TimePr
             {
                 HotelPriceAcceptanceFailure.OfferExpired => new HotelSelectionFailure.OfferExpired(),
                 HotelPriceAcceptanceFailure.SoldOut => new HotelSelectionFailure.SoldOut(),
+                HotelPriceAcceptanceFailure.Booked => new HotelSelectionFailure.Booked(),
                 _ => new HotelSelectionFailure.StaleQuote(),
             });
     }

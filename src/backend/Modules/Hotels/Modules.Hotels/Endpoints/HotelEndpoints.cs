@@ -167,6 +167,7 @@ internal static class HotelEndpoints
         HotelSelectionFailure.SoldOut => Problem(StatusCodes.Status422UnprocessableEntity, "sold-out", "This room is no longer available. Please search again."),
         HotelSelectionFailure.StaleQuote => Problem(StatusCodes.Status409Conflict, "price-quote-stale", "The price has changed again. Please check the latest price."),
         HotelSelectionFailure.Conflict => Problem(StatusCodes.Status409Conflict, "concurrency-conflict", "This selection was updated at the same time. Please try again."),
+        HotelSelectionFailure.Booked => Problem(StatusCodes.Status409Conflict, "selection-booked", "This stay is already booked. See it in My trips."),
         HotelSelectionFailure.ProviderFailed { Error.Kind: ProviderErrorKind.Unavailable or ProviderErrorKind.RateLimited or ProviderErrorKind.AuthFailure or ProviderErrorKind.Unknown } =>
             Problem(StatusCodes.Status503ServiceUnavailable, "provider-unavailable", "Price checks are temporarily unavailable. Please try again shortly."),
         _ => Problem(StatusCodes.Status502BadGateway, "provider-error", "The hotel supplier returned an unexpected response."),
