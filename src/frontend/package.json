@@ -33,7 +33,7 @@
     "@angular/cli": "^22.2.0",
     "@angular/compiler-cli": "^22.2.0",
     "@types/express": "^5.0.1",
-    "@types/node": "^22.12.0",
+    "@types/node": "^22.20.5",
     "jsdom": "^30.0.0",
     "ng-openapi-gen": "1.1.0",
     "prettier": "^3.8.1",
