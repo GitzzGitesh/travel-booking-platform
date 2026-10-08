@@ -9,6 +9,7 @@ export { Api } from './api';
 
 export type { AdminAmount } from './models/admin-amount';
 export type { AdminCancellationRequest } from './models/admin-cancellation-request';
+export type { AdminHotelStay } from './models/admin-hotel-stay';
 export type { AdminOrderDetail } from './models/admin-order-detail';
 export type { AdminOrderItem } from './models/admin-order-item';
 export type { AdminOrderPage } from './models/admin-order-page';
@@ -23,6 +24,7 @@ export type { BookingReviewCheckResponse } from './models/booking-review-check-r
 export type { BookingReviewOutcome } from './models/booking-review-outcome';
 export type { BookingReviewOutcomeRequest } from './models/booking-review-outcome-request';
 export type { CancellationRequestDeclineRequest } from './models/cancellation-request-decline-request';
+export type { CancellationTermsResponse } from './models/cancellation-terms-response';
 export type { HttpValidationProblemDetails } from './models/http-validation-problem-details';
 export type { LegalHoldReleaseDecisionRequest } from './models/legal-hold-release-decision-request';
 export type { LegalHoldReleaseRequestRequest } from './models/legal-hold-release-request-request';

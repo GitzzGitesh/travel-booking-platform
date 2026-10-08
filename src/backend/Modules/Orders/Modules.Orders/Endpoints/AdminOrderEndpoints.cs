@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TravelBooking.BuildingBlocks.Audit;
 using TravelBooking.BuildingBlocks.Http;
+using TravelBooking.Modules.Hotels.Contracts;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
@@ -83,10 +84,25 @@ internal static class AdminOrderEndpoints
     }
 
     public static async Task<Results<Ok<AdminOrderDetail>, NotFound>> Get(
-        Guid orderId, IOrderStore store, ICancellationRequestStore cancellations, CancellationToken cancellationToken) =>
-        await store.FindAsync(orderId, cancellationToken) is { } order
-            ? TypedResults.Ok(AdminOrderDetail.From(order, await cancellations.FindLatestForOrderAsync(order.Id, cancellationToken)))
-            : TypedResults.NotFound();
+        Guid orderId, IOrderStore store, ICancellationRequestStore cancellations, IHotelStays hotelStays, CancellationToken cancellationToken)
+    {
+        if (await store.FindAsync(orderId, cancellationToken) is not { } order)
+        {
+            return TypedResults.NotFound();
+        }
+
+        // A hotel item's stay (ADR 0030), so operations can handle it with the property's desk: non-personal facts only.
+        var stays = new List<AdminHotelStay>();
+        foreach (var item in order.Items.Where(i => i.Product is OrderProduct.Hotel))
+        {
+            if (await hotelStays.GetStayAsync(item.SelectedOfferId, cancellationToken) is { } stay)
+            {
+                stays.Add(AdminHotelStay.From(item, stay));
+            }
+        }
+
+        return TypedResults.Ok(AdminOrderDetail.From(order, await cancellations.FindLatestForOrderAsync(order.Id, cancellationToken), stays));
+    }
 
     public static async Task<Results<Ok<BookingReviewCheckResponse>, ProblemHttpResult>> CheckReview(
         Guid orderId, Guid itemId, BookingReviewCheckRequest request, ClaimsPrincipal user, HttpContext http,
@@ -150,8 +166,10 @@ internal sealed record AdminOrderSummary(Guid OrderId, string Status, DateTimeOf
         order.Id, order.Status.ToString(), order.CreatedAt, order.CustomerId, order.PaymentAuthorizationId, [.. order.Items.Select(AdminOrderItem.From)]);
 }
 
+/// <param name="Product">Flight or Hotel.</param>
 internal sealed record AdminOrderItem(
-    Guid ItemId, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, string? ProviderId, string? BookingReference, string? Ticketing, DateTimeOffset? BookingStartedAt)
+    Guid ItemId, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, string? ProviderId, string? BookingReference, string? Ticketing, DateTimeOffset? BookingStartedAt,
+    string Product = "Flight")
 {
     public static AdminOrderItem From(FlightOrderItem item) => new(
         item.Id,
@@ -161,16 +179,42 @@ internal sealed record AdminOrderItem(
         item.ProviderId,
         item.SupplierLocator,
         item.Ticketing?.ToString(),
-        item.BookingStartedAt);
+        item.BookingStartedAt,
+        item.Product.ToString());
+}
+
+/// <summary>
+/// A hotel item's stay for operations (ADR 0030): the property, dates, room and board from Hotels, and the cancellation
+/// terms the customer agreed to (the order's snapshot, which a cancellation refund follows). Never guest data.
+/// </summary>
+/// <param name="TimeZone">The property's IANA time zone (the deadline is an instant; show it in this zone).</param>
+internal sealed record AdminHotelStay(
+    Guid ItemId, string Hotel, string Address, string CityCode, string CountryCode, DateOnly CheckIn, DateOnly CheckOut, int Nights, string Room,
+    string Board, string TimeZone, bool Booked, CancellationTermsResponse? AgreedCancellation)
+{
+    public static AdminHotelStay From(FlightOrderItem item, HotelStay stay) => new(
+        item.Id, stay.PropertyName, stay.AddressLine, stay.CityCode, stay.CountryCode, stay.CheckIn, stay.CheckOut, stay.Nights, stay.Room, stay.Board,
+        stay.TimeZone, stay.Booked,
+        item.CancellationTerms is { } terms
+            ? new CancellationTermsResponse(
+                terms.Refundable,
+                terms.FreeUntil,
+                terms.PenaltyAmount is { } penalty
+                    ? new OrderAmountResponse(penalty.ToString(CultureInfo.InvariantCulture), item.AgreedPrice.Currency.Value)
+                    : null)
+            : null);
 }
 
 /// <param name="CancellationRequest">The customer's latest cancellation request (ADR 0029), if any.</param>
-internal sealed record AdminOrderDetail(AdminOrderSummary Order, IReadOnlyList<AdminTimelineEntry> Timeline, AdminCancellationRequest? CancellationRequest)
+/// <param name="Stays">Each hotel item's stay (ADR 0030); empty for flights.</param>
+internal sealed record AdminOrderDetail(
+    AdminOrderSummary Order, IReadOnlyList<AdminTimelineEntry> Timeline, AdminCancellationRequest? CancellationRequest, IReadOnlyList<AdminHotelStay> Stays)
 {
-    public static AdminOrderDetail From(Order order, CancellationRequest? cancellation = null) => new(
+    public static AdminOrderDetail From(Order order, CancellationRequest? cancellation = null, IReadOnlyList<AdminHotelStay>? stays = null) => new(
         AdminOrderSummary.From(order),
         [.. order.Timeline.OrderBy(e => e.At).ThenBy(e => e.Id).Select(e => new AdminTimelineEntry(e.At, e.Actor, e.ItemId, e.FromStatus, e.ToStatus, e.Reason, e.CorrelationId, e.ProviderReference))],
-        cancellation is null ? null : AdminCancellationRequest.From(cancellation));
+        cancellation is null ? null : AdminCancellationRequest.From(cancellation),
+        stays ?? []);
 }
 
 internal sealed record AdminTimelineEntry(

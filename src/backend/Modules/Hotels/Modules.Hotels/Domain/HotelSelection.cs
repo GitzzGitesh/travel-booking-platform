@@ -6,7 +6,9 @@ namespace TravelBooking.Modules.Hotels.Domain;
 /// <summary>
 /// Selected → Confirmed (revalidated at the agreed price) or PriceChanged (a quote awaits the customer); PriceChanged →
 /// Confirmed (quote accepted) or PriceChanged (quoted again); any bookable state → Expired (F-02) or SoldOut (F-03),
-/// which are terminal. The same rules as a selected flight offer (ADR 0030).
+/// which are terminal; Confirmed → Booking when its booking is sent (frozen from then on: never revalidated or repriced,
+/// so what is booked is what the customer agreed to) → Booked once the supplier holds it. The same rules as a selected
+/// flight offer (ADR 0030).
 /// </summary>
 internal enum HotelSelectionStatus
 {
@@ -15,6 +17,8 @@ internal enum HotelSelectionStatus
     PriceChanged,
     Expired,
     SoldOut,
+    Booking,
+    Booked,
 }
 
 internal enum HotelPriceAcceptanceFailure
@@ -22,6 +26,7 @@ internal enum HotelPriceAcceptanceFailure
     StaleQuote,
     OfferExpired,
     SoldOut,
+    Booked,
 }
 
 /// <summary>
@@ -137,7 +142,10 @@ internal sealed class HotelSelection
 
     public int Nights => CheckOut.DayNumber - CheckIn.DayNumber;
 
-    public bool IsAvailable => Status is not (HotelSelectionStatus.Expired or HotelSelectionStatus.SoldOut);
+    public bool IsAvailable => Status is not (HotelSelectionStatus.Expired or HotelSelectionStatus.SoldOut or HotelSelectionStatus.Booking or HotelSelectionStatus.Booked);
+
+    /// <summary>Its booking was sent (or made): frozen, never revalidated or repriced again.</summary>
+    public bool IsFrozen => Status is HotelSelectionStatus.Booking or HotelSelectionStatus.Booked;
 
     private decimal? FeesAmount { get; set; }
 
@@ -239,6 +247,11 @@ internal sealed class HotelSelection
     /// <summary>The customer accepts the quoted price by its id; replaying the accepted quote succeeds again.</summary>
     public Result<HotelSelection, HotelPriceAcceptanceFailure> AcceptPrice(Guid priceQuoteId, DateTimeOffset now)
     {
+        if (IsFrozen)
+        {
+            return Result<HotelSelection, HotelPriceAcceptanceFailure>.Failure(HotelPriceAcceptanceFailure.Booked);
+        }
+
         if (Status is HotelSelectionStatus.Expired)
         {
             return Result<HotelSelection, HotelPriceAcceptanceFailure>.Failure(HotelPriceAcceptanceFailure.OfferExpired);
@@ -273,6 +286,33 @@ internal sealed class HotelSelection
         PriceQuoteId = null;
         TermsChanged = false;
         return Result<HotelSelection, HotelPriceAcceptanceFailure>.Success(this);
+    }
+
+    /// <summary>The booking is about to be sent: only a Confirmed selection, which is frozen from now on. True when it changed.</summary>
+    public bool StartBooking()
+    {
+        if (Status is not HotelSelectionStatus.Confirmed)
+        {
+            return false;
+        }
+
+        Status = HotelSelectionStatus.Booking;
+        return true;
+    }
+
+    /// <summary>
+    /// The supplier holds the booking (found by booking or by a lookup). From Booking; from Confirmed only for a booking
+    /// sent before selections were frozen. Again is a no-op. True when it changed.
+    /// </summary>
+    public bool MarkBooked()
+    {
+        if (Status is not (HotelSelectionStatus.Booking or HotelSelectionStatus.Confirmed))
+        {
+            return false;
+        }
+
+        Status = HotelSelectionStatus.Booked;
+        return true;
     }
 
     /// <summary>F-02 or F-03: the offer can no longer be booked. Terminal; the customer searches again.</summary>

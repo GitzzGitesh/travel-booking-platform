@@ -4,7 +4,7 @@ import { fillAndSubmit, settle, staffTestProviders } from '../testing';
 import { OrderDetail } from './order-detail';
 
 const orderId = '3f0c6b9e-1d2a-4c55-9f86-000000000001';
-const detail = (itemStatus: string) => ({
+const detail = (itemStatus: string, stays: object[] = []) => ({
   order: {
     orderId,
     customerId: 'c1',
@@ -21,26 +21,59 @@ const detail = (itemStatus: string) => ({
         selectedOfferId: 's1',
         ticketing: null,
         agreedPrice: { amount: '120.00', currency: 'XTS' },
+        product: stays.length ? 'Hotel' : 'Flight',
       },
     ],
   },
   timeline: [],
+  stays,
 });
 
 describe('OrderDetail', () => {
   let http: HttpTestingController;
 
-  async function render(permissions: string[], itemStatus = 'ManualReview') {
+  async function render(permissions: string[], itemStatus = 'ManualReview', stays: object[] = []) {
     TestBed.configureTestingModule({ providers: staffTestProviders(permissions) });
     http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(OrderDetail);
     fixture.componentRef.setInput('orderId', orderId);
     fixture.detectChanges();
     await Promise.resolve();
-    http.expectOne(`/api/admin/v1/orders/${orderId}`).flush(detail(itemStatus));
+    http.expectOne(`/api/admin/v1/orders/${orderId}`).flush(detail(itemStatus, stays));
     await settle(fixture);
     return { fixture, element: fixture.nativeElement as HTMLElement };
   }
+
+  // ADR 0030: operations see a hotel item's stay and the cancellation terms the customer agreed to.
+  it('shows a hotel stay with its dates, room and agreed cancellation terms', async () => {
+    const stay = {
+      itemId: 'i1',
+      hotel: 'Mock Central Hotel',
+      address: '1 Mock Street',
+      cityCode: 'PAR',
+      countryCode: 'ZZ',
+      checkIn: '2026-11-10',
+      checkOut: '2026-11-13',
+      nights: 3,
+      room: 'Double room',
+      board: 'Breakfast',
+      timeZone: 'UTC',
+      booked: true,
+      agreedCancellation: {
+        refundable: true,
+        freeCancellationUntil: '2026-11-08T12:00:00+00:00',
+        penaltyAfterDeadline: { amount: '120', currency: 'XTS' },
+      },
+    };
+    const { element } = await render(['orders.read'], 'Confirmed', [stay]);
+
+    const section = element.querySelector('#stay-i1')!.closest('section')!;
+    expect(section.textContent).toContain('Mock Central Hotel, 1 Mock Street (PAR, ZZ)');
+    expect(section.textContent).toContain('2026-11-10 to 2026-11-13 (3 nights)');
+    expect(section.textContent).toContain('Free until 2026-11-08 12:00 UTC');
+    expect(section.textContent).toContain('120 XTS is kept');
+    expect(element.querySelector('tbody')?.textContent).toContain('Hotel');
+  });
 
   afterEach(() => http.verify());
 

@@ -28,4 +28,15 @@ public sealed record OrderBookingSettled(
     BookingOutcome Outcome,
     IReadOnlyList<string> BookingReferences,
     Money? Charged,
-    string? CorrelationId) : IIntegrationEvent;
+    string? CorrelationId,
+    IReadOnlyList<BookedItem>? Items = null) : IIntegrationEvent;
+
+/// <summary>
+/// A confirmed item of a settled order (ADR 0030): its product ("Flight" or "Hotel"), the selection it booked (to read
+/// the stay's non-personal facts through Hotels.Contracts) and the supplier's booking reference. For a hotel stay, the
+/// cancellation terms the customer agreed to, from the order (what a cancellation is refunded by); the penalty is in the
+/// item's currency (<paramref name="Currency"/>).
+/// </summary>
+public sealed record BookedItem(
+    string Product, Guid SelectedOfferId, string BookingReference,
+    bool? CancellationRefundable = null, DateTimeOffset? FreeCancellationUntil = null, decimal? CancellationPenalty = null, string? Currency = null);

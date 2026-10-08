@@ -30,6 +30,7 @@ public static class HotelsModule
         services.AddScoped<AcceptHotelPriceHandler>();
         services.AddScoped<IHotelSelections, HotelSelections>();
         services.AddScoped<IHotelBookings, HotelBookings>();
+        services.AddScoped<IHotelStays, HotelStays>();
         services.AddHybridCache(options => options.MaximumPayloadBytes = HotelSearchCache.MaximumPayloadBytes);
         services.AddSingleton<HotelSearchCache>();
 

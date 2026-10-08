@@ -96,6 +96,9 @@ internal sealed class SqlHotelSelectionStore(HotelsDbContext db) : IHotelSelecti
     public Task<HotelSelection?> FindForUpdateAsync(Guid selectionId, CancellationToken cancellationToken) =>
         db.Selections.SingleOrDefaultAsync(s => s.Id == selectionId, cancellationToken);
 
+    public Task<HotelSelection?> FindByIdAsync(Guid selectionId, CancellationToken cancellationToken) =>
+        db.Selections.AsNoTracking().SingleOrDefaultAsync(s => s.Id == selectionId, cancellationToken);
+
     public async Task<bool> TrySaveAsync(CancellationToken cancellationToken)
     {
         try

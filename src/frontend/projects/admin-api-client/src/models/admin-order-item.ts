@@ -7,6 +7,7 @@ export interface AdminOrderItem {
   bookingReference: (string | null);
   bookingStartedAt: (string | null);
   itemId: string;
+  product?: string;
   providerId: (string | null);
   selectedOfferId: string;
   status: string;

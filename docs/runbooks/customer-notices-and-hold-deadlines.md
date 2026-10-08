@@ -16,6 +16,16 @@ Background: ADR 0024 (notifications), ADR 0025 (hold deadlines).
 - `Failed` after 10 attempts with a temporary reason: the provider was unreachable for hours. Check the provider status. To resend once it is back, set the notice to `Pending` with a `NextAttemptAt` in the past. Do this as a ticketed operational change, never by editing the message.
 - `Suppressed` with `no-contact`: the order's personal data is anonymised, so there is nobody left to tell. No action.
 
+- No notice at all for a confirmed order: the `OrderBookingSettled` event itself gave up in the outbox (`FailedAt` set after 10 attempts). The customer has not been told about a booking they were charged for. Treat it as P2: tell the customer through support, then re-run the event as a ticketed operational change.
+
+## Alert: `VoucherStayUnreadable`
+**Severity:** P3. **Owner:** customer operations.
+**Customer impact:** the booking confirmation was sent, but without the hotel stay's details (ADR 0030). The booking, the money and the cancellation terms are unaffected.
+
+**Diagnose:** the alert names the order. Open it in admin-web: the order view shows the hotel stay and the agreed cancellation terms. If the stay is missing there too, the Hotels database (connection string `Hotels`) was unreachable or not configured for the Worker.
+
+**Resolve:** send the customer the stay's details (hotel, dates, room, cancellation terms and booking reference) by hand through support. Fix the Worker's Hotels configuration if that was the cause.
+
 ## Warning: `NotificationProviderMissing`
 No email provider is configured in this environment, so notices are waiting as `Pending`. Nothing is lost: they are sent once a provider is configured (ADR 0024). Production must not run like this. Until the email provider's account and sending domain exist, which is an external dependency, only Development and Staging have the recording stand-in.
 

@@ -335,6 +335,18 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - hotel bookings made before terms were recorded follow the supplier's refund, labelled as such.
 - **Customer:** the order shows its agreed terms (`cancellation` on order items, additive), and the booking page states them next to "Ask to cancel".
 - **Still to come:** comparing the terms a supplier confirms at booking with the agreed ones (the port carries none yet; with a real supplier, Q6); supplier cancellation through the adapter (only once a real supplier's capability is verified, Q6); hotel details in the confirmation email (voucher); hotel details in admin views. |
+| 25 | **Hotels H5: voucher email, a frozen booked stay, and the stay in the admin order view (ADR 0030)** | **Done.**
+- **Frozen from the moment its booking is sent:**
+  - a hotel selection becomes `Booking` (saved before anything is sent; not saved means nothing is sent), then `Booked` when the supplier holds it (found by booking or by a lookup);
+  - it is never revalidated or repriced again (409 `selection-booked`), even while an unknown outcome is reconciled, so what is booked is what the customer agreed to;
+  - migration `AddBookedSelectionStatus` widens the status check constraint, and its rollback maps frozen selections back to `Confirmed`.
+- **Voucher:**
+  - `OrderBookingSettled` carries the booked items (product, selection, reference). The field is optional, so older events still work.
+  - Notifications reads each booked stay through `IHotelStays` (`Modules.Hotels.Contracts`) and stores its non-personal facts on the notice. The cancellation terms come from the order's agreed snapshot (carried on the event), the same ones a cancellation refund follows;
+  - a stay that cannot be read never loses the confirmation: it is sent without the stay, with the `VoucherStayUnreadable` alert (runbook: customer notices).
+  - The confirmation email lists the hotel and address, the dates and nights, the room and board, and the cancellation terms with the deadline in the hotel's time zone. No guest names.
+- **Operations:** the admin order view shows each item's product and a hotel item's stay with the cancellation terms the customer agreed to (additive `stays` in the staff API).
+- **Next:** cancellation through a hotel supplier's own system (once a supplier is chosen, Q6) and the property's own confirmation code (F-51) stay external. The Hotels product slice is otherwise complete on the mock. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

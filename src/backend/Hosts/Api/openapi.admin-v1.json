@@ -2067,11 +2067,82 @@
           }
         }
       },
+      "AdminHotelStay": {
+        "required": [
+          "itemId",
+          "hotel",
+          "address",
+          "cityCode",
+          "countryCode",
+          "checkIn",
+          "checkOut",
+          "nights",
+          "room",
+          "board",
+          "timeZone",
+          "booked",
+          "agreedCancellation"
+        ],
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "hotel": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "cityCode": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "checkIn": {
+            "type": "string",
+            "format": "date"
+          },
+          "checkOut": {
+            "type": "string",
+            "format": "date"
+          },
+          "nights": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "room": {
+            "type": "string"
+          },
+          "board": {
+            "type": "string"
+          },
+          "timeZone": {
+            "type": "string"
+          },
+          "booked": {
+            "type": "boolean"
+          },
+          "agreedCancellation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CancellationTermsResponse"
+              }
+            ]
+          }
+        }
+      },
       "AdminOrderDetail": {
         "required": [
           "order",
           "timeline",
-          "cancellationRequest"
+          "cancellationRequest",
+          "stays"
         ],
         "type": "object",
         "properties": {
@@ -2093,6 +2164,12 @@
                 "$ref": "#/components/schemas/AdminCancellationRequest"
               }
             ]
+          },
+          "stays": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminHotelStay"
+            }
           }
         }
       },
@@ -2147,6 +2224,10 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "product": {
+            "type": "string",
+            "default": "Flight"
           }
         }
       },
@@ -2595,6 +2676,36 @@
             "type": [
               "null",
               "string"
+            ]
+          }
+        }
+      },
+      "CancellationTermsResponse": {
+        "required": [
+          "refundable",
+          "freeCancellationUntil",
+          "penaltyAfterDeadline"
+        ],
+        "type": "object",
+        "properties": {
+          "refundable": {
+            "type": "boolean"
+          },
+          "freeCancellationUntil": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "penaltyAfterDeadline": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrderAmountResponse"
+              }
             ]
           }
         }

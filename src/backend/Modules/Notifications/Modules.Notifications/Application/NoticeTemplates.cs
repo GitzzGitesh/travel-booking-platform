@@ -6,7 +6,14 @@ using System.Text.Json;
 namespace TravelBooking.Modules.Notifications.Application;
 
 /// <summary>The non-personal facts a booking notice shows (stored as JSON on the notification).</summary>
-internal sealed record BookingNoticeValues(Guid OrderId, IReadOnlyList<string> BookingReferences, string? ChargedAmount, string? ChargedCurrency)
+/// <summary>A booked hotel stay's non-personal facts, as stored on the notice (the voucher, ADR 0030).</summary>
+/// <param name="FreeUntil">The free-cancellation deadline (an instant), shown in the hotel's <paramref name="TimeZone"/>.</param>
+internal sealed record StayNotice(
+    string Hotel, string Address, DateOnly CheckIn, DateOnly CheckOut, int Nights, string Room, string Board, bool Refundable, DateTimeOffset? FreeUntil,
+    string? PenaltyAmount, string? PenaltyCurrency, string TimeZone);
+
+internal sealed record BookingNoticeValues(
+    Guid OrderId, IReadOnlyList<string> BookingReferences, string? ChargedAmount, string? ChargedCurrency, IReadOnlyList<StayNotice>? Stays = null)
 {
     public string ToJson() => JsonSerializer.Serialize(this, JsonSerializerOptions.Web);
 
@@ -65,6 +72,15 @@ internal static class NoticeTemplates
             lines.Add((texts.ReferencesLabel, string.Join(", ", values.BookingReferences)));
         }
 
+        // The voucher: each booked stay, as booked (confirmations only; a cancellation or refund notice repeats none).
+        if (kind is BookingConfirmed or BookingPartiallyConfirmed)
+        {
+            foreach (var stay in values.Stays ?? [])
+            {
+                lines.AddRange(StayLines(stay, texts));
+            }
+        }
+
         // A cancellation promises no amount: the refund, if any, still needs a second person's approval (ADR 0027).
         var amountLabel = kind switch
         {
@@ -101,6 +117,33 @@ internal static class NoticeTemplates
         return new RenderedNotice(subject, html.ToString(), text.ToString());
     }
 
+    private static IEnumerable<(string Label, string Value)> StayLines(StayNotice stay, NoticeTexts texts)
+    {
+        var culture = CultureInfo.GetCultureInfo(texts.Language);
+        yield return (texts.HotelLabel, $"{stay.Hotel}, {stay.Address}");
+        yield return (texts.StayLabel, string.Format(culture, texts.StayFormat, stay.CheckIn.ToString(texts.DateFormat, culture), stay.CheckOut.ToString(texts.DateFormat, culture), stay.Nights));
+        yield return (texts.RoomLabel, $"{stay.Room}, {texts.Board(stay.Board)}");
+        yield return (texts.CancellationLabel, Cancellation(stay, texts, culture));
+    }
+
+    // The deadline in the hotel's own time zone, labelled; the penalty as stored (never recomputed).
+    private static string Cancellation(StayNotice stay, NoticeTexts texts, CultureInfo culture)
+    {
+        if (!stay.Refundable || stay.FreeUntil is not { } deadline)
+        {
+            return texts.NonRefundable;
+        }
+
+        // In the hotel's zone, labelled; an unknown zone falls back to UTC, labelled UTC (never a mislabelled time).
+        var when = TimeZoneInfo.TryFindSystemTimeZoneById(stay.TimeZone, out var zone)
+            ? $"{TimeZoneInfo.ConvertTime(deadline, zone).ToString(texts.DeadlineFormat, culture)} ({stay.TimeZone})"
+            : $"{deadline.ToUniversalTime().ToString(texts.DeadlineFormat, culture)} (UTC)";
+        var after = stay.PenaltyAmount is { } amount && stay.PenaltyCurrency is { } currency
+            ? string.Format(culture, texts.PenaltyAfter, $"{amount} {currency}")
+            : texts.NothingAfter;
+        return string.Format(culture, texts.FreeUntil, when, after);
+    }
+
     private static string Encode(string value) => HtmlEncoder.Default.Encode(value);
 }
 
@@ -129,8 +172,29 @@ internal sealed record NoticeTexts(
     string CancellationRequestedIntro,
     string CancellationDeclinedSubject,
     string CancellationDeclinedIntro,
-    string Footer)
+    string Footer,
+    string HotelLabel = "Hotel",
+    string StayLabel = "Stay",
+    string StayFormat = "{0} to {1} ({2} nights)",
+    string DateFormat = "dddd d MMMM yyyy",
+    string DeadlineFormat = "d MMMM yyyy, HH:mm",
+    string RoomLabel = "Room",
+    string CancellationLabel = "Cancellation",
+    string NonRefundable = "Non-refundable: nothing is refunded if you cancel.",
+    string FreeUntil = "Free cancellation if you ask before {0}; {1}.",
+    string PenaltyAfter = "after that, {0} is kept",
+    string NothingAfter = "after that, nothing is refunded")
 {
+    public string Board(string board) => board switch
+    {
+        "RoomOnly" => "room only",
+        "Breakfast" => "breakfast included",
+        "HalfBoard" => "half board",
+        "FullBoard" => "full board",
+        "AllInclusive" => "all inclusive",
+        _ => board,
+    };
+
     public static readonly NoticeTexts English = new(
         "en",
         "Your booking is confirmed",

@@ -60,6 +60,7 @@ internal sealed class HotelSelections(IHotelSelectionStore store, RevalidateHote
             _ when !selection.IsOwnedBy(customerId) => HotelSelectionUnavailable.NotFound,
             { Status: HotelSelectionStatus.SoldOut } => HotelSelectionUnavailable.SoldOut,
             { Status: HotelSelectionStatus.Expired } => HotelSelectionUnavailable.Expired,
+            { IsFrozen: true } => HotelSelectionUnavailable.NotFound, // ordered, and its booking sent already
             { Status: not HotelSelectionStatus.Confirmed } => HotelSelectionUnavailable.NeedsPriceCheck,
             _ when selection.OfferExpiresAt <= timeProvider.GetUtcNow() => HotelSelectionUnavailable.Expired,
             _ => null,
@@ -114,6 +115,13 @@ internal sealed partial class HotelBookings(IHotelSelectionStore store, HotelPro
             return new HotelBookingResult(HotelBookingStatus.NotBooked, selection.ProviderId, Detail: "The offer's supplier is not available; nothing was sent to it");
         }
 
+        // Frozen before anything is sent: from now on no price check can change what is being booked. Not saved (a
+        // concurrent change): nothing is sent.
+        if (!selection.StartBooking() || !await store.TrySaveAsync(cancellationToken))
+        {
+            return new HotelBookingResult(HotelBookingStatus.NotBooked, selection.ProviderId, Detail: "The selection changed at the same time; nothing was sent to the supplier");
+        }
+
         var details = new HotelBookingDetails(
             request.ClientReference,
             new HotelOfferRef(selection.ProviderId, selection.ProviderOfferToken),
@@ -140,7 +148,7 @@ internal sealed partial class HotelBookings(IHotelSelectionStore store, HotelPro
                 : new HotelBookingResult(HotelBookingStatus.Unknown, provider.Id);
         }
 
-        return Verify(provider.Id, booked.Value, request.ClientReference, request.AgreedPrice);
+        return await Frozen(selection, Verify(provider.Id, booked.Value, request.ClientReference, request.AgreedPrice), cancellationToken);
     }
 
     public async Task<HotelBookingResult> ReconcileAsync(Guid selectedOfferId, string customerId, string clientReference, Money agreedPrice, CancellationToken cancellationToken)
@@ -163,8 +171,20 @@ internal sealed partial class HotelBookings(IHotelSelectionStore store, HotelPro
         }
 
         return lookup.Value.Booking is { } booking
-            ? Verify(provider.Id, booking, clientReference, agreedPrice)
+            ? await Frozen(selection, Verify(provider.Id, booking, clientReference, agreedPrice), cancellationToken)
             : new HotelBookingResult(HotelBookingStatus.NotFound, provider.Id);
+    }
+
+    // A booked stay's selection is marked Booked (it was frozen when its booking was sent). Not saving it (a concurrent
+    // change) never changes the booking outcome: the selection stays frozen as Booking.
+    private async Task<HotelBookingResult> Frozen(HotelSelection selection, HotelBookingResult result, CancellationToken cancellationToken)
+    {
+        if (result.Status is HotelBookingStatus.Booked && selection.MarkBooked() && !await store.TrySaveAsync(cancellationToken))
+        {
+            LogNotFrozen(logger, selection.Id);
+        }
+
+        return result;
     }
 
     // Exactly the occupancy the room was priced for: the searched adults, and children of the searched ages (at check-out),
@@ -205,6 +225,21 @@ internal sealed partial class HotelBookings(IHotelSelectionStore store, HotelPro
     [LoggerMessage(Level = LogLevel.Warning, Message = "Hotel booking call to {ProviderId} for {ClientReference} threw ({ExceptionType}); outcome unknown, it will be looked up")]
     private static partial void LogBookingThrew(ILogger logger, string providerId, string clientReference, string exceptionType);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Hotel selection {SelectionId} is booked but could not be marked Booked (a concurrent change); it stays frozen as Booking")]
+    private static partial void LogNotFrozen(ILogger logger, Guid selectionId);
+
     [LoggerMessage(Level = LogLevel.Error, EventName = "HotelBookingMismatch", Message = "Alert: {ProviderId} holds booking {ClientReference} but not as agreed; it is never charged until a person decides")]
     private static partial void LogMismatch(ILogger logger, string providerId, string clientReference);
+}
+
+/// <summary><see cref="IHotelStays"/>: the stored selection's non-personal facts (a read; frozen once booked).</summary>
+internal sealed class HotelStays(IHotelSelectionStore store) : IHotelStays
+{
+    public async Task<HotelStay?> GetStayAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+        await store.FindByIdAsync(selectedOfferId, cancellationToken) is { } s
+            ? new HotelStay(
+                s.PropertyName, s.AddressLine, s.CityCode, s.CountryCode, s.StarRating, s.TimeZone, s.CheckIn, s.CheckOut, s.Nights,
+                s.RoomDescription, s.Board.ToString(), new HotelCancellationTerms(s.Refundable, s.FreeCancellationUntil, s.PenaltyAfterDeadline),
+                s.Status is HotelSelectionStatus.Booked)
+            : null;
 }
