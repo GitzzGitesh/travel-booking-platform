@@ -19,6 +19,7 @@ import { StaffSession } from '../staff-session';
 import { LegalHoldPanel } from './legal-hold-panel';
 import { RefundPanel } from './refund-panel';
 import { ReviewOutcomeForm } from './review-outcome-form';
+import { MoneyPipe } from '../shared/money';
 
 /**
  * One order for operations: its items, the append-only booking timeline, and the staff actions the permissions allow
@@ -26,7 +27,15 @@ import { ReviewOutcomeForm } from './review-outcome-form';
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, LegalHoldPanel, ReasonForm, RefundPanel, ReviewOutcomeForm, RouterLink],
+  imports: [
+    DatePipe,
+    LegalHoldPanel,
+    MoneyPipe,
+    ReasonForm,
+    RefundPanel,
+    ReviewOutcomeForm,
+    RouterLink,
+  ],
   selector: 'adm-order-detail',
   template: `
     <p><a routerLink="/orders">Back to the booking queues</a></p>
@@ -89,7 +98,7 @@ import { ReviewOutcomeForm } from './review-outcome-form';
                 <td class="mono">{{ item.itemId }}</td>
                 <td>{{ item.product }}</td>
                 <td>{{ item.status }}</td>
-                <td>{{ item.agreedPrice.amount }} {{ item.agreedPrice.currency }}</td>
+                <td>{{ item.agreedPrice | money }}</td>
                 <td>{{ item.providerId ?? '—' }}</td>
                 <td>{{ item.bookingReference ?? '—' }}</td>
               </tr>
@@ -118,7 +127,7 @@ import { ReviewOutcomeForm } from './review-outcome-form';
                   {{ terms.freeCancellationUntil | date: 'yyyy-MM-dd HH:mm' : 'UTC' }} UTC (hotel
                   zone {{ stay.timeZone }}); after that
                   @if (terms.penaltyAfterDeadline; as penalty) {
-                    {{ penalty.amount }} {{ penalty.currency }} is kept.
+                    {{ penalty | money }} is kept.
                   } @else {
                     nothing is refunded.
                   }

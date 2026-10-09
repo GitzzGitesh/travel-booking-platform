@@ -6,12 +6,22 @@ import {
   ElementRef,
   afterNextRender,
   computed,
+  effect,
   inject,
   Injector,
   signal,
   viewChild,
 } from '@angular/core';
-import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  FormArray,
+  FormControl,
+  FormGroup,
+  ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   Api,
@@ -37,7 +47,7 @@ import {
   type TravellerType,
 } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
-import { formatMoney } from '../flights/flight-format';
+import { formatMoney, localDate, localTime } from '../flights/flight-format';
 import { orderStatusLabel } from './order-status';
 import { STRIPE_JS, minorUnits, type StripeElements, type StripeJs } from './stripe';
 
@@ -149,6 +159,27 @@ export class BookingPage {
       : 'after that, nothing is refunded';
     return `Free cancellation if you ask before ${deadline}; ${after}.`;
   });
+  /** The travellers' names once the booking is made (the customer's own order page); empty until read. */
+  protected readonly bookedTravellers = signal<readonly string[]>([]);
+
+  /** "LHR → JFK · ZZ202 · Mon 19 Oct, 07:05 – 09:20" per leg: local times at each airport, as booked. */
+  protected readonly flightLegs = computed(() =>
+    (this.item()?.flight?.legs ?? []).map((leg) => {
+      const first = leg.segments[0];
+      const last = leg.segments[leg.segments.length - 1];
+      const flights = leg.segments.map((s) => s.flightNumber).join(' · ');
+      return `${first.origin} → ${last.destination} · ${flights} · ${localDate(first.departureLocal)}, ${localTime(first.departureLocal)} – ${localTime(last.arrivalLocal)}`;
+    }),
+  );
+
+  /** "Mock Central Hotel, 1 Mock Street · Tue 10 Nov – Fri 13 Nov (3 nights) · Double room, Breakfast". */
+  protected readonly stay = computed(() => {
+    const stay = this.item()?.hotel;
+    return stay
+      ? `${stay.hotel}, ${stay.address} · ${localDate(stay.checkIn)} – ${localDate(stay.checkOut)} (${stay.nights} ${stay.nights === 1 ? 'night' : 'nights'}) · ${stay.room}, ${stay.board}`
+      : null;
+  });
+
   protected readonly documentsRequired = computed(
     () => this.item()?.travellers?.documentsRequired ?? false,
   );
@@ -172,6 +203,20 @@ export class BookingPage {
   });
 
   protected readonly travellers = new FormArray<Traveller>([]);
+
+  // BUG-003: once the session is signed out, nothing of this booking stays on screen or in the form: the page shows
+  // its signed-out state, as after a reload.
+  private readonly clearOnSignOut = effect(() => {
+    if (this.session.state().kind !== 'signed-out' || this.state().kind === 'signed-out') {
+      return;
+    }
+    this.travellers.clear();
+    this.contact.reset();
+    this.bookedTravellers.set([]);
+    this.message.set(null);
+    this.entry.set(null);
+    this.state.set({ kind: 'signed-out' });
+  });
   protected readonly contact = new FormGroup({
     email: new FormControl('', {
       nonNullable: true,
@@ -195,6 +240,16 @@ export class BookingPage {
   protected travellerLabel(type: TravellerType, index: number): string {
     const kind = type === 'Child' ? 'Child' : type === 'Infant' ? 'Infant' : 'Adult';
     return `Traveller ${index + 1} (${kind.toLowerCase()})`;
+  }
+
+  /** QA BUG-005: why a date of birth does not fit the traveller's type, on the date the server counts ages on. */
+  protected ageHint(type: TravellerType): string {
+    const state = this.state();
+    const ageOn = state.kind === 'ready' ? ageOnDate(state.order) : null;
+    const range = type === 'Infant' ? 'under 2' : type === 'Child' ? '2 to 11' : '12 or over';
+    return ageOn
+      ? `This traveller must be ${range} years old on ${new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(ageOn + 'T00:00:00Z'))}.`
+      : '';
   }
 
   protected invalid(control: FormControl<unknown>): boolean {
@@ -692,6 +747,9 @@ export class BookingPage {
         this.buildTravellers(order, await this.savedTravellers());
       }
       this.state.set({ kind: 'ready', order });
+      if (order.status === 'Confirmed' || order.status === 'PartiallyConfirmed') {
+        void this.readBookedTravellers();
+      }
       if (order.status === 'Pending') {
         void this.pollOrder().catch(() =>
           this.message.set({ tone: 'info', text: 'Reload this page to see the latest status.' }),
@@ -736,6 +794,24 @@ export class BookingPage {
     this.entry.set(entry);
     if (entry.testMethods.length > 0 && !this.paymentMethod.value) {
       this.paymentMethod.setValue(entry.testMethods[0].token);
+    }
+  }
+
+  // The names on a made booking (the customer's own): shown with what was booked. Not shown when they cannot be read.
+  private async readBookedTravellers(): Promise<void> {
+    try {
+      const saved = await this.api.invoke(getOrderTravellers, { orderId: this.orderId });
+      if (this.session.state().kind === 'signed-out') {
+        return; // signed out meanwhile: the names never come back into the page (BUG-003)
+      }
+      this.bookedTravellers.set(
+        [...saved.travellers]
+          .sort((a, b) => a.position - b.position)
+          .map((t) => [t.givenNames, t.surname].filter(Boolean).join(' '))
+          .filter((name) => name.length > 0),
+      );
+    } catch {
+      this.bookedTravellers.set([]);
     }
   }
 
@@ -796,7 +872,7 @@ export class BookingPage {
           }),
           dateOfBirth: new FormControl(known?.dateOfBirth ?? '', {
             nonNullable: true,
-            validators: [Validators.required],
+            validators: [Validators.required, ageForType(type, ageOnDate(order))],
           }),
           gender: new FormControl<TravellerGenderType>(
             (known?.gender as TravellerGenderType) ?? null,
@@ -836,4 +912,38 @@ export class BookingPage {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The date the server counts every traveller's age on: the order's last travel date, the latest of its items' (as the
+ * server's traveller needs take it), not the first item's. Dates are yyyy-MM-dd, so the latest sorts last.
+ */
+function ageOnDate(order: OrderResponse): string | null {
+  return order.items.reduce<string | null>((latest, item) => {
+    const ageOn = item.travellers?.ageOn ?? null;
+    return ageOn && (!latest || ageOn > latest) ? ageOn : latest;
+  }, null);
+}
+
+/**
+ * QA BUG-005: a date of birth that does not fit the traveller's type on the date ages are counted on (infants under 2,
+ * children 2 to 11, adults 12 and over), flagged on that traveller before anything is sent. The server checks again.
+ * The age is counted as the server counts it (DateOnly.AddYears): a 29 February birthday falls on 28 February in a
+ * year without one.
+ */
+export function ageForType(type: TravellerType, ageOn: string | null): ValidatorFn {
+  return (control: AbstractControl<string>): ValidationErrors | null => {
+    const birth = control.value;
+    if (!ageOn || !birth || !/^\d{4}-\d{2}-\d{2}$/.test(birth)) {
+      return null;
+    }
+    const [by, bm, bd] = birth.split('-').map(Number);
+    const [ry, rm, rd] = ageOn.split('-').map(Number);
+    const leapYear = (ry % 4 === 0 && ry % 100 !== 0) || ry % 400 === 0;
+    const birthday = bm === 2 && bd === 29 && !leapYear ? 28 : bd;
+    const age = ry - by - (rm < bm || (rm === bm && rd < birthday) ? 1 : 0);
+    const fits =
+      type === 'Infant' ? age >= 0 && age < 2 : type === 'Child' ? age >= 2 && age < 12 : age >= 12;
+    return fits ? null : { ageForType: true };
+  };
 }

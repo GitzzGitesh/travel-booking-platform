@@ -46,6 +46,57 @@ describe('OrderQueue', () => {
     await fixture.whenStable();
   }
 
+  // QA BUG-004: staff find a booking by its supplier reference (or our order id), whatever its status.
+  it('finds a booking by its reference and refuses a malformed search without asking the server', async () => {
+    const fixture = TestBed.createComponent(OrderQueue);
+    await Promise.resolve();
+    http.expectOne((r) => r.url === '/api/admin/v1/orders').flush({ orders: [], nextCursor: null });
+    await settle(fixture);
+    const element = fixture.nativeElement as HTMLElement;
+    const input = element.querySelector<HTMLInputElement>('#order-search')!;
+    const submit = () =>
+      element.querySelector<HTMLFormElement>('form.search')!.dispatchEvent(new Event('submit'));
+
+    input.value = 'x!';
+    submit();
+    await settle(fixture);
+    expect(element.querySelector('[role=alert]')?.textContent).toContain(
+      'booking reference or an order id',
+    );
+    http.expectNone((r) => r.url.includes('/search'));
+
+    input.value = ' 7zyp7v ';
+    submit();
+    await Promise.resolve();
+    const search = http.expectOne((r) => r.url === '/api/admin/v1/orders/search');
+    expect(search.request.params.get('q')).toBe('7zyp7v');
+    search.flush({
+      orders: [
+        {
+          ...order,
+          status: 'Confirmed',
+          items: [{ ...order.items[0], status: 'Confirmed', bookingReference: '7ZYP7V' }],
+        },
+      ],
+      nextCursor: null,
+    });
+    await settle(fixture);
+
+    const results = element.querySelector('section[aria-labelledby=search-results]')!;
+    expect(results.querySelector('a')?.getAttribute('href')).toBe(`/orders/${order.orderId}`);
+    expect(results.textContent).toContain('Confirmed');
+    expect(results.textContent).toContain('7ZYP7V');
+
+    input.value = 'NOSUCHREF';
+    submit();
+    await Promise.resolve();
+    http
+      .expectOne((r) => r.url === '/api/admin/v1/orders/search')
+      .flush({ orders: [], nextCursor: null });
+    await settle(fixture);
+    expect(element.textContent).toContain('No booking matches "NOSUCHREF"');
+  });
+
   it('lists the manual-review queue first, with links to each order, and pages with the cursor', async () => {
     const fixture = TestBed.createComponent(OrderQueue);
     await Promise.resolve();

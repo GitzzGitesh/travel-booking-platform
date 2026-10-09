@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using TravelBooking.BuildingBlocks.Http;
 using TravelBooking.Modules.Flights.Contracts;
+using TravelBooking.Modules.Hotels.Contracts;
 using TravelBooking.Modules.Orders.Application;
 using TravelBooking.Modules.Orders.Domain;
 
@@ -117,9 +118,9 @@ internal static class OrderEndpoints
     }
 
     public static async Task<Results<Ok<OrderResponse>, NotFound>> Get(
-        Guid orderId, ClaimsPrincipal user, IOrderStore store, ICancellationRequestStore cancellations, CancellationToken cancellationToken) =>
-        await store.FindOwnedAsync(orderId, user.CustomerId()!, cancellationToken) is { } order
-            ? TypedResults.Ok(OrderResponse.From(order, await cancellations.FindLatestForOrderAsync(order.Id, cancellationToken)))
+        Guid orderId, ClaimsPrincipal user, CustomerOrderDetailsQuery query, CancellationToken cancellationToken) =>
+        await query.GetOwnedAsync(orderId, user.CustomerId()!, cancellationToken) is { } details
+            ? TypedResults.Ok(OrderResponse.From(details.Order, details.Cancellation, details.Booked))
             : TypedResults.NotFound();
 
     private static ProblemHttpResult CheckoutProblem(CheckoutFailure failure) => failure switch
@@ -171,7 +172,7 @@ internal static class OrderEndpoints
 internal sealed record OrderResponse(
     Guid OrderId, string Status, DateTimeOffset CreatedAt, IReadOnlyList<OrderItemResponse> Items, CancellationRequestResponse? CancellationRequest)
 {
-    public static OrderResponse From(Order order, CancellationRequest? cancellation = null) => new(
+    public static OrderResponse From(Order order, CancellationRequest? cancellation = null, IReadOnlyDictionary<Guid, BookedItemDetails>? booked = null) => new(
         order.Id,
         order.Status.ToString(),
         order.CreatedAt,
@@ -186,7 +187,8 @@ internal sealed record OrderResponse(
             item.SupplierLocator,
             item.Ticketing?.ToString(),
             item.TravellerNeeds is { IsKnown: true } needs
-                ? new TravellersNeededResponse(needs.Adults, needs.Children, needs.Infants, needs.DocumentsRequired)
+                ? new TravellersNeededResponse(needs.Adults, needs.Children, needs.Infants, needs.DocumentsRequired,
+                    needs.LastTravelDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
                 : null,
             item.CancellationTerms is { } terms
                 ? new CancellationTermsResponse(
@@ -195,7 +197,9 @@ internal sealed record OrderResponse(
                     terms.PenaltyAmount is { } penalty
                         ? new OrderAmountResponse(penalty.ToString(CultureInfo.InvariantCulture), item.AgreedPrice.Currency.Value)
                         : null)
-                : null)).ToList(),
+                : null,
+            booked?.GetValueOrDefault(item.Id)?.Flight is { } flight ? FlightItineraryResponse.From(flight) : null,
+            booked?.GetValueOrDefault(item.Id)?.Hotel is { } stay ? HotelStayResponse.From(stay) : null)).ToList(),
         cancellation is null ? null : CancellationRequestResponse.From(cancellation));
 }
 
@@ -207,7 +211,36 @@ internal sealed record OrderResponse(
 /// <param name="Cancellation">A hotel stay's agreed cancellation terms; null for a flight.</param>
 internal sealed record OrderItemResponse(
     Guid ItemId, string Product, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, DateTimeOffset OfferExpiresAt, bool PriceChangeAccepted,
-    string? BookingReference, string? Ticketing, TravellersNeededResponse? Travellers, CancellationTermsResponse? Cancellation = null);
+    string? BookingReference, string? Ticketing, TravellersNeededResponse? Travellers, CancellationTermsResponse? Cancellation = null,
+    FlightItineraryResponse? Flight = null, HotelStayResponse? Hotel = null);
+
+/// <summary>The flights of a flight item (local times at each airport) and its passenger mix. On the order page only.</summary>
+internal sealed record FlightItineraryResponse(IReadOnlyList<FlightLegResponse> Legs, string Cabin, int Adults, int Children, int Infants)
+{
+    public static FlightItineraryResponse From(FlightItinerary itinerary) => new(
+        [.. itinerary.Legs.Select(leg => new FlightLegResponse([.. leg.Segments.Select(s => new FlightLegSegmentResponse(
+            s.MarketingCarrier, s.FlightNumber, s.Origin, s.Destination, s.DepartureLocal, s.ArrivalLocal,
+            s.OriginTimeZone, s.DestinationTimeZone))]))],
+        itinerary.Cabin, itinerary.Adults, itinerary.Children, itinerary.Infants);
+}
+
+internal sealed record FlightLegResponse(IReadOnlyList<FlightLegSegmentResponse> Segments);
+
+/// <summary>
+/// One booked flight, as in search: departure and arrival are local times at the origin and destination airports (ADR 0010),
+/// with those airports' IANA time zones when they are in the reference data (null otherwise).
+/// </summary>
+internal sealed record FlightLegSegmentResponse(
+    string MarketingCarrier, string FlightNumber, string Origin, string Destination, DateTime DepartureLocal, DateTime ArrivalLocal,
+    string? OriginTimeZone, string? DestinationTimeZone);
+
+/// <summary>The stay of a hotel item: the property, its local dates, the room and board. On the order page only.</summary>
+internal sealed record HotelStayResponse(string Hotel, string Address, string CheckIn, string CheckOut, int Nights, string Room, string Board)
+{
+    public static HotelStayResponse From(HotelStay stay) => new(
+        stay.PropertyName, stay.AddressLine, stay.CheckIn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        stay.CheckOut.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), stay.Nights, stay.Room, stay.Board);
+}
 
 /// <summary>
 /// A hotel rate's cancellation terms as agreed (ADR 0030 §7): the refund on cancellation follows them. Null for a flight.
@@ -236,7 +269,8 @@ internal sealed record CheckoutResponse(Guid OrderId, string Outcome, string Pay
 }
 
 /// <param name="DocumentsRequired">The supplier requires a travel document for each traveller (Q9: collected only then).</param>
-internal sealed record TravellersNeededResponse(int Adults, int Children, int Infants, bool DocumentsRequired);
+/// <param name="AgeOn">This item's last travel date (yyyy-MM-dd). The order's travellers are checked on the latest of its items' (infants under 2, children 2 to 11, adults 12 and over).</param>
+internal sealed record TravellersNeededResponse(int Adults, int Children, int Infants, bool DocumentsRequired, string? AgeOn = null);
 
 /// <summary>An amount as a decimal string with its ISO-4217 currency (api-design rules: never a JSON number).</summary>
 internal sealed record OrderAmountResponse(string Amount, string Currency);

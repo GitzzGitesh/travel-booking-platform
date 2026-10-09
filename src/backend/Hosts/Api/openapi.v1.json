@@ -2109,6 +2109,100 @@
           }
         }
       },
+      "FlightItineraryResponse": {
+        "required": [
+          "legs",
+          "cabin",
+          "adults",
+          "children",
+          "infants"
+        ],
+        "type": "object",
+        "properties": {
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlightLegResponse"
+            }
+          },
+          "cabin": {
+            "type": "string"
+          },
+          "adults": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "children": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "infants": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "FlightLegResponse": {
+        "required": [
+          "segments"
+        ],
+        "type": "object",
+        "properties": {
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlightLegSegmentResponse"
+            }
+          }
+        }
+      },
+      "FlightLegSegmentResponse": {
+        "required": [
+          "marketingCarrier",
+          "flightNumber",
+          "origin",
+          "destination",
+          "departureLocal",
+          "arrivalLocal",
+          "originTimeZone",
+          "destinationTimeZone"
+        ],
+        "type": "object",
+        "properties": {
+          "marketingCarrier": {
+            "type": "string"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "departureLocal": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arrivalLocal": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "originTimeZone": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "destinationTimeZone": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "FlightOfferResponse": {
         "required": [
           "offerId",
@@ -2629,6 +2723,42 @@
           }
         }
       },
+      "HotelStayResponse": {
+        "required": [
+          "hotel",
+          "address",
+          "checkIn",
+          "checkOut",
+          "nights",
+          "room",
+          "board"
+        ],
+        "type": "object",
+        "properties": {
+          "hotel": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "checkIn": {
+            "type": "string"
+          },
+          "checkOut": {
+            "type": "string"
+          },
+          "nights": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "room": {
+            "type": "string"
+          },
+          "board": {
+            "type": "string"
+          }
+        }
+      },
       "HttpValidationProblemDetails": {
         "type": "object",
         "properties": {
@@ -2772,6 +2902,26 @@
               },
               {
                 "$ref": "#/components/schemas/CancellationTermsResponse"
+              }
+            ]
+          },
+          "flight": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FlightItineraryResponse"
+              }
+            ]
+          },
+          "hotel": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HotelStayResponse"
               }
             ]
           }
@@ -3406,6 +3556,12 @@
           },
           "documentsRequired": {
             "type": "boolean"
+          },
+          "ageOn": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

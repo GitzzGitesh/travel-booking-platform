@@ -1,8 +1,10 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { FormControl } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { BookingPage } from './booking-page';
+import { CustomerSession } from '../customer-session';
+import { BookingPage, ageForType } from './booking-page';
 import { STRIPE_JS, minorUnits, type StripeJs } from './stripe';
 
 const orderId = '3f0c6b9e-1d2a-4c55-9f86-000000000001';
@@ -475,18 +477,16 @@ describe('BookingPage', () => {
           { status: 422, statusText: 'Unprocessable' },
         );
       await settle();
-      http
-        .expectOne('/api/v1/flights/selected-offers/s1/revalidations')
-        .flush(
-          {
-            type: 'price-changed',
-            title: 'The price changed',
-            status: 422,
-            priceQuoteId: 'q9',
-            newTotalPrice: { amount: '130.00', currency: 'XTS' },
-          },
-          { status: 422, statusText: 'Unprocessable' },
-        );
+      http.expectOne('/api/v1/flights/selected-offers/s1/revalidations').flush(
+        {
+          type: 'price-changed',
+          title: 'The price changed',
+          status: 422,
+          priceQuoteId: 'q9',
+          newTotalPrice: { amount: '130.00', currency: 'XTS' },
+        },
+        { status: 422, statusText: 'Unprocessable' },
+      );
       await paying;
       const accepting = (page as unknown as { acceptPrice(): Promise<void> }).acceptPrice();
       await settle();
@@ -519,17 +519,27 @@ describe('BookingPage', () => {
   // ADR 0030 §7: a confirmed hotel stay shows the agreed terms its refund follows, in hotel wording.
   it.each([
     [
-      { refundable: true, freeCancellationUntil: '2026-11-08T12:00:00+00:00', penaltyAfterDeadline: { amount: '120', currency: 'XTS' } },
+      {
+        refundable: true,
+        freeCancellationUntil: '2026-11-08T12:00:00+00:00',
+        penaltyAfterDeadline: { amount: '120', currency: 'XTS' },
+      },
       /Free cancellation if you ask before .*2026.*; after that, .*120.* is kept./,
     ],
-    [{ refundable: false, freeCancellationUntil: null, penaltyAfterDeadline: null }, /This rate is non-refundable/],
+    [
+      { refundable: false, freeCancellationUntil: null, penaltyAfterDeadline: null },
+      /This rate is non-refundable/,
+    ],
   ])('shows a hotel stay its agreed cancellation terms (%#)', async (cancellation, expected) => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } } },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } },
+        },
       ],
     });
     http = TestBed.inject(HttpTestingController);
@@ -541,8 +551,29 @@ describe('BookingPage', () => {
     const confirmed = order('Confirmed');
     http.expectOne(`/api/v1/orders/${orderId}`).flush({
       ...confirmed,
-      items: [{ ...confirmed.items[0], product: 'Hotel', bookingReference: 'MH1234', cancellation }],
+      items: [
+        {
+          ...confirmed.items[0],
+          product: 'Hotel',
+          bookingReference: 'MH1234',
+          cancellation,
+          hotel: {
+            hotel: 'Mock Central Hotel',
+            address: '1 Mock Street',
+            checkIn: '2026-11-10',
+            checkOut: '2026-11-13',
+            nights: 3,
+            room: 'Double room',
+            board: 'Breakfast',
+          },
+        },
+      ],
       cancellationRequest: null,
+    });
+    await settle();
+    http.expectOne(`/api/v1/orders/${orderId}/travellers`).flush({
+      contact: {},
+      travellers: [{ position: 0, givenNames: 'Grace', surname: 'Testperson', type: 'Adult' }],
     });
     await settle();
     fixture.detectChanges();
@@ -551,6 +582,281 @@ describe('BookingPage', () => {
     expect(element.querySelector('.cancellation-terms')?.textContent).toMatch(expected);
     expect(element.textContent).toContain('Our team cancels with the hotel');
     expect(element.textContent).toContain('Back to hotel search');
+    // BUG-002: what was booked, and for whom.
+    const summary = element.querySelector('.summary')!.textContent!.replace(/\s+/g, ' ');
+    expect(summary).toContain('Mock Central Hotel, 1 Mock Street');
+    expect(summary).toContain('(3 nights) · Double room, Breakfast');
+    expect(summary).toMatch(/Guests\s*Grace Testperson/);
+  });
+
+  // QA BUG-005: a date of birth that does not fit the traveller's type is flagged on that traveller, with the reason,
+  // before anything is sent (the server still checks).
+  it('flags a date of birth that does not fit the traveller type, on that traveller, and sends nothing', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(BookingPage);
+    fixture.detectChanges();
+    await settle();
+    http.expectOne('/api/v1/session').flush({ customerId: 'cust-1' });
+    await settle();
+    const awaiting = order('AwaitingPayment');
+    http.expectOne(`/api/v1/orders/${orderId}`).flush({
+      ...awaiting,
+      items: [
+        {
+          ...awaiting.items[0],
+          travellers: {
+            adults: 1,
+            children: 1,
+            infants: 0,
+            documentsRequired: false,
+            ageOn: '2026-10-26',
+          },
+        },
+      ],
+    });
+    await settle();
+    fixture.detectChanges();
+    const page = fixture.componentInstance as unknown as {
+      travellers: { at(i: number): { patchValue(v: object): void } };
+      contact: { setValue(v: object): void };
+      saveTravellers(): Promise<void>;
+    };
+    page.travellers
+      .at(0)
+      .patchValue({
+        givenNames: 'Ada',
+        surname: 'Testperson',
+        dateOfBirth: '1990-05-17',
+        gender: 'Female',
+      });
+    page.travellers
+      .at(1)
+      .patchValue({
+        givenNames: 'Allegra',
+        surname: 'Testperson',
+        dateOfBirth: '1995-03-03',
+        gender: 'Female',
+      });
+    page.contact.setValue({ email: 'ada@example.com', phone: '+447700900123' });
+
+    await page.saveTravellers();
+    await settle();
+    fixture.detectChanges();
+
+    http.expectNone(`/api/v1/orders/${orderId}/travellers`);
+    const element = fixture.nativeElement as HTMLElement;
+    const fieldsets = element.querySelectorAll('fieldset.traveller');
+    expect(fieldsets[0].querySelector('.field-error')).toBeNull();
+    expect(fieldsets[1].querySelector('.field-error')?.textContent).toContain(
+      'This traveller must be 2 to 11 years old on',
+    );
+    expect(fieldsets[1].querySelector('input[type=date]')?.getAttribute('aria-invalid')).toBe(
+      'true',
+    );
+  });
+
+  // Ages are counted as the server counts them (DateOnly.AddYears): a 29 February birthday is reached on 28 February in
+  // a year without one, and on 29 February in a leap year.
+  it('counts a 29 February birthday as the server does', () => {
+    const fits = (type: 'Adult' | 'Child' | 'Infant', birth: string, ageOn: string) =>
+      ageForType(type, ageOn)(new FormControl(birth, { nonNullable: true })) === null;
+
+    expect(fits('Infant', '2024-02-29', '2026-02-27')).toBe(true); // still 1
+    expect(fits('Child', '2024-02-29', '2026-02-27')).toBe(false);
+    expect(fits('Infant', '2024-02-29', '2026-02-28')).toBe(false); // 2 on 28 February: no 29th in 2026
+    expect(fits('Child', '2024-02-29', '2026-02-28')).toBe(true);
+    expect(fits('Child', '2016-02-29', '2028-02-28')).toBe(true); // still 11: 2028 has a 29th
+    expect(fits('Adult', '2016-02-29', '2028-02-28')).toBe(false);
+    expect(fits('Adult', '2016-02-29', '2028-02-29')).toBe(true); // 12 on the day
+    expect(fits('Infant', '2026-02-28', '2026-02-28')).toBe(true); // born on the travel date
+    expect(fits('Infant', '2026-03-01', '2026-02-28')).toBe(false); // born after it
+  });
+
+  // The server counts ages on the order's last travel date (the latest of its items'), not the first item's.
+  it("checks ages on the order's latest travel date when it has several items", async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(BookingPage);
+    fixture.detectChanges();
+    await settle();
+    http.expectOne('/api/v1/session').flush({ customerId: 'cust-1' });
+    await settle();
+    const awaiting = order('AwaitingPayment');
+    const travellers = (ageOn: string) => ({
+      adults: 1,
+      children: 1,
+      infants: 0,
+      documentsRequired: false,
+      ageOn,
+    });
+    http.expectOne(`/api/v1/orders/${orderId}`).flush({
+      ...awaiting,
+      items: [
+        { ...awaiting.items[0], travellers: travellers('2026-10-26') },
+        { ...awaiting.items[0], itemId: 'i2', travellers: travellers('2026-11-05') },
+      ],
+    });
+    await settle();
+    fixture.detectChanges();
+    const child = (
+      fixture.componentInstance as unknown as {
+        travellers: { at(i: number): { controls: { dateOfBirth: FormControl<string> } } };
+      }
+    ).travellers.at(1).controls.dateOfBirth;
+
+    child.setValue('2024-11-01'); // 1 on 26 October, 2 on 5 November: a child on the order's last travel date
+    expect(child.hasError('ageForType')).toBe(false);
+
+    child.setValue('2025-01-01'); // still 1 on 5 November
+    child.markAsTouched();
+    fixture.detectChanges();
+    expect(child.hasError('ageForType')).toBe(true);
+    const hint = (fixture.nativeElement as HTMLElement)
+      .querySelectorAll('fieldset.traveller')[1]
+      .querySelector('.field-error')?.textContent;
+    expect(hint).toMatch(/5 November 2026|November 5, 2026/);
+  });
+
+  // BUG-003: signing out (from the header) takes the booking and the travellers' names off the screen at once.
+  it('drops the booking from the screen when the customer signs out', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(BookingPage);
+    fixture.detectChanges();
+    await settle();
+    http.expectOne('/api/v1/session').flush({ customerId: 'cust-1' });
+    await settle();
+    http
+      .expectOne(`/api/v1/orders/${orderId}`)
+      .flush({ ...order('Confirmed'), cancellationRequest: null });
+    await settle();
+    http.expectOne(`/api/v1/orders/${orderId}/travellers`).flush({
+      contact: {},
+      travellers: [{ position: 0, givenNames: 'Ada', surname: 'Testperson', type: 'Adult' }],
+    });
+    await settle();
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('MOCK42');
+    expect(element.textContent).toContain('Ada Testperson');
+
+    const signedOut = TestBed.inject(CustomerSession).signOut();
+    http
+      .expectOne('/api/v1/session/sign-out')
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await signedOut;
+    await settle();
+    fixture.detectChanges();
+
+    expect(element.textContent).not.toContain('MOCK42');
+    expect(element.textContent).not.toContain('Ada Testperson');
+    expect(element.querySelector('.summary')).toBeNull();
+    expect(element.textContent).toContain('Sign in to see and complete your booking.');
+  });
+
+  // BUG-002: a confirmed flight shows its flights (local times, as booked) and the travellers, in order.
+  it('shows a confirmed flight booking its flights and travellers', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(BookingPage);
+    fixture.detectChanges();
+    await settle();
+    http.expectOne('/api/v1/session').flush({ customerId: 'cust-1' });
+    await settle();
+    const confirmed = order('Confirmed');
+    const segment = (no: string, from: string, to: string, dep: string, arr: string) => ({
+      marketingCarrier: 'ZZ',
+      flightNumber: no,
+      origin: from,
+      destination: to,
+      departureLocal: dep,
+      arrivalLocal: arr,
+      originTimeZone: from === 'LHR' ? 'Europe/London' : 'America/New_York',
+      destinationTimeZone: to === 'LHR' ? 'Europe/London' : 'America/New_York',
+    });
+    http.expectOne(`/api/v1/orders/${orderId}`).flush({
+      ...confirmed,
+      items: [
+        {
+          ...confirmed.items[0],
+          product: 'Flight',
+          flight: {
+            legs: [
+              {
+                segments: [segment('ZZ202', 'LHR', 'JFK', '2026-10-19T07:05:00', '2026-10-19T09:20:00')],
+              },
+              {
+                segments: [segment('ZZ203', 'JFK', 'LHR', '2026-10-26T18:00:00', '2026-10-27T06:10:00')],
+              },
+            ],
+            cabin: 'Economy',
+            adults: 2,
+            children: 0,
+            infants: 0,
+          },
+        },
+      ],
+      cancellationRequest: null,
+    });
+    await settle();
+    http.expectOne(`/api/v1/orders/${orderId}/travellers`).flush({
+      contact: {},
+      travellers: [
+        { position: 1, givenNames: 'George', surname: 'Testperson', type: 'Adult' },
+        { position: 0, givenNames: 'Ada', surname: 'Testperson', type: 'Adult' },
+      ],
+    });
+    await settle();
+    fixture.detectChanges();
+
+    const summary = (fixture.nativeElement as HTMLElement)
+      .querySelector('.summary')!
+      .textContent!.replace(/\s+/g, ' ');
+    expect(summary).toContain('Flights (each airport’s local time)');
+    expect(summary).toMatch(/LHR → JFK · ZZ202 · .*, 07:05 – 09:20/);
+    expect(summary).toMatch(/JFK → LHR · ZZ203 · .*, 18:00 – 06:10/);
+    expect(summary).toMatch(/Travellers\s*Ada Testperson, George Testperson/);
   });
 
   it('turns an amount into minor units by text, never by floating point', () => {

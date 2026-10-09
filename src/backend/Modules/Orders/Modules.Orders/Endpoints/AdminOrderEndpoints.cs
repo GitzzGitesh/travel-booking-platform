@@ -53,6 +53,26 @@ internal static class AdminOrderEndpoints
     private static readonly OrderItemStatus[] _queues =
         [OrderItemStatus.ManualReview, OrderItemStatus.PendingConfirmation, OrderItemStatus.Booking];
 
+    public const int MaxSearchResults = 20;
+
+    /// <summary>
+    /// QA BUG-004: finds a booking by what staff have in hand, its supplier booking reference (a PNR, a hotel
+    /// confirmation number) or our order id. Newest first, at most <see cref="MaxSearchResults"/>.
+    /// </summary>
+    public static async Task<Results<Ok<AdminOrderPage>, ProblemHttpResult>> Search(IOrderStore store, string? q, CancellationToken cancellationToken)
+    {
+        var term = q?.Trim();
+        if (term is not { Length: >= 3 and <= 100 } || !term.All(c => char.IsAsciiLetterOrDigit(c) || c == '-'))
+        {
+            return Problem(StatusCodes.Status400BadRequest, "invalid-query", "Search by a booking reference or an order id (3 to 100 letters, digits or hyphens).");
+        }
+
+        var orders = Guid.TryParse(term, out var orderId)
+            ? await store.SearchAsync(null, orderId, MaxSearchResults, cancellationToken)
+            : await store.SearchAsync(term, null, MaxSearchResults, cancellationToken);
+        return TypedResults.Ok(new AdminOrderPage([.. orders.Select(AdminOrderSummary.From)], null));
+    }
+
     // Oldest first; the cursor is the last order's creation time (ticks) and id. itemStatus: ManualReview (default),
     // PendingConfirmation or Booking.
     public static async Task<Results<Ok<AdminOrderPage>, ProblemHttpResult>> Queue(

@@ -105,6 +105,14 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             .Take(limit)
             .ToListAsync(cancellationToken);
 
+    // The reference compares as the column's collation does (case-insensitive): staff type it as they read it.
+    public async Task<IReadOnlyList<Order>> SearchAsync(string? bookingReference, Guid? orderId, int limit, CancellationToken cancellationToken) =>
+        await db.Orders.AsNoTracking().Include(o => o.Items)
+            .Where(o => (orderId != null && o.Id == orderId) || (bookingReference != null && o.Items.Any(i => i.SupplierLocator == bookingReference)))
+            .OrderByDescending(o => o.CreatedAt).ThenBy(o => o.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
     public void Audit(BuildingBlocks.Audit.AuditEntry entry) => db.Set<BuildingBlocks.Audit.AuditEntry>().Add(entry);
 
     // The order, its items and its timeline are read by separate queries (split query). A change committed between them

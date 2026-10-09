@@ -157,6 +157,33 @@ describe('RefundPanel', () => {
     expect(element.querySelector('[role="alert"]')?.textContent).toContain('above zero');
   });
 
+  // QA BUG-006: the fee is an amount in the case's currency, shown like every other staff amount.
+  it("shows a case's fee formatted in the case's currency", async () => {
+    const { element } = await render(
+      [],
+      [
+        {
+          ...pendingCase,
+          status: 'Settled',
+          amount: { amount: '237.5000', currency: 'XTS' },
+          fee: '12.5000',
+        },
+      ],
+    );
+    const money = (amount: number) =>
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'XTS',
+        maximumFractionDigits: 20,
+      }).format(amount);
+
+    const refund = element
+      .querySelector('tbody tr td:nth-child(3)')!
+      .textContent!.replace(/\s+/g, ' ');
+    expect(refund).toContain(`(fee ${money(12.5)})`.replace(/\s+/g, ' '));
+    expect(refund).not.toContain('12.5000');
+  });
+
   it('lets an approver decide a waiting case and shows a self-approval refusal', async () => {
     const { fixture, element } = await render(['refunds.approve'], [pendingCase]);
     expect(element.textContent).not.toContain('Open a case');

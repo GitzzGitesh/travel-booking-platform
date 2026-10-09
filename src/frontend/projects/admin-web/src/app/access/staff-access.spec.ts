@@ -87,6 +87,29 @@ describe('StaffAccess', () => {
     );
   });
 
+  // QA BUG-007: after a refused request, a malformed object id shows its own field problem, never the stale refusal.
+  it('clears the previous answer when a new request has a field problem', async () => {
+    const { fixture, element } = await render(['access.grants.read', 'access.grants.request']);
+    const form = element.querySelector('.request-form') as HTMLFormElement;
+
+    fillAndSubmit(form, { objectId: account, reason: 'TICKET-3' });
+    await Promise.resolve();
+    http
+      .expectOne((r) => r.method === 'POST' && r.url === '/api/admin/v1/access/role-changes')
+      .flush({ type: 'self-approval-not-allowed' }, { status: 403, statusText: 'Forbidden' });
+    await settle(fixture);
+    expect(element.querySelector('.alert-error')?.textContent).toContain('their own access');
+
+    fillAndSubmit(form, { objectId: 'NOT-A-GUID', reason: 'TICKET-3' });
+    await settle(fixture);
+
+    expect(element.querySelector('.alert-error')).toBeNull();
+    expect(form.querySelector('#object-id')?.getAttribute('aria-invalid')).toBe('true');
+    expect(form.querySelector('#object-id-hint')?.textContent).toContain(
+      'Use the object id from the Entra admin portal',
+    );
+  });
+
   it('decides a request and explains a maker-checker refusal', async () => {
     const { fixture, element } = await render(['access.grants.read', 'access.grants.approve']);
     const forms = element.querySelectorAll('details form');

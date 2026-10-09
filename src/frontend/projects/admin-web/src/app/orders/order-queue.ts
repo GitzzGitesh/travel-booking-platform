@@ -1,7 +1,11 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Api, listOrdersForOperations } from '@travel-booking/admin-api-client';
+import {
+  Api,
+  listOrdersForOperations,
+  searchOrdersForOperations,
+} from '@travel-booking/admin-api-client';
 import type { AdminOrderSummary } from '@travel-booking/admin-api-client';
 
 /** The operations queues the server offers (item status), first the one needing a person. */
@@ -20,6 +24,50 @@ type QueueStatus = (typeof queues)[number]['status'];
   selector: 'adm-order-queue',
   template: `
     <h1>Booking queues</h1>
+    <form
+      class="search"
+      role="search"
+      (submit)="$event.preventDefault(); search(searchInput.value)"
+    >
+      <label for="order-search">Find a booking by its booking reference or order id</label>
+      <input
+        #searchInput
+        id="order-search"
+        name="q"
+        autocomplete="off"
+        spellcheck="false"
+        maxlength="100"
+      />
+      <button type="submit" [disabled]="searching()">Search</button>
+    </form>
+    @if (searchResult(); as result) {
+      <section aria-labelledby="search-results">
+        <h2 id="search-results">Search results</h2>
+        @if (result.kind === 'invalid') {
+          <p class="alert alert-error" role="alert">
+            Enter a booking reference or an order id (3 to 100 letters, digits or hyphens).
+          </p>
+        } @else if (result.kind === 'error') {
+          <p class="alert alert-error" role="alert">The search failed. Try again shortly.</p>
+        } @else if (result.orders.length === 0) {
+          <p role="status">No booking matches "{{ result.term }}".</p>
+        } @else {
+          <ul>
+            @for (order of result.orders; track order.orderId) {
+              <li>
+                <a class="mono" [routerLink]="['/orders', order.orderId]">{{ order.orderId }}</a>
+                · {{ order.status }}
+                @for (item of order.items; track item.itemId) {
+                  @if (item.bookingReference) {
+                    · {{ item.bookingReference }}
+                  }
+                }
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
     <div class="queue-tabs" role="group" aria-label="Queue">
       @for (queue of queues; track queue.status) {
         <button
@@ -88,6 +136,13 @@ type QueueStatus = (typeof queues)[number]['status'];
     }
   `,
   styles: `
+    .search {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 0.5rem;
+      margin-block-end: 1rem;
+    }
     .queue-tabs {
       display: flex;
       flex-wrap: wrap;
@@ -114,6 +169,13 @@ export class OrderQueue {
   protected readonly nextCursor = signal<string | null>(null);
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
+  protected readonly searching = signal(false);
+  protected readonly searchResult = signal<
+    | { kind: 'found'; term: string; orders: AdminOrderSummary[] }
+    | { kind: 'invalid' }
+    | { kind: 'error' }
+    | null
+  >(null);
 
   constructor() {
     void this.load();
@@ -129,6 +191,24 @@ export class OrderQueue {
       this.orders.set([]);
       this.nextCursor.set(null);
       void this.load();
+    }
+  }
+
+  /** QA BUG-004: a booking by its supplier reference or our order id (the server decides which). */
+  protected async search(value: string): Promise<void> {
+    const term = value.trim();
+    if (!/^[A-Za-z0-9-]{3,100}$/.test(term)) {
+      this.searchResult.set({ kind: 'invalid' });
+      return;
+    }
+    this.searching.set(true);
+    try {
+      const page = await this.api.invoke(searchOrdersForOperations, { q: term });
+      this.searchResult.set({ kind: 'found', term, orders: page.orders });
+    } catch {
+      this.searchResult.set({ kind: 'error' });
+    } finally {
+      this.searching.set(false);
     }
   }
 

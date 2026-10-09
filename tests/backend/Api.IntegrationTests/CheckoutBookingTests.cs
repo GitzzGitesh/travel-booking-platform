@@ -46,6 +46,16 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         var item = body.GetProperty("order").GetProperty("items")[0];
         (item.GetProperty("status").GetString(), item.GetProperty("ticketing").GetString()).ShouldBe(("Confirmed", "Issued"));
         item.GetProperty("bookingReference").GetString().ShouldNotBeNullOrEmpty();
+
+        // BUG-002: the order page says what was booked (the flights, local times as booked), not only its price and status.
+        using var mine = await Send(HttpMethod.Get, $"/api/v1/orders/{order}", token);
+        var flight = (await Read(mine)).GetProperty("items")[0].GetProperty("flight");
+        var segment = flight.GetProperty("legs")[0].GetProperty("segments")[0];
+        (segment.GetProperty("origin").GetString(), segment.GetProperty("destination").GetString()).ShouldBe(("LHR", "JFK"));
+        segment.GetProperty("departureLocal").GetString()!.ShouldMatch(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$"); // as search sends it
+        (segment.GetProperty("originTimeZone").GetString(), segment.GetProperty("destinationTimeZone").GetString())
+            .ShouldBe(("Europe/London", "America/New_York")); // local times keep their airports' zones
+        flight.GetProperty("adults").GetInt32().ShouldBe(1);
         body.GetProperty("order").GetProperty("status").GetString().ShouldBe("Confirmed");
 
         var payment = await PaymentOf(order);
@@ -791,6 +801,31 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         {
             response.Dispose();
         }
+    }
+
+    // QA BUG-004: staff find any booking by its supplier reference (whatever its case) or our order id; nothing for others.
+    [Fact]
+    public async Task Staff_find_a_booking_by_its_reference_or_order_id_and_nobody_else_can_search()
+    {
+        var customer = Token();
+        var (order, _) = await CapturedOrder(customer: customer);
+        var reference = (await LoadOrder(order)).Items[0].SupplierLocator!;
+
+        using var byReference = await Send(HttpMethod.Get, $"/api/admin/v1/orders/search?q={reference.ToLowerInvariant()}", Staff(TestStaffTokens.Operations));
+        using var byId = await Send(HttpMethod.Get, $"/api/admin/v1/orders/search?q={order}", Staff(TestStaffTokens.Operations));
+        using var none = await Send(HttpMethod.Get, "/api/admin/v1/orders/search?q=NO-SUCH-REF", Staff(TestStaffTokens.Operations));
+        using var malformed = await Send(HttpMethod.Get, "/api/admin/v1/orders/search?q=a%27%20or%201%3D1", Staff(TestStaffTokens.Operations));
+        using var asCustomer = await Send(HttpMethod.Get, $"/api/admin/v1/orders/search?q={reference}", customer);
+        using var withoutPermission = await Send(HttpMethod.Get, $"/api/admin/v1/orders/search?q={reference}", Staff(TestStaffTokens.Unassigned));
+        using var anonymous = await api.CreateClient().GetAsync($"/api/admin/v1/orders/search?q={reference}", Ct);
+
+        (await Read(byReference)).GetProperty("orders").EnumerateArray().Single().GetProperty("orderId").GetGuid().ShouldBe(order);
+        (await Read(byId)).GetProperty("orders").EnumerateArray().Single().GetProperty("orderId").GetGuid().ShouldBe(order);
+        (await Read(none)).GetProperty("orders").GetArrayLength().ShouldBe(0);
+        malformed.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        asCustomer.StatusCode.ShouldBeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden); // a customer is not staff
+        withoutPermission.StatusCode.ShouldBe(HttpStatusCode.Forbidden); // staff, but without orders.read
+        anonymous.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     private async Task<(Guid Order, Money Price)> CapturedOrder(string paymentMethod = MockPaymentMethods.Approved, string? customer = null)

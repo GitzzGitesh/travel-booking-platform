@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { RouterLink } from '@angular/router';
 import { Api, listPendingRefundCases } from '@travel-booking/admin-api-client';
 import type { RefundCaseResponse } from '@travel-booking/admin-api-client';
+import { MoneyPipe } from '../shared/money';
 
 /**
  * Refund cases waiting for approval (ADR 0027), oldest first: the approvers' work list. Each one is decided on its
@@ -10,7 +11,7 @@ import type { RefundCaseResponse } from '@travel-booking/admin-api-client';
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, MoneyPipe, RouterLink],
   selector: 'adm-refund-approvals',
   template: `
     <h1>Refunds to approve</h1>
@@ -43,7 +44,7 @@ import type { RefundCaseResponse } from '@travel-booking/admin-api-client';
                 }}</a>
               </td>
               <td>{{ refundCase.kind }}</td>
-              <td>{{ refundCase.amount.amount }} {{ refundCase.amount.currency }}</td>
+              <td>{{ refundCase.amount | money }}</td>
               <td class="mono">{{ refundCase.requestedBy }}</td>
               <td>{{ refundCase.reason }}</td>
             </tr>

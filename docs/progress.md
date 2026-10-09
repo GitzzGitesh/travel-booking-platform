@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identity and admin foundation, in progress)_
+_Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identity and admin foundation, in progress)_
 
 ## Current phase: 4 — Identity & admin foundation, in progress (Phase 3, the first vertical slice, is complete with mock providers: row 5 below)
 
@@ -363,6 +363,33 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
 - **First business metric:** `travelbooking.orders.booking_outcomes` (product, outcome), counted once when saved.
 - **Packages (ADR 0003's stack):** OpenTelemetry 1.19 (Apache-2.0) and the Azure Monitor exporter 1.10 (MIT); the in-memory exporter for tests only.
 - **Next:** deployment readiness (hosting ADR, container images, enforcing an exporter in Production), then more business metrics. |
+| 28 | **Fix: the Worker crashed at startup (QA BUG-001)** | **Done (in review).**
+- **Root cause:** `AddCustomersModule`, composed by both hosts, also registered customer authentication schemes and the customer authorization policy. In a generic host without endpoint routing, ASP.NET's `AuthorizationPolicyCache` cannot be built (`EndpointDataSource` is missing), and Development validates every registration at build, so the Worker never started locally.
+- **Fix:** the authentication and the policy move, unchanged, to `AddCustomersAuthentication`, which only the Api composes. The Worker's composition moved verbatim into `WorkerComposition.AddWorkerServices`, so a test builds exactly that host.
+- **Test:** `WorkerCompositionTests` builds the Worker host in Development (every registration validated) and asserts it has no web authentication or authorization. It fails with the original exception when the customer authentication is composed in the Worker again.
+- **Still blocked locally:** the Worker's payment captures are refused, because the mock payment provider keeps its state per process and the Worker cannot see payments the Api authorized (by design, noted in the Worker composition). Captured-payment cancellations and refunds therefore cannot be completed across the two local processes. The same-process integration tests cover them. |
+| 29 | **QA fixes: booking details, sign-out, admin booking search, and three low-severity issues** | **Done (in review).**
+- **BUG-002 (booking details):**
+  - the customer's own order says what was booked: a flight item carries its flights (local times, as booked) and passenger mix through a new `IFlightItineraries` (`Modules.Flights.Contracts`), and a hotel item its stay through `IHotelStays`. Single order only, never in lists; additive `flight` and `hotel` fields;
+  - the booking page lists them, with the travellers' names on a made booking.
+- **BUG-003 (sign-out):** the booking page and My trips drop the customer's data from the screen and the forms as soon as the session is signed out.
+- **BUG-004 (admin booking search):** `GET /api/admin/v1/orders/search?q=` (`orders.read`) finds any booking by its supplier reference (case-insensitive) or order id, newest first, at most 20; a search box on the booking queues. No index: a reference lookup scans order items (an index when volume needs it).
+- **BUG-005 (traveller age):** the order says the date ages are counted on (`ageOn`, additive). The booking page flags a date of birth that does not fit the traveller's type on that traveller, with the reason, before sending; the server still checks.
+- **BUG-006 (admin amounts):** a `money` pipe formats every staff amount like the customer side (grouped, currency, no storage zeros).
+- **BUG-007 (staff access):** a new request clears the previous answer, so a field problem is never shown beside a stale refusal.
+- **Review clean-up:**
+  - the age hint counts ages as the server does: on the order's last travel date (the latest of its items'), with a 29 February birthday reached on 28 February in a year without one (`DateOnly.AddYears`);
+  - the refund fee is formatted like other staff amounts, in the case's currency;
+  - the `IOrderStore` documentation is on the right methods.
+- **Architecture review fixes:**
+  - booked flights carry their airports' IANA time zones, and local times in the same `DateTime` format as search;
+  - the customer order page shows "each airport's local time";
+  - the customer order endpoint calls one Orders query (`CustomerOrderDetailsQuery`) instead of putting the cross-module read together itself.
+  - Follow-up: the admin order detail endpoint reads `IHotelStays` itself too. Move it into an Orders query when it is next changed.
+- **Verification:**
+  - Run: the targeted backend and frontend tests, both app builds, and the format, CSP and app-boundary checks. The full backend suite runs in CI.
+  - Unexplained failure: the admin search test failed once, with no output kept, right after an edit to it. It then passed 8 runs alone and 3 full `CheckoutBookingTests` runs (47/47 each). It is recorded as unconfirmed, not reproduced.
+  - SQL timeout: a later local run had one different failure, a SQL `Execution Timeout Expired` (error 258) while creating a hotel order. WSL was running two SQL Server containers at the time. The rerun passed 47/47. This is a possible environmental cause of such failures, not a confirmed one. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

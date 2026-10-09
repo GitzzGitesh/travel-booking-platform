@@ -43,6 +43,12 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
         var item = body.GetProperty("order").GetProperty("items")[0];
         (item.GetProperty("product").GetString(), item.GetProperty("status").GetString()).ShouldBe(("Hotel", "Confirmed"));
         item.GetProperty("bookingReference").GetString()!.ShouldStartWith("MH");
+
+        // BUG-002: the order page says what was booked (the stay), not only its price and status.
+        using var mine = await Send(HttpMethod.Get, $"/api/v1/orders/{order}", token);
+        var stay = (await Read(mine)).GetProperty("items")[0].GetProperty("hotel");
+        (stay.GetProperty("hotel").GetString(), stay.GetProperty("nights").GetInt32(), stay.GetProperty("room").GetString()).ShouldBe(("Mock Central Hotel", 3, "Double room"));
+        stay.GetProperty("checkIn").GetString().ShouldBe(CheckIn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         item.GetProperty("ticketing").ValueKind.ShouldBe(JsonValueKind.Null); // no tickets for a stay
 
         (await PaymentOf(order)).Status.ShouldBe(PaymentAttemptStatus.Authorized); // the charge goes through the outbox

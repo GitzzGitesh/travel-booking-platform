@@ -94,6 +94,8 @@ export class StaffAccess {
 
   protected async submitRequest(event: Event): Promise<void> {
     event.preventDefault();
+    // QA BUG-007: a new attempt starts without the previous answer, so a field problem is never shown beside a stale message.
+    this.message.set(null);
     const objectId = this.objectId().trim();
     const reason = this.reason().trim();
     const errors = {

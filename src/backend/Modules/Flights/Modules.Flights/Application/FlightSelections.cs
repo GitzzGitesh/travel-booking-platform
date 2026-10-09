@@ -65,3 +65,16 @@ internal sealed class FlightSelections(ISelectedOfferStore store, RevalidateSele
                 offer.Adults, offer.Children, offer.Infants, offer.DocumentsRequired, offer.LastTravelDate));
     }
 }
+
+/// <summary><see cref="IFlightItineraries"/>: the stored selection's flights and passenger mix (a read).</summary>
+internal sealed class FlightItineraries(ISelectedOfferStore store, IAirportDirectory airports) : IFlightItineraries
+{
+    public async Task<FlightItinerary?> GetItineraryAsync(Guid selectedOfferId, CancellationToken cancellationToken) =>
+        await store.FindByIdAsync(selectedOfferId, cancellationToken) is { } offer
+            ? new FlightItinerary(
+                [.. offer.Slices.Select(slice => new FlightItineraryLeg([.. slice.Segments.Select(s => new FlightItinerarySegment(
+                    s.MarketingCarrier, s.FlightNumber, s.Origin.Value, s.Destination.Value, s.DepartureLocal, s.ArrivalLocal,
+                    airports.Find(s.Origin)?.TimeZoneId, airports.Find(s.Destination)?.TimeZoneId))]))],
+                offer.Cabin.ToString(), offer.Adults, offer.Children, offer.Infants)
+            : null;
+}

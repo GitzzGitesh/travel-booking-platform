@@ -3,6 +3,8 @@
 
 export type { ListOrdersForOperations$Params as ListOrdersForOperations$Params } from './fn/orders-staff/list-orders-for-operations';
 export { listOrdersForOperations as listOrdersForOperations } from './fn/orders-staff/list-orders-for-operations';
+export type { SearchOrdersForOperations$Params as SearchOrdersForOperations$Params } from './fn/orders-staff/search-orders-for-operations';
+export { searchOrdersForOperations as searchOrdersForOperations } from './fn/orders-staff/search-orders-for-operations';
 export type { GetOrderForOperations$Params as GetOrderForOperations$Params } from './fn/orders-staff/get-order-for-operations';
 export { getOrderForOperations as getOrderForOperations } from './fn/orders-staff/get-order-for-operations';
 export type { CheckBookingReview$Params as CheckBookingReview$Params } from './fn/orders-staff/check-booking-review';

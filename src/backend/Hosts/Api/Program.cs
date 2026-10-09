@@ -65,6 +65,7 @@ builder.Services.AddPaymentsModule(builder.Configuration);
 // values come from configuration (Authentication:Customers); until they are set, every customer token is refused.
 // Travel documents are encrypted with a key-encryption key from user-secrets / Key Vault (ADR 0020): none in appsettings.
 builder.Services.AddCustomersModule(builder.Configuration);
+builder.Services.AddCustomersAuthentication(builder.Configuration); // the customer endpoints' identity: this host only
 
 // Staff identity (ADR 0008, ADR 0022): workforce tokens with MFA, mapped to our staff id and permissions. Tenant values
 // come from configuration (Authentication:Staff); until they are set, every staff token is refused.

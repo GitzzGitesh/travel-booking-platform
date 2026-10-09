@@ -1,5 +1,12 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, afterNextRender, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  afterNextRender,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Api, listMyOrders, type OrderResponse } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
@@ -103,6 +110,15 @@ export class TripsPage {
   protected readonly state = signal<'loading' | 'signed-out' | 'loaded' | 'error'>('loading');
   protected readonly orders = signal<OrderResponse[]>([]);
   protected readonly nextCursor = signal<string | null>(null);
+
+  // BUG-003: once the session is signed out, the customer's trips leave the screen (the page shows its sign-in prompt).
+  private readonly clearOnSignOut = effect(() => {
+    if (this.session.state().kind === 'signed-out' && this.state() !== 'signed-out') {
+      this.orders.set([]);
+      this.nextCursor.set(null);
+      this.state.set('signed-out');
+    }
+  });
   protected readonly loadingMore = signal(false);
 
   constructor() {
