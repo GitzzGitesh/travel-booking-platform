@@ -16,7 +16,7 @@ namespace TravelBooking.Modules.Orders.UnitTests;
 /// never sent again; confirmed when found (then charged, once); failed only when not found after the supplier's
 /// consistency window (then released); a person after the limit; never charged before a confirmed booking.
 /// </summary>
-public sealed class FlightBookingOrchestratorTests
+public sealed class BookingOrchestratorTests
 {
     private static readonly Guid _paymentId = Guid.NewGuid();
     private readonly FakeTimeProvider _clock = new(OrderTests.Now.AddMinutes(1));
@@ -25,7 +25,7 @@ public sealed class FlightBookingOrchestratorTests
     private readonly FakeStore _store = new();
     private readonly Order _order = OrderTests.NewOrder();
 
-    public FlightBookingOrchestratorTests()
+    public BookingOrchestratorTests()
     {
         _order.StartBooking(_paymentId.ToString(), new TransitionContext(_clock.GetUtcNow(), "customer:cust-1"));
         _store.Orders.Add(_order);
@@ -42,7 +42,7 @@ public sealed class FlightBookingOrchestratorTests
         await Reconcile();
         await Reconcile(); // nothing left to look up
 
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.Confirmed);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.Confirmed);
         _order.Items[0].SupplierLocator.ShouldBe("LOC123");
         _bookings.Booked.ShouldBeEmpty();
         _bookings.LookedUp.ShouldBe([ItemId.ToString()]);
@@ -59,7 +59,7 @@ public sealed class FlightBookingOrchestratorTests
 
         await Reconcile();
 
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.PendingConfirmation);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.PendingConfirmation);
         _store.Published.ShouldBeEmpty();
     }
 
@@ -85,7 +85,7 @@ public sealed class FlightBookingOrchestratorTests
 
         await Reconcile();
 
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.ManualReview);
         _store.Published.ShouldBeEmpty();
     }
 
@@ -97,7 +97,7 @@ public sealed class FlightBookingOrchestratorTests
 
         await Reconcile();
 
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.ManualReview);
         _store.Published.ShouldBeEmpty();
     }
 
@@ -108,12 +108,12 @@ public sealed class FlightBookingOrchestratorTests
         _clock.Advance(TimeSpan.FromMinutes(4)); // the request that booked may still be waiting for the supplier
 
         (await Reconcile()).ShouldBeFalse();
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.Booking);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.Booking);
 
         _clock.Advance(TimeSpan.FromMinutes(2));
         (await Reconcile()).ShouldBeTrue();
 
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.Confirmed);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.Confirmed);
         _bookings.Booked.ShouldBeEmpty();
         _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
     }
@@ -158,7 +158,7 @@ public sealed class FlightBookingOrchestratorTests
         InReview();
         _bookings.NextLookup = new FlightBookingResult(FlightBookingStatus.Booked, "mock", "LOC123", FlightTicketingStatus.Issued);
 
-        (await CheckReview()).ShouldBe(FlightOrderItemStatus.Confirmed);
+        (await CheckReview()).ShouldBe(OrderItemStatus.Confirmed);
 
         _order.Items[0].Ticketing.ShouldBe(TicketingStatus.Issued);
         _store.Pending.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
@@ -176,7 +176,7 @@ public sealed class FlightBookingOrchestratorTests
         _bookings.NextLookup = new FlightBookingResult(found, "mock", "LOC999");
         var entries = _order.Timeline.Count;
 
-        (await CheckReview()).ShouldBe(FlightOrderItemStatus.ManualReview);
+        (await CheckReview()).ShouldBe(OrderItemStatus.ManualReview);
 
         _store.Pending.ShouldBeEmpty();
         _order.Timeline.Count.ShouldBe(entries + 1); // the check is on the timeline
@@ -191,7 +191,7 @@ public sealed class FlightBookingOrchestratorTests
         _clock.Advance(TimeSpan.FromHours(2));
         _bookings.NextLookup = new FlightBookingResult(FlightBookingStatus.NotFound, "mock");
 
-        (await CheckReview()).ShouldBe(FlightOrderItemStatus.ManualReview);
+        (await CheckReview()).ShouldBe(OrderItemStatus.ManualReview);
 
         _store.Pending.ShouldBeEmpty(); // never released: a ticket may exist
     }
@@ -202,7 +202,7 @@ public sealed class FlightBookingOrchestratorTests
         InReview();
         _bookings.LookupThrows = true;
 
-        (await CheckReview()).ShouldBe(FlightOrderItemStatus.ManualReview);
+        (await CheckReview()).ShouldBe(OrderItemStatus.ManualReview);
 
         _store.Pending.ShouldBeEmpty();
     }
@@ -250,7 +250,7 @@ public sealed class FlightBookingOrchestratorTests
         request.AgreedPrice.ShouldBe(OrderTests.Price);
         request.Guests.Select(g => (g.Surname, g.ChildAge)).ShouldBe([("Lovelace", (int?)null), ("Byron", null), ("Lovelace", 7), ("Byron", 14)]);
         var item = order.Items[0];
-        (item.Status, item.SupplierLocator, item.Ticketing).ShouldBe((FlightOrderItemStatus.Confirmed, "MH123", (TicketingStatus?)null));
+        (item.Status, item.SupplierLocator, item.Ticketing).ShouldBe((OrderItemStatus.Confirmed, "MH123", (TicketingStatus?)null));
         _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem().Amount.ShouldBe(OrderTests.Price);
     }
 
@@ -265,7 +265,7 @@ public sealed class FlightBookingOrchestratorTests
 
         _hotelBookings.LookedUp.ShouldBe([order.Items[0].Id.ToString()]);
         (_bookings.LookedUp.Count, _hotelBookings.Booked.Count).ShouldBe((0, 0)); // looked up with Hotels only, never booked again
-        order.Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+        order.Items[0].Status.ShouldBe(OrderItemStatus.ManualReview);
         _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldBeEmpty();
     }
 
@@ -278,7 +278,7 @@ public sealed class FlightBookingOrchestratorTests
 
         await Orchestrator(new NoTravellers()).ReconcileAsync(order.Id, TestContext.Current.CancellationToken);
 
-        (order.Items[0].Status, order.Items[0].SupplierLocator).ShouldBe((FlightOrderItemStatus.Confirmed, "MH123"));
+        (order.Items[0].Status, order.Items[0].SupplierLocator).ShouldBe((OrderItemStatus.Confirmed, "MH123"));
         _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
     }
 
@@ -300,7 +300,7 @@ public sealed class FlightBookingOrchestratorTests
         _clock.Advance(TimeSpan.FromHours(25));
     }
 
-    private Task<FlightOrderItemStatus> CheckReview() =>
+    private Task<OrderItemStatus> CheckReview() =>
         Orchestrator(new NoTravellers()).CheckReviewAsync(_order, ItemId, "TICKET-1", new TransitionContext(_clock.GetUtcNow(), "staff:s1", "trace-r"), TestContext.Current.CancellationToken);
 
     private void Pending() =>
@@ -308,8 +308,8 @@ public sealed class FlightBookingOrchestratorTests
 
     private Task<bool> Reconcile() => Orchestrator(new NoTravellers()).ReconcileAsync(_order.Id, TestContext.Current.CancellationToken);
 
-    private FlightBookingOrchestrator Orchestrator(IOrderTravellers travellers) =>
-        new(_store, _bookings, _hotelBookings, travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<FlightBookingOrchestrator>.Instance);
+    private BookingOrchestrator Orchestrator(IOrderTravellers travellers) =>
+        new(_store, _bookings, _hotelBookings, travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<BookingOrchestrator>.Instance);
 
     private sealed class Travellers : IOrderTravellers
     {
@@ -381,7 +381,7 @@ public sealed class FlightBookingOrchestratorTests
 
         public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(OrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public void Audit(TravelBooking.BuildingBlocks.Audit.AuditEntry entry)

@@ -169,7 +169,7 @@ internal sealed partial class RefundCaseHandler(
         if (command.Kind is RefundCaseKind.Cancellation)
         {
             var items = command.ItemIds.Select(id => order.Items.SingleOrDefault(i => i.Id == id)).ToList();
-            if (items.Any(i => i is not { Status: FlightOrderItemStatus.Confirmed } || i.AgreedPrice.Currency != currency))
+            if (items.Any(i => i is not { Status: OrderItemStatus.Confirmed } || i.AgreedPrice.Currency != currency))
             {
                 return (RefundCaseOutcome.ItemNotCancellable, null);
             }
@@ -247,7 +247,7 @@ internal sealed partial class RefundCaseHandler(
             // The customer's request, if any (ADR 0029): answered by this case once nothing confirmed is left; a request
             // withdrawn before the desk cancelled is flagged for a person to tell the customer.
             var latest = await requests.FindLatestForOrderAsync(order.Id, cancellationToken);
-            if (latest is { Status: CancellationRequestStatus.Open } && !order.Items.Any(i => i.Status is FlightOrderItemStatus.Confirmed)
+            if (latest is { Status: CancellationRequestStatus.Open } && !order.Items.Any(i => i.Status is OrderItemStatus.Confirmed)
                 && await requests.FindOpenForOrderAsync(order.Id, cancellationToken) is { } request && request.Complete(refundCase.Id, staff, now))
             {
                 order.NoteRefund([], $"Cancellation request {request.Id:N} completed by refund case {refundCase.Id:N}", context, null);

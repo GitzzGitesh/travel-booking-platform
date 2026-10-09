@@ -234,7 +234,54 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.FlightOrderItem", b =>
+            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.Order", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CustomerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("PaymentAuthorizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("PaymentSettlementRequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("CustomerId", "CreatedAt", "Id");
+
+                    b.ToTable("Orders", "orders");
+                });
+
+            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.OrderItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
@@ -286,7 +333,7 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
-                    b.ComplexProperty(typeof(Dictionary<string, object>), "AgreedPrice", "TravelBooking.Modules.Orders.Domain.FlightOrderItem.AgreedPrice#Money", b1 =>
+                    b.ComplexProperty(typeof(Dictionary<string, object>), "AgreedPrice", "TravelBooking.Modules.Orders.Domain.OrderItem.AgreedPrice#Money", b1 =>
                         {
                             b1.IsRequired();
 
@@ -318,53 +365,6 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                             t.HasCheckConstraint("CK_FlightOrderItems_Status", "[Status] IN ('Draft', 'AwaitingPayment', 'Abandoned', 'Booking', 'PendingConfirmation', 'ManualReview', 'Confirmed', 'Failed', 'Cancelled')");
                         });
-                });
-
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.Order", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("CustomerId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("PaymentAuthorizationId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTimeOffset?>("PaymentSettlementRequestedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<int>("Revision")
-                        .HasColumnType("int");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomerId", "IdempotencyKey")
-                        .IsUnique();
-
-                    b.HasIndex("CustomerId", "CreatedAt", "Id");
-
-                    b.ToTable("Orders", "orders");
                 });
 
             modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.OrderTimelineEntry", b =>
@@ -544,7 +544,7 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.FlightOrderItem", b =>
+            modelBuilder.Entity("TravelBooking.Modules.Orders.Domain.OrderItem", b =>
                 {
                     b.HasOne("TravelBooking.Modules.Orders.Domain.Order", null)
                         .WithMany("Items")
@@ -554,7 +554,7 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
 
                     b.OwnsOne("TravelBooking.Modules.Orders.Domain.CancellationTerms", "CancellationTerms", b1 =>
                         {
-                            b1.Property<Guid>("FlightOrderItemId")
+                            b1.Property<Guid>("OrderItemId")
                                 .HasColumnType("uniqueidentifier");
 
                             b1.Property<DateTimeOffset?>("FreeUntil")
@@ -570,17 +570,17 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                                 .HasColumnType("bit")
                                 .HasColumnName("CancellationRefundable");
 
-                            b1.HasKey("FlightOrderItemId");
+                            b1.HasKey("OrderItemId");
 
                             b1.ToTable("FlightOrderItems", "orders");
 
                             b1.WithOwner()
-                                .HasForeignKey("FlightOrderItemId");
+                                .HasForeignKey("OrderItemId");
                         });
 
                     b.OwnsOne("TravelBooking.Modules.Orders.Domain.TravellerNeeds", "TravellerNeeds", b1 =>
                         {
-                            b1.Property<Guid>("FlightOrderItemId")
+                            b1.Property<Guid>("OrderItemId")
                                 .HasColumnType("uniqueidentifier");
 
                             b1.Property<int>("Adults")
@@ -603,12 +603,12 @@ namespace TravelBooking.Modules.Orders.Infrastructure.Migrations
                                 .HasColumnType("date")
                                 .HasColumnName("LastTravelDate");
 
-                            b1.HasKey("FlightOrderItemId");
+                            b1.HasKey("OrderItemId");
 
                             b1.ToTable("FlightOrderItems", "orders");
 
                             b1.WithOwner()
-                                .HasForeignKey("FlightOrderItemId");
+                                .HasForeignKey("OrderItemId");
                         });
 
                     b.Navigation("CancellationTerms");

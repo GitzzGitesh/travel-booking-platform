@@ -62,7 +62,7 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
 
         checkout.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         (await Read(checkout)).GetProperty("outcome").GetString().ShouldBe("BookingPending");
-        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.PendingConfirmation);
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(OrderItemStatus.PendingConfirmation);
         // Frozen while the booking is unresolved: a price check can never change what is being booked.
         var selection = (await LoadOrder(order)).Items[0].SelectedOfferId;
         using (var check = await Send(HttpMethod.Post, $"/api/v1/hotels/selected-offers/{selection}/revalidations", token))
@@ -108,7 +108,7 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
 
         checkout.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         (await CountPayments(order)).ShouldBe(0);
-        (await LoadOrder(order)).Items[0].Status.ShouldNotBe(FlightOrderItemStatus.Booking);
+        (await LoadOrder(order)).Items[0].Status.ShouldNotBe(OrderItemStatus.Booking);
     }
 
     // Duplicate and parallel checkouts (testing rules): one authorization, one booking, one charge.
@@ -156,7 +156,7 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
         refundCase.GetProperty("amount").GetProperty("amount").GetString().ShouldBe(price.Amount.ToString(CultureInfo.InvariantCulture));
         (refundCase.GetProperty("fee").GetString(), refundCase.GetProperty("status").GetString()).ShouldBe(("0", "PendingApproval"));
         var stored = await LoadOrder(order);
-        stored.Items[0].Status.ShouldBe(FlightOrderItemStatus.Cancelled);
+        stored.Items[0].Status.ShouldBe(OrderItemStatus.Cancelled);
         stored.Timeline.ShouldContain(e => e.Reason.Contains("by the rate's terms (free cancellation until", StringComparison.Ordinal));
     }
 
@@ -169,7 +169,7 @@ public sealed class HotelCheckoutBookingTests(SqlApiFactory api) : IClassFixture
         var refundCase = await RecordCancellation(order, supplierRefund: "0");
 
         (refundCase.GetProperty("amount").GetProperty("amount").GetString(), refundCase.GetProperty("status").GetString()).ShouldBe(("0", "NoRefund"));
-        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Cancelled);
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(OrderItemStatus.Cancelled);
     }
 
     // The deadline is judged when the customer asked (their open request), so a late desk never costs them: we refund in

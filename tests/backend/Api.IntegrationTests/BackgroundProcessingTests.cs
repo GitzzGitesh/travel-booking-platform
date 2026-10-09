@@ -180,7 +180,7 @@ public sealed class BackgroundProcessingTests(SqlApiFactory api) : IClassFixture
         using var scope = api.Services.CreateScope();
         var now = api.Clock.GetUtcNow();
         var order = Order.CreateForFlight(_customer, $"order-{Guid.NewGuid():N}", Guid.NewGuid(), _price, now.AddMinutes(30), null,
-            new TransitionContext(now, CreateFlightOrderHandler.Actor(_customer), "test-trace"));
+            new TransitionContext(now, CreateOrderHandler.Actor(_customer), "test-trace"));
         (await scope.ServiceProvider.GetRequiredService<IOrderStore>().TryAddAsync(order, Ct)).ShouldBeTrue();
         return order;
     }

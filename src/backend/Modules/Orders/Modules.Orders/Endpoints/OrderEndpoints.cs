@@ -53,13 +53,13 @@ internal static class OrderEndpoints
         [FromHeader(Name = IdempotencyKeyHeader)] string? idempotencyKey,
         ClaimsPrincipal user,
         HttpContext http,
-        CreateFlightOrderHandler handler,
+        CreateOrderHandler handler,
         CancellationToken cancellationToken)
     {
         // The W3C trace id, so timeline entries line up with traces (observability.md).
         var correlationId = System.Diagnostics.Activity.Current?.TraceId.ToString() ?? http.TraceIdentifier;
         var product = request.Product is "Hotel" ? OrderProduct.Hotel : OrderProduct.Flight;
-        var command = new CreateFlightOrder(user.CustomerId()!, idempotencyKey ?? string.Empty, request.SelectedOfferId!.Value, correlationId, product);
+        var command = new CreateOrder(user.CustomerId()!, idempotencyKey ?? string.Empty, request.SelectedOfferId!.Value, correlationId, product);
         var result = await handler.HandleAsync(command, cancellationToken);
         if (result.IsSuccess)
         {
@@ -69,14 +69,14 @@ internal static class OrderEndpoints
 
         return result.Error switch
         {
-            CreateFlightOrderFailure.InvalidIdempotencyKey => Problem(StatusCodes.Status400BadRequest, "idempotency-key-required",
-                $"Send a unique {IdempotencyKeyHeader} header (1 to {CreateFlightOrderHandler.MaxIdempotencyKeyLength} visible characters) and reuse it when retrying."),
-            CreateFlightOrderFailure.IdempotencyKeyReused => Problem(StatusCodes.Status409Conflict, "idempotency-conflict",
+            CreateOrderFailure.InvalidIdempotencyKey => Problem(StatusCodes.Status400BadRequest, "idempotency-key-required",
+                $"Send a unique {IdempotencyKeyHeader} header (1 to {CreateOrderHandler.MaxIdempotencyKeyLength} visible characters) and reuse it when retrying."),
+            CreateOrderFailure.IdempotencyKeyReused => Problem(StatusCodes.Status409Conflict, "idempotency-conflict",
                 "This idempotency key was already used for another selection."),
-            CreateFlightOrderFailure.SelectionAlreadyOrdered already => Problem(StatusCodes.Status409Conflict, "selection-already-ordered",
+            CreateOrderFailure.SelectionAlreadyOrdered already => Problem(StatusCodes.Status409Conflict, "selection-already-ordered",
                 "This selection already has an order.", new Dictionary<string, object?> { ["orderId"] = already.OrderId }),
-            CreateFlightOrderFailure.SelectionUnavailable unavailable => Unavailable(unavailable.Reason, product),
-            CreateFlightOrderFailure.CustomerRequired => Problem(StatusCodes.Status403Forbidden, "customer-required", "Sign in to create an order."),
+            CreateOrderFailure.SelectionUnavailable unavailable => Unavailable(unavailable.Reason, product),
+            CreateOrderFailure.CustomerRequired => Problem(StatusCodes.Status403Forbidden, "customer-required", "Sign in to create an order."),
             _ => throw new InvalidOperationException($"Unmapped order failure {result.Error.GetType().Name}."),
         };
     }
@@ -95,10 +95,10 @@ internal static class OrderEndpoints
         CancellationToken cancellationToken)
     {
         // The same rule as order creation: stored as varchar, so only visible ASCII, never two keys that collapse into one.
-        if (!CreateFlightOrderHandler.IsValidKey(idempotencyKey))
+        if (!CreateOrderHandler.IsValidKey(idempotencyKey))
         {
             return Problem(StatusCodes.Status400BadRequest, "idempotency-key-required",
-                $"Send a unique {IdempotencyKeyHeader} header (1 to {CreateFlightOrderHandler.MaxIdempotencyKeyLength} visible characters) and reuse it when retrying.");
+                $"Send a unique {IdempotencyKeyHeader} header (1 to {CreateOrderHandler.MaxIdempotencyKeyLength} visible characters) and reuse it when retrying.");
         }
 
         var correlationId = System.Diagnostics.Activity.Current?.TraceId.ToString() ?? http.TraceIdentifier;

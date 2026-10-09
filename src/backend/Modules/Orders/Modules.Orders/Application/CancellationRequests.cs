@@ -78,7 +78,7 @@ internal sealed class CancellationRequestHandler(IOrderStore orders, ICancellati
             return (CancellationRequestOutcome.NotFound, null);
         }
 
-        if (!order.Items.Any(i => i.Status is FlightOrderItemStatus.Confirmed))
+        if (!order.Items.Any(i => i.Status is OrderItemStatus.Confirmed))
         {
             return (CancellationRequestOutcome.NotCancellable, null);
         }
@@ -92,7 +92,7 @@ internal sealed class CancellationRequestHandler(IOrderStore orders, ICancellati
         var request = CancellationRequest.Open(orderId, customerId, idempotencyKey, now);
         requests.Add(request);
         order.NoteRefund([], $"Cancellation requested by the customer (request {request.Id:N}): for operations",
-            new TransitionContext(now, CreateFlightOrderHandler.Actor(customerId), correlationId), null);
+            new TransitionContext(now, CreateOrderHandler.Actor(customerId), correlationId), null);
         orders.Publish(new CustomerCancellationRequested(Guid.NewGuid(), now, orderId, request.Id, correlationId), correlationId);
         if (await orders.TrySaveAsync(cancellationToken))
         {
@@ -130,7 +130,7 @@ internal sealed class CancellationRequestHandler(IOrderStore orders, ICancellati
         }
 
         order.NoteRefund([], $"Cancellation request {request.Id:N} withdrawn by the customer",
-            new TransitionContext(now, CreateFlightOrderHandler.Actor(customerId), correlationId), null);
+            new TransitionContext(now, CreateOrderHandler.Actor(customerId), correlationId), null);
         return await orders.TrySaveAsync(cancellationToken) ? (CancellationRequestOutcome.Done, request) : (CancellationRequestOutcome.Conflict, null);
     }
 

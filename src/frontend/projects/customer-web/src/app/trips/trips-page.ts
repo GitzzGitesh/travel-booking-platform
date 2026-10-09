@@ -33,13 +33,17 @@ import { orderStatusLabel } from '../booking/order-status';
       }
       @if (state() === 'loaded') {
         @if (orders().length === 0) {
-          <p>You have no bookings yet. <a routerLink="/">Search for a flight</a></p>
+          <p>
+            You have no bookings yet. <a routerLink="/">Search for a flight</a> or
+            <a routerLink="/hotels">search for a hotel</a>.
+          </p>
         } @else {
           <ul class="trip-list">
             @for (order of orders(); track order.orderId) {
               <li class="card trip">
                 <a [routerLink]="['/booking', order.orderId]">
-                  Booking of {{ order.createdAt.slice(0, 10) }}
+                  {{ order.items[0]?.product === 'Hotel' ? 'Hotel stay' : 'Flight' }} booked on
+                  {{ order.createdAt.slice(0, 10) }}
                 </a>
                 <span>{{ statusLabel(order.status) }}</span>
                 @if (order.items[0]; as item) {

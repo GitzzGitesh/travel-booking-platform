@@ -154,12 +154,12 @@ internal abstract record CheckoutFailure
 /// awaiting payment: first finish any attempt already made with this key (its hold must never become unreachable);
 /// otherwise revalidate every item with the supplier now, adopt the fresh terms (a new expiry; a price only with the
 /// customer's accepted quote), and authorize the server-side total through Payments.Contracts. Once authorized, move the
-/// order to Booking and book it with the supplier (<see cref="FlightBookingOrchestrator"/>): capture follows only a
+/// order to Booking and book it with the supplier (<see cref="BookingOrchestrator"/>): capture follows only a
 /// confirmed booking. Idempotent by the payment key; an unknown payment outcome is never booked on, and a booking is sent
 /// only by the request whose move to Booking was saved.
 /// </summary>
 internal sealed class AuthorizeCheckoutHandler(
-    IOrderStore store, OrderItemSelections selections, IOrderPayments payments, IOrderTravellers travellers, FlightBookingOrchestrator booking, TimeProvider timeProvider)
+    IOrderStore store, OrderItemSelections selections, IOrderPayments payments, IOrderTravellers travellers, BookingOrchestrator booking, TimeProvider timeProvider)
 {
     /// <summary>
     /// How long an offer must still be valid to start a payment: the authorization and the booking both need time, and
@@ -382,7 +382,7 @@ internal sealed class AuthorizeCheckoutHandler(
     }, paymentId);
 
     private TransitionContext Context(AuthorizeCheckout command) =>
-        new(timeProvider.GetUtcNow(), CreateFlightOrderHandler.Actor(command.CustomerId), command.CorrelationId);
+        new(timeProvider.GetUtcNow(), CreateOrderHandler.Actor(command.CustomerId), command.CorrelationId);
 
     private static Result<CheckoutResult, CheckoutFailure> Success(CheckoutResult result) => Result<CheckoutResult, CheckoutFailure>.Success(result);
 
