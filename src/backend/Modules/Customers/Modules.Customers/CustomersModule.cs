@@ -69,7 +69,17 @@ public static class CustomersModule
             .Validate(o => o.PersonalDataMonthsAfterTravel > 0 && o.DocumentDaysAfterTravel > 0 && o.LegalHoldReleaseGraceDays >= 0, "Customers:Retention periods must be positive (the legal-hold release grace may be 0).")
             .ValidateOnStart();
         services.AddValidation(); // the request types in this module's Endpoints namespace (ADR 0003)
+        return services;
+    }
 
+    /// <summary>
+    /// Customer authentication and the customer policy (ADR 0008, ADR 0028), for the host that serves the customer
+    /// endpoints: the Api only. It is web-host composition (authentication schemes, and authorization policies that need
+    /// endpoint routing), so a host without HTTP endpoints (the Worker) never composes it: it has no request to
+    /// authenticate, and ASP.NET's authorization services cannot be built without routing.
+    /// </summary>
+    public static IServiceCollection AddCustomersAuthentication(this IServiceCollection services, IConfiguration configuration)
+    {
         var settings = configuration.GetSection(SettingsSection);
         var authority = settings["Authority"] is { Length: > 0 } configuredAuthority ? configuredAuthority : null;
         var requiredScope = settings["RequiredScope"] is { Length: > 0 } scope ? scope : null;
