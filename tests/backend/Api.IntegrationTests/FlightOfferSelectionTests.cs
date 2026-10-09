@@ -28,6 +28,9 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
 
     public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
 
+    /// <summary>The test database, for a second host (the Worker) that shares it.</summary>
+    internal string ConnectionString => _sql.GetConnectionString();
+
     public async ValueTask InitializeAsync()
     {
         await _sql.StartAsync();
@@ -39,6 +42,9 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await scope.ServiceProvider.GetRequiredService<CustomersDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Access.Infrastructure.AccessDbContext>().Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<TravelBooking.Modules.Notifications.Infrastructure.NotificationsDbContext>().Database.MigrateAsync();
+
+        // The mock payment provider's shared state (ADR 0032): the Api here, and any Worker host a test builds, use it.
+        await scope.ServiceProvider.GetRequiredService<TravelBooking.Integrations.Payments.Mock.Persistence.MockPaymentsDbContext>().Database.MigrateAsync();
     }
 
     public new async ValueTask DisposeAsync()

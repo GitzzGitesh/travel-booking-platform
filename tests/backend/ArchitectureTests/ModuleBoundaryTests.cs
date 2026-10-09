@@ -30,6 +30,9 @@ public sealed class ModuleBoundaryTests
 
     private const string _portsNamespace = @"^TravelBooking\.Modules\.[^.]+\.Ports$";
 
+    // The mock payment provider's own state (ADR 0032).
+    private const string _mockPaymentStateNamespace = @"^TravelBooking\.Integrations\.Payments\.Mock\.Persistence(\..+)?$";
+
     [Fact]
     public void At_least_one_module_is_checked() =>
         _moduleInternalAssemblies.ShouldNotBeEmpty();
@@ -126,11 +129,21 @@ public sealed class ModuleBoundaryTests
 
     // BuildingBlocks carries EF Core and ASP.NET Core for the outbox, inbox and leases (ADR 0007): keep them out of the
     // supplier adapters and the module Contracts that reference it (architecture review, background batch).
+    // One exception (ADR 0032): the mock payment provider keeps its own state in SQL, in its Persistence namespace only.
     [Fact]
     public void Adapters_and_contracts_do_not_use_the_data_or_web_frameworks() =>
         Types().That().ResideInNamespaceMatching(@"^TravelBooking\.(Integrations\..+|Modules\.[^.]+\.Contracts)$")
+            .And().DoNotResideInNamespaceMatching(_mockPaymentStateNamespace)
             .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(@"^(Microsoft\.AspNetCore|Microsoft\.EntityFrameworkCore|TravelBooking\.BuildingBlocks\.Background\.Persistence)(\..+)?$"))
             .Because("adapters map supplier models and Contracts describe a module's surface; persistence stays in the modules (ADR 0004, 0007)")
+            .Check(_architecture);
+
+    // The mock's state is its own (ADR 0032): no module, host or other adapter reads it.
+    [Fact]
+    public void Only_the_mock_payment_provider_uses_its_state() =>
+        Types().That().DoNotResideInNamespaceMatching(@"^TravelBooking\.Integrations\.Payments\.Mock(\..+)?$")
+            .Should().NotDependOnAny(Types(true).That().ResideInNamespaceMatching(_mockPaymentStateNamespace))
+            .Because("the mock payment provider's schema is private to it, like a supplier's own system (ADR 0032)")
             .Check(_architecture);
 
     // What other modules see of a module never carries the supplier-facing model (offers, fares, provider references).

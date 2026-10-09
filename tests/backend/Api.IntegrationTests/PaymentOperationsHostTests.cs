@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TravelBooking.BuildingBlocks;
 using TravelBooking.Integrations.Payments.Mock;
+using TravelBooking.Integrations.Payments.Mock.Persistence;
 using TravelBooking.Modules.Payments.Application;
 using TravelBooking.Modules.Payments.Ports;
 
@@ -83,7 +85,20 @@ public sealed class PaymentOperationsHostTests(WebApplicationFactory<Program> fa
         production.Services.GetService<IPaymentProvider>().ShouldBeNull();
     }
 
-    private WebApplicationFactory<Program> Development() => factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
+    // ADR 0032: the mock's state, and anything that could create or read its schema, is never composed in Production.
+    [Fact]
+    public void Production_composes_neither_the_mock_nor_its_state()
+    {
+        using var production = factory.WithWebHostBuilder(b => b.UseEnvironment("Production"));
+
+        production.Services.GetServices<IPaymentProvider>().ShouldNotContain(p => p.Id == MockPaymentProvider.ProviderId);
+        production.Services.GetService<IDbContextFactory<MockPaymentsDbContext>>().ShouldBeNull();
+        production.Services.GetService<MockPaymentsDbContext>().ShouldBeNull();
+    }
+
+    // No database here: the mock keeps its payments in this process (its shared state is SharedMockPaymentStateTests).
+    private WebApplicationFactory<Program> Development() => factory.WithWebHostBuilder(b => b.UseEnvironment("Development")
+        .UseSetting($"{MockPaymentProviderOptions.SectionName}:State", nameof(MockPaymentState.InProcess)));
 
     private static PaymentReference NewReference() => new($"pay-{Guid.NewGuid():N}");
 

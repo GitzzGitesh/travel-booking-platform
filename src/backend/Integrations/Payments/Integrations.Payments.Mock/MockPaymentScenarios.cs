@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using TravelBooking.Integrations.Payments.Mock.Persistence;
 using TravelBooking.Modules.Payments.Ports;
 
 namespace TravelBooking.Integrations.Payments.Mock;
@@ -57,11 +58,24 @@ public enum MockPaymentScenario
     Unavailable,
 }
 
+/// <summary>Where the mock keeps its payments (ADR 0032).</summary>
+public enum MockPaymentState
+{
+    /// <summary>In the mock's own SQL schema (paymentsmock, in the Payments database), shared by every process that uses it.</summary>
+    Shared,
+
+    /// <summary>In this process only (unit and provider contract tests).</summary>
+    InProcess,
+}
+
 public sealed class MockPaymentProviderOptions
 {
     public const string SectionName = "Integrations:Payments:Mock";
 
     public MockPaymentScenario Scenario { get; set; } = MockPaymentScenario.Success;
+
+    /// <summary>Where the mock keeps its payments (ADR 0032). Shared by default, so the Api and the Worker see the same ones.</summary>
+    public MockPaymentState State { get; set; } = MockPaymentState.Shared;
 }
 
 public static class MockPaymentProviderRegistration
@@ -76,8 +90,26 @@ public static class MockPaymentProviderRegistration
             .Bind(configuration.GetSection(MockPaymentProviderOptions.SectionName))
             .Validate<IHostEnvironment>((_, environment) => environment.IsDevelopment() || environment.IsStaging(), "The mock payment provider only runs in Development or Staging.")
             .Validate(options => Enum.IsDefined(options.Scenario), $"{MockPaymentProviderOptions.SectionName}:Scenario is not a defined scenario.")
+            // In Staging the Api and the Worker run apart: keeping payments in one process would split them again (ADR 0032).
+            .Validate<IHostEnvironment>((options, environment) => options.State is not MockPaymentState.InProcess || environment.IsDevelopment(),
+                $"{MockPaymentProviderOptions.SectionName}:State InProcess is for Development only (tests); Staging shares the mock's payments.")
             .ValidateOnStart();
         services.AddSingleton<IPaymentProvider, MockPaymentProvider>();
+
+        // The ledger is chosen when the services are composed, so it is read here; an unknown value fails at once.
+        var state = configuration.GetSection(MockPaymentProviderOptions.SectionName).GetValue(nameof(MockPaymentProviderOptions.State), MockPaymentState.Shared);
+        switch (state)
+        {
+            case MockPaymentState.Shared:
+                services.AddSqlMockPaymentLedger(configuration);
+                break;
+            case MockPaymentState.InProcess:
+                services.AddSingleton<IMockPaymentLedger, InProcessMockPaymentLedger>();
+                break;
+            default:
+                throw new InvalidOperationException($"{MockPaymentProviderOptions.SectionName}:State is not a defined state.");
+        }
+
         return services;
     }
 }
