@@ -1,6 +1,7 @@
 import { HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { fillAndSubmit, settle, staffTestProviders } from '../testing';
+import { MoneyPipe } from '../shared/money';
 import { OrderDetail } from './order-detail';
 
 const orderId = '3f0c6b9e-1d2a-4c55-9f86-000000000001';
@@ -71,7 +72,9 @@ describe('OrderDetail', () => {
     expect(section.textContent).toContain('Mock Central Hotel, 1 Mock Street (PAR, ZZ)');
     expect(section.textContent).toContain('2026-11-10 to 2026-11-13 (3 nights)');
     expect(section.textContent).toContain('Free until 2026-11-08 12:00 UTC');
-    expect(section.textContent).toContain('120 XTS is kept');
+    expect(section.textContent).toContain(
+      `${new MoneyPipe().transform({ amount: '120', currency: 'XTS' })} is kept`,
+    );
     expect(element.querySelector('tbody')?.textContent).toContain('Hotel');
   });
 

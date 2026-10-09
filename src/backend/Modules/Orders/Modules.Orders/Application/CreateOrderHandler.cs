@@ -54,6 +54,9 @@ internal interface IOrderStore
     /// </summary>
     Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken);
 
+    /// <summary>Orders with an item under this supplier booking reference, or with this id (staff search, newest first).</summary>
+    Task<IReadOnlyList<Order>> SearchAsync(string? bookingReference, Guid? orderId, int limit, CancellationToken cancellationToken);
+
     /// <summary>
     /// Operations queue: orders with an item in <paramref name="status"/>, oldest first, created after
     /// <paramref name="after"/> in (CreatedAt, Id) order (the cursor: no order is skipped on ties), with their items, read-only.

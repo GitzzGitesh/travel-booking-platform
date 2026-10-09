@@ -20,6 +20,9 @@ export type { CurrentCustomerResponse } from './models/current-customer-response
 export type { CustomerSessionResponse } from './models/customer-session-response';
 export type { FareAllowance } from './models/fare-allowance';
 export type { FlightFareResponse } from './models/flight-fare-response';
+export type { FlightItineraryResponse } from './models/flight-itinerary-response';
+export type { FlightLegResponse } from './models/flight-leg-response';
+export type { FlightLegSegmentResponse } from './models/flight-leg-segment-response';
 export type { FlightOfferResponse } from './models/flight-offer-response';
 export type { FlightPriceBreakdownResponse } from './models/flight-price-breakdown-response';
 export type { FlightSearchRequest } from './models/flight-search-request';
@@ -33,6 +36,7 @@ export type { HotelPropertyResponse } from './models/hotel-property-response';
 export type { HotelSearchRequest } from './models/hotel-search-request';
 export type { HotelSearchResponse } from './models/hotel-search-response';
 export type { HotelSelectionProblemResponse } from './models/hotel-selection-problem-response';
+export type { HotelStayResponse } from './models/hotel-stay-response';
 export type { HttpValidationProblemDetails } from './models/http-validation-problem-details';
 export type { MoneyResponse } from './models/money-response';
 export type { OrderAmountResponse } from './models/order-amount-response';

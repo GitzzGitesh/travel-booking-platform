@@ -35,6 +35,7 @@ public static class OrdersModule
                 "Orders:BookingReconciliation needs 0 < LookupAfter <= NotFoundConclusiveAfter < ManualReviewAfter.")
             .ValidateOnStart();
         services.AddScoped<IOrderTravellerNeeds, OrderTravellerNeedsQuery>();
+        services.AddScoped<CustomerOrderDetailsQuery>(); // the customer's own order page, with what each item booked
 
         // The module's own schema. The connection string is resolved on first use; migrations are never applied at
         // startup (database rules).
@@ -122,6 +123,13 @@ public static class OrdersModule
 
         group.MapGet("/", AdminOrderEndpoints.Queue)
             .WithName("ListOrdersForOperations")
+            .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.OrdersRead))
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapGet("/search", AdminOrderEndpoints.Search)
+            .WithName("SearchOrdersForOperations")
             .RequireAuthorization(StaffIdentity.PolicyFor(StaffPermissions.OrdersRead))
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

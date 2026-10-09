@@ -12,6 +12,7 @@ import type { AdminPaymentAttempt } from '@travel-booking/admin-api-client';
 import { describeProblem, problemExtension, problemType } from '../shared/problems';
 import { ReasonForm } from '../shared/reason-form';
 import { StaffSession } from '../staff-session';
+import { MoneyPipe } from '../shared/money';
 
 /**
  * One payment attempt for operations: amounts, provider references and its history (no card data exists). A payment in
@@ -20,7 +21,7 @@ import { StaffSession } from '../staff-session';
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, ReasonForm, RouterLink],
+  imports: [DatePipe, MoneyPipe, ReasonForm, RouterLink],
   selector: 'adm-payment-detail',
   template: `
     <h1>
@@ -54,18 +55,18 @@ import { StaffSession } from '../staff-session';
           }
         </dd>
         <dt>Amount</dt>
-        <dd>{{ attempt.amount.amount }} {{ attempt.amount.currency }}</dd>
+        <dd>{{ attempt.amount | money }}</dd>
         <dt>Captured</dt>
         <dd>
           @if (attempt.captureAmount; as captured) {
-            {{ captured.amount }} {{ captured.currency }}
+            {{ captured | money }}
           } @else {
             Nothing
           }
         </dd>
         @if (attempt.refunded; as refunded) {
           <dt>Refunded or being refunded</dt>
-          <dd>{{ refunded.amount }} {{ refunded.currency }}</dd>
+          <dd>{{ refunded | money }}</dd>
         }
         <dt>Provider</dt>
         <dd>{{ attempt.providerId ?? '—' }}</dd>
@@ -124,7 +125,7 @@ import { StaffSession } from '../staff-session';
                 <tr>
                   <td>{{ refund.requestedAt | date: 'yyyy-MM-dd HH:mm' : 'UTC' }}</td>
                   <td class="mono">{{ refund.refundId }}</td>
-                  <td>{{ refund.amount.amount }} {{ refund.amount.currency }}</td>
+                  <td>{{ refund.amount | money }}</td>
                   <td>{{ refund.status }}</td>
                   <td class="mono">{{ refund.providerRefundId ?? '—' }}</td>
                   <td>{{ refund.reason ?? '' }}</td>

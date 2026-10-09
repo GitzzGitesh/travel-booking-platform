@@ -3,6 +3,7 @@
 
 export interface TravellersNeededResponse {
   adults: number;
+  ageOn?: (string | null);
   children: number;
   documentsRequired: boolean;
   infants: number;

@@ -34,6 +34,20 @@
       <h1>Your booking</h1>
       @if (item(); as item) {
         <dl class="summary card">
+          @if (flightLegs().length) {
+            <dt>Flights (each airport’s local time)</dt>
+            @for (leg of flightLegs(); track $index) {
+              <dd>{{ leg }}</dd>
+            }
+          }
+          @if (stay(); as stay) {
+            <dt>Stay</dt>
+            <dd>{{ stay }}</dd>
+          }
+          @if (bookedTravellers().length) {
+            <dt>{{ isHotel() ? 'Guests' : 'Travellers' }}</dt>
+            <dd>{{ bookedTravellers().join(', ') }}</dd>
+          }
           <dt>Price</dt>
           <dd class="tabular">
             @if (price(); as price) {
@@ -156,7 +170,21 @@
                       type="date"
                       formControlName="dateOfBirth"
                       [attr.aria-invalid]="invalid(traveller.controls.dateOfBirth)"
+                      [attr.aria-describedby]="
+                        traveller.controls.dateOfBirth.hasError('ageForType') &&
+                        invalid(traveller.controls.dateOfBirth)
+                          ? 'age-hint-' + i
+                          : null
+                      "
                     />
+                    @if (
+                      traveller.controls.dateOfBirth.hasError('ageForType') &&
+                      invalid(traveller.controls.dateOfBirth)
+                    ) {
+                      <span class="field-error" [id]="'age-hint-' + i">{{
+                        ageHint(traveller.controls.type.value)
+                      }}</span>
+                    }
                   </label>
                   <label>
                     <span class="field-label">Gender (as on the document)</span>

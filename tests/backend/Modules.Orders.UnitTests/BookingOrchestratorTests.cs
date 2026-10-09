@@ -418,6 +418,9 @@ public sealed class BookingOrchestratorTests
 
         public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task<IReadOnlyList<Order>> SearchAsync(string? bookingReference, Guid? orderId, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(OrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 

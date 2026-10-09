@@ -25,6 +25,7 @@ import type {
 import { describeProblem, problemType } from '../shared/problems';
 import { ReasonForm, reasonPattern } from '../shared/reason-form';
 import { StaffSession } from '../staff-session';
+import { MoneyPipe } from '../shared/money';
 
 /** The server's format for amounts (RefundCaseRequest): digits, with up to four decimals. */
 export const amountPattern = /^\d{1,13}(\.\d{1,4})?$/;
@@ -51,7 +52,7 @@ const refundProblems: Record<string, string> = {
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, ReasonForm],
+  imports: [DatePipe, MoneyPipe, ReasonForm],
   selector: 'adm-refund-panel',
   template: `
     <section class="action" aria-labelledby="refunds">
@@ -84,9 +85,12 @@ const refundProblems: Record<string, string> = {
                     }
                   </td>
                   <td>
-                    {{ refundCase.amount.amount }} {{ refundCase.amount.currency }}
+                    {{ refundCase.amount | money }}
                     @if (refundCase.fee !== '0') {
-                      (fee {{ refundCase.fee }})
+                      (fee
+                      {{
+                        { amount: refundCase.fee, currency: refundCase.amount.currency } | money
+                      }})
                     }
                   </td>
                   <td>{{ refundCase.status }}</td>
@@ -103,8 +107,7 @@ const refundProblems: Record<string, string> = {
 
       @for (refundCase of pending(); track refundCase.caseId) {
         <h3>
-          {{ refundCase.kind }} refund of {{ refundCase.amount.amount }}
-          {{ refundCase.amount.currency }} waiting for approval
+          {{ refundCase.kind }} refund of {{ refundCase.amount | money }} waiting for approval
         </h3>
         @if (session.can('refunds.approve')) {
           <adm-reason-form
@@ -168,8 +171,7 @@ const refundProblems: Record<string, string> = {
                     [disabled]="busy()"
                     (change)="toggle(item.itemId, $any($event.target).checked)"
                   />
-                  <span class="mono">{{ item.itemId }}</span> ({{ item.agreedPrice.amount }}
-                  {{ item.agreedPrice.currency }})
+                  <span class="mono">{{ item.itemId }}</span> ({{ item.agreedPrice | money }})
                 </label>
               } @empty {
                 <p>No confirmed items: nothing can be cancelled.</p>

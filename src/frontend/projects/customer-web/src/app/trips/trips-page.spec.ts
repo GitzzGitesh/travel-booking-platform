@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { CustomerSession } from '../customer-session';
 import { TripsPage } from './trips-page';
 
 const order = (id: string, status: string, product = 'Flight') => ({
@@ -72,5 +73,37 @@ describe('TripsPage', () => {
     expect(element.textContent).toContain('Expired: nothing was charged');
     expect(element.querySelectorAll('li.trip a')[1].textContent).toContain('Flight booked on');
     expect(element.querySelector('button')).toBeNull(); // the last page
+  });
+
+  // BUG-003: signing out (from the header) takes the customer's trips off the screen at once.
+  it('drops the trips from the screen when the customer signs out', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(TripsPage);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    http.expectOne('/api/v1/session').flush({ customerId: 'cust-1' });
+    await vi.advanceTimersByTimeAsync(0);
+    http
+      .expectOne((r) => r.url === '/api/v1/orders')
+      .flush({ orders: [order('A', 'Confirmed')], nextCursor: null });
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Reference REFA');
+
+    const signedOut = TestBed.inject(CustomerSession).signOut();
+    http
+      .expectOne('/api/v1/session/sign-out')
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await signedOut;
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.detectChanges();
+
+    expect(element.textContent).not.toContain('REFA');
+    expect(element.querySelectorAll('li.trip').length).toBe(0);
+    expect(element.textContent).toContain('Sign in to see your trips.');
   });
 });
