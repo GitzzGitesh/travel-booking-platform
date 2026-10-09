@@ -363,12 +363,12 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - **First business metric:** `travelbooking.orders.booking_outcomes` (product, outcome), counted once when saved.
 - **Packages (ADR 0003's stack):** OpenTelemetry 1.19 (Apache-2.0) and the Azure Monitor exporter 1.10 (MIT); the in-memory exporter for tests only.
 - **Next:** deployment readiness (hosting ADR, container images, enforcing an exporter in Production), then more business metrics. |
-| 28 | **Fix: the Worker crashed at startup (QA BUG-001)** | **Done (in review).**
+| 28 | **Fix: the Worker crashed at startup (QA BUG-001)** | **Done (#72).**
 - **Root cause:** `AddCustomersModule`, composed by both hosts, also registered customer authentication schemes and the customer authorization policy. In a generic host without endpoint routing, ASP.NET's `AuthorizationPolicyCache` cannot be built (`EndpointDataSource` is missing), and Development validates every registration at build, so the Worker never started locally.
 - **Fix:** the authentication and the policy move, unchanged, to `AddCustomersAuthentication`, which only the Api composes. The Worker's composition moved verbatim into `WorkerComposition.AddWorkerServices`, so a test builds exactly that host.
 - **Test:** `WorkerCompositionTests` builds the Worker host in Development (every registration validated) and asserts it has no web authentication or authorization. It fails with the original exception when the customer authentication is composed in the Worker again.
 - **Still blocked locally:** the Worker's payment captures are refused, because the mock payment provider keeps its state per process and the Worker cannot see payments the Api authorized (by design, noted in the Worker composition). Captured-payment cancellations and refunds therefore cannot be completed across the two local processes. The same-process integration tests cover them. |
-| 29 | **QA fixes: booking details, sign-out, admin booking search, and three low-severity issues** | **Done (in review).**
+| 29 | **QA fixes: booking details, sign-out, admin booking search, and three low-severity issues** | **Done (#72).**
 - **BUG-002 (booking details):**
   - the customer's own order says what was booked: a flight item carries its flights (local times, as booked) and passenger mix through a new `IFlightItineraries` (`Modules.Flights.Contracts`), and a hotel item its stay through `IHotelStays`. Single order only, never in lists; additive `flight` and `hotel` fields;
   - the booking page lists them, with the travellers' names on a made booking.
@@ -389,7 +389,13 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - **Verification:**
   - Run: the targeted backend and frontend tests, both app builds, and the format, CSP and app-boundary checks. The full backend suite runs in CI.
   - Unexplained failure: the admin search test failed once, with no output kept, right after an edit to it. It then passed 8 runs alone and 3 full `CheckoutBookingTests` runs (47/47 each). It is recorded as unconfirmed, not reproduced.
-  - SQL timeout: a later local run had one different failure, a SQL `Execution Timeout Expired` (error 258) while creating a hotel order. WSL was running two SQL Server containers at the time. The rerun passed 47/47. This is a possible environmental cause of such failures, not a confirmed one. |
+  - SQL timeout: a later local run had one different failure, a SQL `Execution Timeout Expired` (error 258) while creating a hotel order. WSL was running two SQL Server containers at the time. The rerun passed 47/47. This is a possible environmental cause of such failures, not a confirmed one.
+  - CI: the full backend suite passed on #72 (1399 tests: 1344 passed, 55 skipped, 0 failed). |
+| 30 | **QA follow-ups: admin search index, hotel board wording, the way back from a hotel booking** | **Done (in review).**
+- **Admin search index:** a filtered index on `FlightOrderItems.SupplierLocator` (migration `AddSupplierLocatorIndex`: one `CREATE INDEX ... WHERE [SupplierLocator] IS NOT NULL`, additive). `SearchAsync` now runs one plain query per kind (order id or reference), so each can seek its index instead of an `OR` over parameters.
+- **Hotel board wording:** the booking page says what the board includes ("Breakfast included") exactly as hotel search does, from one shared `boardLabel`.
+- **The way back from a hotel booking:** once signed out, the booking page still leads back to the hotel search. The product this browser last saw for the order is kept in session storage, a per-viewer convenience that holds no personal data.
+- **Still open:** completing captures and refunds between the local Api and Worker. The mock payment provider keeps its state inside one process, and sharing it needs a storage decision (see the open architecture review). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

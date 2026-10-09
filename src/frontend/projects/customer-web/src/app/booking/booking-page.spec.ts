@@ -585,8 +585,36 @@ describe('BookingPage', () => {
     // BUG-002: what was booked, and for whom.
     const summary = element.querySelector('.summary')!.textContent!.replace(/\s+/g, ' ');
     expect(summary).toContain('Mock Central Hotel, 1 Mock Street');
-    expect(summary).toContain('(3 nights) · Double room, Breakfast');
+    expect(summary).toContain('(3 nights) · Double room, Breakfast included'); // worded as on hotel search
     expect(summary).toMatch(/Guests\s*Grace Testperson/);
+  });
+
+  // A hotel booking opened again once signed out leads back to the hotel search, as before signing out.
+  it('keeps the way back to hotel search for a hotel booking once signed out', async () => {
+    sessionStorage.setItem(`booking:${orderId}:product`, 'Hotel'); // this browser showed the order before
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ orderId }) } },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(BookingPage);
+    fixture.detectChanges();
+    await settle();
+    http.expectOne('/api/v1/session').flush(null, { status: 401, statusText: 'Unauthorized' });
+    await settle();
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Sign in to see and complete your booking.');
+    expect(element.textContent).toContain('Back to hotel search');
+    expect(element.textContent).not.toContain('Back to flight search');
   });
 
   // QA BUG-005: a date of birth that does not fit the traveller's type is flagged on that traveller, with the reason,
@@ -824,10 +852,14 @@ describe('BookingPage', () => {
           flight: {
             legs: [
               {
-                segments: [segment('ZZ202', 'LHR', 'JFK', '2026-10-19T07:05:00', '2026-10-19T09:20:00')],
+                segments: [
+                  segment('ZZ202', 'LHR', 'JFK', '2026-10-19T07:05:00', '2026-10-19T09:20:00'),
+                ],
               },
               {
-                segments: [segment('ZZ203', 'JFK', 'LHR', '2026-10-26T18:00:00', '2026-10-27T06:10:00')],
+                segments: [
+                  segment('ZZ203', 'JFK', 'LHR', '2026-10-26T18:00:00', '2026-10-27T06:10:00'),
+                ],
               },
             ],
             cabin: 'Economy',

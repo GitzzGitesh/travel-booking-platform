@@ -40,6 +40,7 @@ import {
 } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
 import { formatMoney } from '../flights/flight-format';
+import { boardLabel } from './hotel-format';
 
 /** Mirrors the API's limits (HotelSearchCriteria, ADR 0030). The server remains the authority. */
 export const maxAdults = 4;
@@ -102,14 +103,6 @@ type PriceCheckState =
     }
   | { readonly kind: 'stale' }
   | { readonly kind: 'error' };
-
-const boards: Record<BoardBasis, string> = {
-  RoomOnly: 'Room only',
-  Breakfast: 'Breakfast included',
-  HalfBoard: 'Half board',
-  FullBoard: 'Full board',
-  AllInclusive: 'All inclusive',
-};
 
 function stayRules(group: AbstractControl): ValidationErrors | null {
   const v = group.getRawValue() as { checkIn: string; checkOut: string };
@@ -413,7 +406,7 @@ export class HotelSearchPage {
   }
 
   protected board(board: BoardBasis): string {
-    return boards[board] ?? board;
+    return boardLabel(board);
   }
 
   protected stars(rating: number | null): string {

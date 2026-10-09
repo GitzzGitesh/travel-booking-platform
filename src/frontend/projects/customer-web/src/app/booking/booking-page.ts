@@ -48,6 +48,7 @@ import {
 } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
 import { formatMoney, localDate, localTime } from '../flights/flight-format';
+import { boardLabel } from '../hotels/hotel-format';
 import { orderStatusLabel } from './order-status';
 import { STRIPE_JS, minorUnits, type StripeElements, type StripeJs } from './stripe';
 
@@ -131,8 +132,19 @@ export class BookingPage {
     const state = this.state();
     return state.kind === 'ready' ? state.order.items[0] : null;
   });
-  /** A hotel stay (ADR 0030) or a flight: only the wording differs, never the booking rules. */
-  protected readonly isHotel = computed(() => this.item()?.product === 'Hotel');
+  /**
+   * A hotel stay (ADR 0030) or a flight: only the wording differs, never the booking rules. Until the order is read (or
+   * once signed out), the product this browser last saw for this order, so the way back leads to the right search.
+   */
+  protected readonly isHotel = computed(
+    () => (this.item()?.product ?? this.lastSeenProduct()) === 'Hotel',
+  );
+  private readonly rememberProduct = effect(() => {
+    const product = this.item()?.product;
+    if (product) {
+      this.store(`booking:${this.orderId}:product`, product);
+    }
+  });
   /** Who confirms the booking: "the airline" or "the hotel". */
   protected readonly supplier = computed(() => (this.isHotel() ? 'hotel' : 'airline'));
   /** What is booked: "flight" or "room". */
@@ -176,7 +188,7 @@ export class BookingPage {
   protected readonly stay = computed(() => {
     const stay = this.item()?.hotel;
     return stay
-      ? `${stay.hotel}, ${stay.address} · ${localDate(stay.checkIn)} – ${localDate(stay.checkOut)} (${stay.nights} ${stay.nights === 1 ? 'night' : 'nights'}) · ${stay.room}, ${stay.board}`
+      ? `${stay.hotel}, ${stay.address} · ${localDate(stay.checkIn)} – ${localDate(stay.checkOut)} (${stay.nights} ${stay.nights === 1 ? 'night' : 'nights'}) · ${stay.room}, ${boardLabel(stay.board)}`
       : null;
   });
 
@@ -825,6 +837,15 @@ export class BookingPage {
       return await this.api.invoke(getOrderTravellers, { orderId: this.orderId });
     } catch {
       return null;
+    }
+  }
+
+  // The product shown for this order before (a per-viewer convenience): only which search to go back to.
+  private lastSeenProduct(): string | null {
+    try {
+      return sessionStorage.getItem(`booking:${this.orderId}:product`);
+    } catch {
+      return null; // storage unavailable (or no browser): the flight search, as before
     }
   }
 

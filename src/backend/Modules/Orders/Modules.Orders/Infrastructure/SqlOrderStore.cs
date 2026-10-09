@@ -105,13 +105,19 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             .Take(limit)
             .ToListAsync(cancellationToken);
 
-    // The reference compares as the column's collation does (case-insensitive): staff type it as they read it.
-    public async Task<IReadOnlyList<Order>> SearchAsync(string? bookingReference, Guid? orderId, int limit, CancellationToken cancellationToken) =>
-        await db.Orders.AsNoTracking().Include(o => o.Items)
-            .Where(o => (orderId != null && o.Id == orderId) || (bookingReference != null && o.Items.Any(i => i.SupplierLocator == bookingReference)))
-            .OrderByDescending(o => o.CreatedAt).ThenBy(o => o.Id)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
+    // One plain predicate per kind, so each seeks its own index (the key, or the reference's filtered index) instead of
+    // an OR over parameters. The reference compares as the column's collation does (case-insensitive): staff type it as
+    // they read it.
+    public async Task<IReadOnlyList<Order>> SearchAsync(string? bookingReference, Guid? orderId, int limit, CancellationToken cancellationToken)
+    {
+        var orders = db.Orders.AsNoTracking().Include(o => o.Items);
+        var found = orderId is { } id
+            ? orders.Where(o => o.Id == id)
+            : bookingReference is { } reference
+                ? orders.Where(o => o.Items.Any(i => i.SupplierLocator == reference))
+                : orders.Where(o => false);
+        return await found.OrderByDescending(o => o.CreatedAt).ThenBy(o => o.Id).Take(limit).ToListAsync(cancellationToken);
+    }
 
     public void Audit(BuildingBlocks.Audit.AuditEntry entry) => db.Set<BuildingBlocks.Audit.AuditEntry>().Add(entry);
 
