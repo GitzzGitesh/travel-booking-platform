@@ -1,4 +1,5 @@
 using TravelBooking.BuildingBlocks.Background.Persistence;
+using TravelBooking.Hosts.Observability;
 using TravelBooking.Integrations.Flights.Amadeus;
 using TravelBooking.Integrations.Flights.Duffel;
 using TravelBooking.Integrations.Flights.Mock;
@@ -15,6 +16,7 @@ using TravelBooking.Modules.Orders;
 using TravelBooking.Modules.Payments;
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.AddPlatformTelemetry("travel-booking-worker"); // ADR 0031
 
 // The same modules as the Api (ADR 0007: one codebase, two hosts); only the Worker runs their background jobs.
 builder.Services.AddFlightsModule(builder.Configuration);

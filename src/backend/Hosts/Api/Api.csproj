@@ -32,4 +32,15 @@
     <ProjectReference Include="..\..\Modules\Payments\Modules.Payments\Modules.Payments.csproj" />
   </ItemGroup>
 
+  <!-- Observability (ADR 0031): one source, compiled into both hosts (Hosts/Shared), so BuildingBlocks stays framework-only. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\PlatformTelemetry.cs" Link="Shared\PlatformTelemetry.cs" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" />
+  </ItemGroup>
+
 </Project>

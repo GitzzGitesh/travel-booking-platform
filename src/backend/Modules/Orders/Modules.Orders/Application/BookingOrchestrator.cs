@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -268,6 +269,7 @@ internal sealed partial class BookingOrchestrator(
     {
         for (var attempt = 1; ; attempt++)
         {
+            var before = order.Items.ToDictionary(i => i.Id, i => i.Status);
             foreach (var (itemId, outcome) in outcomes)
             {
                 Apply(order, itemId, outcome, context, reconciling);
@@ -276,6 +278,7 @@ internal sealed partial class BookingOrchestrator(
             Settle(order, context);
             if (await store.TrySaveAsync(cancellationToken))
             {
+                RecordOutcomes(order, before);
                 return order;
             }
 
@@ -342,6 +345,25 @@ internal sealed partial class BookingOrchestrator(
             // Look again later, backing off (30 s, 1, 2, 4 ... up to 30 minutes): a supplier outage costs few lookups.
             var delay = TimeSpan.FromSeconds(Math.Min(30 * Math.Pow(2, item.BookingLookups), TimeSpan.FromMinutes(30).TotalSeconds));
             order.RecordBookingLookup(itemId, context.At, context.At + delay);
+        }
+    }
+
+    // Business metric (ADR 0031): each booking outcome once, when it is saved (a retried save never counts twice, and a
+    // lookup that changes nothing counts nothing). Tags are the product and the item's new state: never ids or personal data.
+    private static readonly Meter _meter = new("TravelBooking.Orders");
+
+    internal static readonly Counter<long> BookingOutcomes = _meter.CreateCounter<long>(
+        "travelbooking.orders.booking_outcomes", unit: "{booking}", description: "Order items that reached a booking outcome (Confirmed, Failed, PendingConfirmation, ManualReview).");
+
+    private static void RecordOutcomes(Order order, IReadOnlyDictionary<Guid, OrderItemStatus> before)
+    {
+        foreach (var item in order.Items)
+        {
+            if (before.TryGetValue(item.Id, out var was) && was != item.Status
+                && item.Status is OrderItemStatus.Confirmed or OrderItemStatus.Failed or OrderItemStatus.PendingConfirmation or OrderItemStatus.ManualReview)
+            {
+                BookingOutcomes.Add(1, new("product", item.Product.ToString()), new("outcome", item.Status.ToString()));
+            }
         }
     }
 
