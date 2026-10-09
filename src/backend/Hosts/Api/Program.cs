@@ -80,7 +80,8 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
     // Likewise for hotels (ADR 0030): the mock until a hotel supplier is chosen (Q6).
     builder.Services.AddMockHotelProvider(builder.Configuration);
 
-    // Likewise the payment provider unless Stripe is enabled (ADR 0006): no card data, no network.
+    // Likewise the payment provider unless Stripe is enabled (ADR 0006): no card data, no network. Its payments are shared
+    // with the Worker in SQL (ADR 0032).
     if (!builder.Configuration.IsStripeEnabled())
     {
         builder.Services.AddMockPaymentProvider(builder.Configuration);

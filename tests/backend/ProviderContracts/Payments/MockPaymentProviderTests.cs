@@ -123,10 +123,20 @@ public sealed class MockPaymentProviderTests : PaymentProviderContract
         Should.Throw<OptionsValidationException>(() => Create(nameof(MockPaymentScenario.Success), environment))
             .Message.ShouldContain("only runs in Development or Staging");
 
+    // ADR 0032: Staging runs the Api and the Worker apart, so it always shares the mock's payments.
+    [Fact]
+    public void The_in_process_state_is_refused_in_staging() =>
+        Should.Throw<OptionsValidationException>(() => Create(nameof(MockPaymentScenario.Success), "Staging"))
+            .Message.ShouldContain("InProcess is for Development only");
+
     private static IPaymentProvider Create(string scenario, string environment = "Development")
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection([new($"{MockPaymentProviderOptions.SectionName}:Scenario", scenario)])
+            .AddInMemoryCollection(
+            [
+                new($"{MockPaymentProviderOptions.SectionName}:Scenario", scenario),
+                new($"{MockPaymentProviderOptions.SectionName}:State", nameof(MockPaymentState.InProcess)), // the shared ledger: SharedMockPaymentStateTests
+            ])
             .Build();
         var services = new ServiceCollection()
             .AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = environment })

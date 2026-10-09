@@ -39,8 +39,8 @@ public static class WorkerComposition
 
         if (builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
         {
-            // The mocks keep their state in memory, per process: this Worker cannot see payments or bookings the Api made with
-            // them. The payment mock is composed unless Stripe is enabled (ADR 0006).
+            // The flight and hotel mocks keep their state in memory, per process: this Worker cannot see bookings the Api made
+            // with them. The payment mock (unless Stripe is enabled, ADR 0006) shares its payments with the Api in SQL (ADR 0032).
             builder.Services.AddMockFlightProvider(builder.Configuration);
             builder.Services.AddMockHotelProvider(builder.Configuration);
             builder.Services.AddRecordingEmailSender(); // until the email provider exists (ADR 0024)

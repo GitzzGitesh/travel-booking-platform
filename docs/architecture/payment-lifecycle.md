@@ -31,7 +31,7 @@
   - a timed-out void → `VoidUnknown`, looked up, then voided again with the same key (`{attempt}:void`) only while still held;
   - a refused void, or an unexpected lookup → `ManualReview`.
   - Voiding and VoidUnknown count as live, so no new attempt starts while a hold may exist.
-  - The mock keeps payments in memory per process, so a separately started Worker cannot see the Api's mock payments.
+  - The mock keeps its payments in its own SQL schema (`paymentsmock`, ADR 0032), so the Worker voids, captures and refunds what the Api's mock authorized.
 - **Capture after a confirmed booking (ADR 0021):** Orders publishes `OrderPaymentCaptureRequested` (the confirmed items' total) in the same save as the confirmation. Payments records it once (inbox, `CaptureRequestedAt`); only an Authorized attempt with no release requested, for at most the held amount, can take it, and anything else is recorded and alerted (`PaymentCaptureNotPossible`). The reconciliation job then captures:
   - `Capturing` (saved first) → `Captured`, with one key, `{attempt}:capture`;
   - a timed-out capture → `CaptureUnknown`, looked up, and repeated with the same key only while the payment is still only held;

@@ -16,6 +16,13 @@
     <ProjectReference Include="..\..\..\src\backend\Hosts\Api\Api.csproj" />
     <!-- The Worker-only Notifications module (ADR 0024), run by the tests like the other background jobs. -->
     <ProjectReference Include="..\..\..\src\backend\Modules\Notifications\Modules.Notifications\Modules.Notifications.csproj" />
+    <!-- The Worker host itself, beside the Api, for the cross-process payment tests (ADR 0032). Aliased: both hosts have a top-level Program. -->
+    <ProjectReference Include="..\..\..\src\backend\Hosts\Worker\Worker.csproj" Aliases="worker" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The payment provider contract, run here against the mock's shared SQL state on this project's test database (ADR 0032). -->
+    <Compile Include="..\ProviderContracts\Payments\PaymentProviderContract.cs" Link="Contracts\PaymentProviderContract.cs" />
   </ItemGroup>
 
 </Project>

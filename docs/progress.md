@@ -396,6 +396,21 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - **Hotel board wording:** the booking page says what the board includes ("Breakfast included") exactly as hotel search does, from one shared `boardLabel`.
 - **The way back from a hotel booking:** once signed out, the booking page still leads back to the hotel search. The product this browser last saw for the order is kept in session storage, a per-viewer convenience that holds no personal data.
 - **Still open:** completing captures and refunds between the local Api and Worker. The mock payment provider keeps its state inside one process, and sharing it needs a storage decision (see the open architecture review). |
+| 31 | **Shared mock payment state (ADR 0032)** | **Done (in review).**
+- **Decision:** the product owner approved the architecture review. ADR 0032 is Accepted.
+- **Storage:** the mock payment provider keeps its payments in its own schema, `paymentsmock` (Payments database), through its own `MockPaymentsDbContext` and migration `AddMockPaymentState` (new tables only). Each call is one transaction under an application lock on its payment reference.
+- **Effect:** the Worker now captures, voids and refunds what the Api's checkout authorized. Captured-payment cancellations and refunds work locally and in Staging with no external credentials.
+- **Unchanged:** the payment port, the Payments module and the provider's scenarios. The contract suite runs on the in-process ledger (`Integrations:Payments:Mock:State=InProcess`).
+- **Production:** the mock and its state are never composed there. Host tests prove it for both the Api and the Worker. The design-time factory refuses Production, and the runbook keeps the migration out of the production pipeline.
+- **Architecture rule:** one tested exception lets the mock's `Persistence` namespace use EF Core. A new rule keeps every other assembly out of it.
+- **Tests:**
+  - cross-process ledger (`SharedMockPaymentStateTests`): authorize, capture, void and refund across two composed providers; replays and key conflicts; F-23 and F-43 across processes; parallel captures, refunds and authorizations act once; lost and never-made commits are Unknown; an unreachable store is Unavailable;
+  - the payment contract on the SQL ledger (`SharedMockPaymentProviderContractTests`);
+  - the real Worker host (`CrossProcessPaymentTests`) captures, voids and refunds (goodwill and a customer cancellation) what the Api's checkout authorized;
+  - Production composes neither the mock nor its state, for the Api and the Worker; `InProcess` is refused in Staging.
+- **Run locally:** build with 0 warnings; ProviderContracts 185; ArchitectureTests 27; the payment-state classes 41/41; format clean.
+- **Not run locally:** the full Api integration suite, because a run was stopped for low machine memory. CI runs it.
+- **Follow-up:** a "payment busy" (lock timeout) test needs a configurable timeout, since today it is a fixed 15 s. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.
@@ -420,7 +435,7 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - An Authorized hold without a release request is never looked up, so one that lapses at the provider stays live and blocks new attempts. Look it up once it passes the provider's authorization lifetime, which comes with the payment provider's ADR (0006).
 - A lookup the provider keeps refusing during a void is retried every run. Count failed lookups, and move the attempt to ManualReview after a limit.
 - Outbox event types are stored by CLR name: give events a stable declared name before any is renamed.
-- In Staging, the mock payment provider's per-process state means Worker lookups cannot see payments made through the Api. Share it, or disable the Payments jobs there, before Staging is used for payment testing.
+- **Done (ADR 0032, row 31):** the mock payment provider's state is shared in SQL, so Worker lookups, captures and refunds see the payments made through the Api, locally and in Staging.
 
 **Follow-ups from the chunk 3 reviews:** a later Orders migration can drop the `CustomerId` default and add `CHECK (CustomerId <> '')` once no dev rows lack an owner. The ARCHITECTURE REVIEW on synchronous cross-module commands is **resolved by ADR 0015 (Accepted 2026-09-26)**. Checkout's `IFlightSelections.RevalidateAsync` and `IOrderPayments.AuthorizeAsync`/`ResumeAsync` are allowed as idempotent, supplier-neutral commands with explicit unknown states. Durable side effects and background work stay on the outbox and Worker, and any other synchronous command needs its own ADR.
 

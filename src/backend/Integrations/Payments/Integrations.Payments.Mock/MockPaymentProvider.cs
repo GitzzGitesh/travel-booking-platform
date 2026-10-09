@@ -7,18 +7,13 @@ namespace TravelBooking.Integrations.Payments.Mock;
 
 /// <summary>
 /// A deterministic payment provider: no network, no randomness, no card data. The outcome is chosen by the payment
-/// method token (<see cref="MockPaymentMethods"/>), so one running Api can show every scenario. Payments are held in
-/// memory for the life of the process (Development and Staging only). Idempotent by our keys, as a real provider is.
+/// method token (<see cref="MockPaymentMethods"/>), so one running Api can show every scenario. Payments are kept in
+/// the <see cref="IMockPaymentLedger"/>: in SQL by default, so the Api and the Worker see the same payments (ADR 0032),
+/// Development and Staging only. Idempotent by our keys, as a real provider is.
 /// </summary>
-internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> options) : IPaymentProvider
+internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> options, IMockPaymentLedger ledger) : IPaymentProvider
 {
     public const string ProviderId = "mockpay";
-
-    private readonly Lock _gate = new();
-    private readonly Dictionary<string, MockPayment> _payments = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _operations = new(StringComparer.Ordinal); // key -> what it did
-    private readonly Dictionary<string, PaymentRefund> _refunds = new(StringComparer.Ordinal); // key -> refund
-    private readonly HashSet<string> _failedOnce = new(StringComparer.Ordinal);
 
     public string Id => ProviderId;
 
@@ -31,29 +26,29 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
     ]);
 
     public Task<Result<PaymentSnapshot, ProviderError>> AuthorizeAsync(AuthorizationDetails details, CancellationToken cancellationToken) =>
-        Run(cancellationToken, () => Authorize(details));
+        Run(details.Reference, null, entry => Authorize(details, entry), cancellationToken);
 
     public Task<Result<PaymentSnapshot, ProviderError>> CaptureAsync(CaptureDetails details, CancellationToken cancellationToken) =>
-        Run(cancellationToken, () => Capture(details));
+        Run(details.Reference, details.Key, entry => Capture(details, entry), cancellationToken);
 
     public Task<Result<PaymentSnapshot, ProviderError>> VoidAsync(VoidDetails details, CancellationToken cancellationToken) =>
-        Run(cancellationToken, () => Void(details));
+        Run(details.Reference, details.Key, entry => Void(details, entry), cancellationToken);
 
     public Task<Result<PaymentRefund, ProviderError>> RefundAsync(RefundDetails details, CancellationToken cancellationToken) =>
-        Run(cancellationToken, () => Refund(details));
+        Run(details.Reference, details.Key, entry => Refund(details, entry), cancellationToken);
 
     public Task<Result<PaymentLookup, ProviderError>> RetrieveAsync(PaymentReference reference, CancellationToken cancellationToken) =>
-        Run(cancellationToken, () => Result<PaymentLookup, ProviderError>.Success(
-            new PaymentLookup(_payments.TryGetValue(reference.Value, out var payment) ? AfterChallenge(payment).Snapshot() : null)));
+        Run(reference, null, entry => Result<PaymentLookup, ProviderError>.Success(
+            new PaymentLookup(entry.Payment is { } payment ? AfterChallenge(payment).Snapshot() : null)), cancellationToken);
 
     public Task<Result<RefundLookup, ProviderError>> RetrieveRefundAsync(PaymentReference reference, OperationKey key, CancellationToken cancellationToken) =>
-        Run(cancellationToken, () => Result<RefundLookup, ProviderError>.Success(
-            new RefundLookup(_refunds.TryGetValue(key.Value, out var refund) && refund.Payment == reference ? refund : null)));
+        Run(reference, key, entry => Result<RefundLookup, ProviderError>.Success(
+            new RefundLookup(entry.Refund is { } refund && refund.Payment == reference ? refund : null)), cancellationToken);
 
-    private Result<PaymentSnapshot, ProviderError> Authorize(AuthorizationDetails details)
+    private static Result<PaymentSnapshot, ProviderError> Authorize(AuthorizationDetails details, MockLedgerEntry entry)
     {
-        var fingerprint = $"{details.Amount}|{details.PaymentMethod.Value}";
-        if (_payments.TryGetValue(details.Reference.Value, out var existing))
+        var fingerprint = $"{Canonical(details.Amount)}|{details.PaymentMethod.Value}";
+        if (entry.Payment is { } existing)
         {
             return existing.Fingerprint == fingerprint
                 ? Success(existing)
@@ -72,7 +67,7 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
         }
 
         var payment = new MockPayment(details.Reference, new ProviderPaymentRef(ProviderId, $"mockpay_{Hash(details.Reference.Value)}"), details.Amount, method, fingerprint);
-        _payments.Add(details.Reference.Value, payment);
+        entry.Payment = payment;
         switch (method)
         {
             case MockPaymentMethods.Declined or MockPaymentMethods.InsufficientFunds:
@@ -92,15 +87,15 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
         }
     }
 
-    private Result<PaymentSnapshot, ProviderError> Capture(CaptureDetails details)
+    private static Result<PaymentSnapshot, ProviderError> Capture(CaptureDetails details, MockLedgerEntry entry)
     {
-        var operation = $"capture|{details.Reference}|{details.Amount}";
-        if (Replay(details.Key, operation) is { } replayed)
+        var operation = $"capture|{details.Reference}|{Canonical(details.Amount)}";
+        if (Replay(entry, operation) is { } replayed)
         {
-            return replayed ? Success(_payments[details.Reference.Value]) : Conflict();
+            return replayed && entry.Payment is { } done ? Success(done) : Conflict();
         }
 
-        if (Find(details.Reference, details.Payment) is not { } payment)
+        if (Find(entry, details.Payment) is not { } payment)
         {
             return Failure(ProviderErrorKind.InvalidRequest, "Unknown payment.");
         }
@@ -118,23 +113,27 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
 
         payment.State = PaymentState.Captured;
         payment.Captured = details.Amount;
-        _operations[details.Key.Value] = operation;
+        entry.Operation = operation;
 
         // The capture happened, but the answer was lost: a repeat with the same key returns it (F-23).
-        return payment.Method is MockPaymentMethods.CaptureTimeout && _failedOnce.Add(details.Key.Value)
-            ? Failure(ProviderErrorKind.Unknown, "Mock capture timed out after capturing (scenario).")
-            : Success(payment);
-    }
-
-    private Result<PaymentSnapshot, ProviderError> Void(VoidDetails details)
-    {
-        var operation = $"void|{details.Reference}";
-        if (Replay(details.Key, operation) is { } replayed)
+        if (payment.Method is MockPaymentMethods.CaptureTimeout && !entry.FailedOnce)
         {
-            return replayed ? Success(_payments[details.Reference.Value]) : Conflict();
+            entry.FailedOnce = true;
+            return Failure(ProviderErrorKind.Unknown, "Mock capture timed out after capturing (scenario).");
         }
 
-        if (Find(details.Reference, details.Payment) is not { } payment)
+        return Success(payment);
+    }
+
+    private static Result<PaymentSnapshot, ProviderError> Void(VoidDetails details, MockLedgerEntry entry)
+    {
+        var operation = $"void|{details.Reference}";
+        if (Replay(entry, operation) is { } replayed)
+        {
+            return replayed && entry.Payment is { } done ? Success(done) : Conflict();
+        }
+
+        if (Find(entry, details.Payment) is not { } payment)
         {
             return Failure(ProviderErrorKind.InvalidRequest, "Unknown payment.");
         }
@@ -151,28 +150,29 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
                 return Failure(ProviderErrorKind.InvalidRequest, $"A {payment.State} payment cannot be voided.");
         }
 
-        _operations[details.Key.Value] = operation;
+        entry.Operation = operation;
         return Success(payment);
     }
 
-    private Result<PaymentRefund, ProviderError> Refund(RefundDetails details)
+    private static Result<PaymentRefund, ProviderError> Refund(RefundDetails details, MockLedgerEntry entry)
     {
-        var operation = $"refund|{details.Reference}|{details.Amount}";
-        if (Replay(details.Key, operation) is { } replayed)
+        var operation = $"refund|{details.Reference}|{Canonical(details.Amount)}";
+        if (Replay(entry, operation) is { } replayed)
         {
-            return replayed
-                ? Result<PaymentRefund, ProviderError>.Success(_refunds[details.Key.Value])
+            return replayed && entry.Refund is { } done
+                ? Result<PaymentRefund, ProviderError>.Success(done)
                 : Result<PaymentRefund, ProviderError>.Failure(new ProviderError(ProviderErrorKind.IdempotencyConflict, "The operation key was already used for another operation."));
         }
 
-        if (Find(details.Reference, details.Payment) is not { } payment)
+        if (Find(entry, details.Payment) is not { } payment)
         {
             return RefundFailure(ProviderErrorKind.InvalidRequest, "Unknown payment.");
         }
 
         // Refused before processing, once: the same key succeeds when retried (F-43).
-        if (payment.Method is MockPaymentMethods.RefundUnavailableOnce && _failedOnce.Add(details.Key.Value))
+        if (payment.Method is MockPaymentMethods.RefundUnavailableOnce && !entry.FailedOnce)
         {
+            entry.FailedOnce = true;
             return RefundFailure(ProviderErrorKind.Unavailable, "Mock refund unavailable; nothing was refunded (scenario).");
         }
 
@@ -187,8 +187,8 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
         var status = payment.Method is MockPaymentMethods.RefundPending ? RefundStatus.Pending : RefundStatus.Succeeded;
         var refund = new PaymentRefund(details.Reference, details.Key, new ProviderRefundRef(ProviderId, $"mockre_{Hash(details.Key.Value)}"), details.Amount, status);
         payment.Refunded += details.Amount;
-        _operations[details.Key.Value] = operation;
-        _refunds[details.Key.Value] = refund;
+        entry.Operation = operation;
+        entry.Refund = refund;
         return Result<PaymentRefund, ProviderError>.Success(refund);
     }
 
@@ -206,27 +206,39 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
     }
 
     // true: the key already did this operation (return its result); false: it did another one (a conflict).
-    private bool? Replay(OperationKey key, string operation) =>
-        _operations.TryGetValue(key.Value, out var previous) ? previous == operation : null;
+    private static bool? Replay(MockLedgerEntry entry, string operation) =>
+        entry.Operation is { } previous ? previous == operation : null;
 
-    private MockPayment? Find(PaymentReference reference, ProviderPaymentRef providerRef) =>
-        _payments.TryGetValue(reference.Value, out var payment) && payment.ProviderRef == providerRef ? payment : null;
+    private static MockPayment? Find(MockLedgerEntry entry, ProviderPaymentRef providerRef) =>
+        entry.Payment is { } payment && payment.ProviderRef == providerRef ? payment : null;
 
-    // Every call runs under one lock: a real provider serialises requests with the same key the same way.
-    private Task<Result<T, ProviderError>> Run<T>(CancellationToken cancellationToken, Func<Result<T, ProviderError>> operation)
+    // Every call runs serialised with the other calls for its payment (the ledger's guarantee), as a real provider
+    // serialises requests with the same key. A ledger that cannot be read or kept is the provider being unavailable,
+    // or, once its write may have happened, an unknown outcome to reconcile (booking-and-payments rules).
+    private async Task<Result<T, ProviderError>> Run<T>(
+        PaymentReference reference, OperationKey? key, Func<MockLedgerEntry, Result<T, ProviderError>> operation, CancellationToken cancellationToken)
         where T : notnull
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (options.Value.Scenario is MockPaymentScenario.Unavailable)
         {
-            return Task.FromResult(Result<T, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unavailable, "Mock payment provider unavailable (scenario).")));
+            return Result<T, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unavailable, "Mock payment provider unavailable (scenario)."));
         }
 
-        lock (_gate)
+        try
         {
-            return Task.FromResult(operation());
+            return await ledger.RunAsync(reference, key, operation, cancellationToken);
+        }
+        catch (MockLedgerException failure)
+        {
+            return Result<T, ProviderError>.Failure(new ProviderError(failure.Kind, failure.Message));
         }
     }
+
+    // An amount as it is kept and compared across processes (ADR 0032): culture-free and scale-free, so 120, 120.00 and
+    // 120.0000 (as read back from a decimal(19,4) column) are the same amount in any culture.
+    private static string Canonical(Money amount) =>
+        $"{(amount.Amount / 1.000000000000000000000000000000000m).ToString(System.Globalization.CultureInfo.InvariantCulture)} {amount.Currency.Value}";
 
     // string.GetHashCode is randomised per process; this is stable across runs and machines.
     private static string Hash(string value) =>
@@ -242,29 +254,4 @@ internal sealed class MockPaymentProvider(IOptions<MockPaymentProviderOptions> o
 
     private static Result<PaymentRefund, ProviderError> RefundFailure(ProviderErrorKind kind, string message) =>
         Result<PaymentRefund, ProviderError>.Failure(new ProviderError(kind, message));
-
-    private sealed class MockPayment(PaymentReference reference, ProviderPaymentRef providerRef, Money amount, string method, string fingerprint)
-    {
-        public PaymentReference Reference { get; } = reference;
-
-        public ProviderPaymentRef ProviderRef { get; } = providerRef;
-
-        public Money Amount { get; } = amount;
-
-        public string Method { get; } = method;
-
-        public string Fingerprint { get; } = fingerprint;
-
-        public PaymentState State { get; set; }
-
-        public Money Captured { get; set; } = amount with { Amount = 0 };
-
-        public Money Refunded { get; set; } = amount with { Amount = 0 };
-
-        public PaymentDeclineReason? DeclineReason { get; set; }
-
-        public CustomerActionToken? ActionToken { get; set; }
-
-        public PaymentSnapshot Snapshot() => new(Reference, ProviderRef, State, Amount, Captured, Refunded, DeclineReason, ActionToken);
-    }
 }

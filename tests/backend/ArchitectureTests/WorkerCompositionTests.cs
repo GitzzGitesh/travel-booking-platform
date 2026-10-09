@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using TravelBooking.Integrations.Payments.Mock.Persistence;
+using TravelBooking.Modules.Payments.Ports;
 using TravelBooking.Worker;
 
 namespace TravelBooking.ArchitectureTests;
@@ -18,7 +21,27 @@ public sealed class WorkerCompositionTests
     [Fact]
     public void The_worker_host_builds_with_every_registration_validated_and_without_web_security()
     {
-        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development, Args = [] });
+        using var host = Worker(Environments.Development); // Development: ValidateOnBuild and ValidateScopes
+
+        host.Services.GetService<IAuthenticationSchemeProvider>().ShouldBeNull();
+        host.Services.GetService<IAuthorizationPolicyProvider>().ShouldBeNull();
+    }
+
+    // ADR 0032: in Production the Worker composes neither the mock payment provider nor its state, and never falls back to
+    // it: with no production-ready provider configured, it has no payment provider at all (payment work fails at first use).
+    [Fact]
+    public void The_production_worker_composes_neither_the_mock_payment_provider_nor_its_state()
+    {
+        using var host = Worker(Environments.Production);
+
+        host.Services.GetServices<IPaymentProvider>().ShouldBeEmpty();
+        host.Services.GetService<DbContextOptions<MockPaymentsDbContext>>().ShouldBeNull();
+        host.Services.GetService<MockPaymentsDbContext>().ShouldBeNull();
+    }
+
+    private static IHost Worker(string environment)
+    {
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = environment, Args = [] });
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             // Never opened: building the host only validates the registrations (no database is needed).
@@ -30,10 +53,6 @@ public sealed class WorkerCompositionTests
             ["ConnectionStrings:Notifications"] = "Server=unused;Database=unused",
         });
         builder.AddWorkerServices();
-
-        using var host = builder.Build(); // Development: ValidateOnBuild and ValidateScopes
-
-        host.Services.GetService<IAuthenticationSchemeProvider>().ShouldBeNull();
-        host.Services.GetService<IAuthorizationPolicyProvider>().ShouldBeNull();
+        return builder.Build();
     }
 }
