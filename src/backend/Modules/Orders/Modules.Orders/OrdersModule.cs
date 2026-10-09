@@ -25,9 +25,9 @@ public static class OrdersModule
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<OrderItemSelections>();
-        services.AddScoped<CreateFlightOrderHandler>();
+        services.AddScoped<CreateOrderHandler>();
         services.AddScoped<AuthorizeCheckoutHandler>();
-        services.AddScoped<FlightBookingOrchestrator>();
+        services.AddScoped<BookingOrchestrator>();
         services.AddScoped<ResolveBookingReviewHandler>();
         services.AddOptions<BookingReconciliationOptions>()
             .Bind(configuration.GetSection(BookingReconciliationOptions.SectionName))

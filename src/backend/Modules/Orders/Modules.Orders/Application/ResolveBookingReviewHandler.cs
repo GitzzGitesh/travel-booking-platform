@@ -30,14 +30,14 @@ internal enum BookingReviewFailure
 
 /// <param name="Resolved">The check settled the item (Confirmed or Failed); false when it stays in review.</param>
 /// <param name="AlreadySettled">The item was no longer in review (a repeat, or settled meanwhile): nothing was done; <paramref name="Status"/> is where it stands.</param>
-internal sealed record BookingReviewResult(Guid OrderId, Guid ItemId, FlightOrderItemStatus Status, bool Resolved, bool AlreadySettled = false);
+internal sealed record BookingReviewResult(Guid OrderId, Guid ItemId, OrderItemStatus Status, bool Resolved, bool AlreadySettled = false);
 
 /// <summary>
 /// The way out of a booking's manual review (booking-lifecycle.md): never what someone says the supplier holds, only what
-/// a lookup by our reference shows (<see cref="FlightBookingOrchestrator.CheckReviewAsync"/>). The item's new state,
+/// a lookup by our reference shows (<see cref="BookingOrchestrator.CheckReviewAsync"/>). The item's new state,
 /// the payment's settlement (outbox), the timeline entry and the audit entry are saved together. Never books.
 /// </summary>
-internal sealed class ResolveBookingReviewHandler(IOrderStore store, FlightBookingOrchestrator booking, TimeProvider timeProvider)
+internal sealed class ResolveBookingReviewHandler(IOrderStore store, BookingOrchestrator booking, TimeProvider timeProvider)
 {
     public const string Action = "bookings.review.check";
 
@@ -55,25 +55,25 @@ internal sealed class ResolveBookingReviewHandler(IOrderStore store, FlightBooki
         }
 
         // State-based idempotency (ADR 0022): a repeat after the item left review changes nothing and says where it stands.
-        if (item.Status is not FlightOrderItemStatus.ManualReview)
+        if (item.Status is not OrderItemStatus.ManualReview)
         {
             return Result<BookingReviewResult, BookingReviewFailure>.Success(
-                new BookingReviewResult(order.Id, item.Id, item.Status, item.Status is FlightOrderItemStatus.Confirmed or FlightOrderItemStatus.Failed, AlreadySettled: true));
+                new BookingReviewResult(order.Id, item.Id, item.Status, item.Status is OrderItemStatus.Confirmed or OrderItemStatus.Failed, AlreadySettled: true));
         }
 
         var context = new TransitionContext(timeProvider.GetUtcNow(), $"staff:{command.StaffId}", command.Source.CorrelationId);
         var after = await booking.CheckReviewAsync(order, item.Id, command.Reason, context, cancellationToken);
         store.Audit(AuditEntry.For(command.Source, context.At, context.Actor, Action, $"order-item:{item.Id}",
-            $"{FlightOrderItemStatus.ManualReview}", $"{after}; {command.Reason}"));
+            $"{OrderItemStatus.ManualReview}", $"{after}; {command.Reason}"));
 
         if (await store.TrySaveAsync(cancellationToken))
         {
-            return Result<BookingReviewResult, BookingReviewFailure>.Success(new BookingReviewResult(order.Id, item.Id, after, after is not FlightOrderItemStatus.ManualReview));
+            return Result<BookingReviewResult, BookingReviewFailure>.Success(new BookingReviewResult(order.Id, item.Id, after, after is not OrderItemStatus.ManualReview));
         }
 
         // Nothing was saved (the order changed at the same time): the attempt itself is still audited, on its own.
         store.Audit(AuditEntry.For(command.Source, context.At, context.Actor, Action, $"order-item:{item.Id}",
-            $"{FlightOrderItemStatus.ManualReview}", $"not saved: the order changed at the same time; {command.Reason}"));
+            $"{OrderItemStatus.ManualReview}", $"not saved: the order changed at the same time; {command.Reason}"));
         await store.TrySaveAsync(cancellationToken);
         return Failure(BookingReviewFailure.Conflict);
     }
@@ -99,10 +99,10 @@ internal sealed class ResolveBookingReviewHandler(IOrderStore store, FlightBooki
             return Failure(BookingReviewFailure.NotFound);
         }
 
-        if (item.Status is not FlightOrderItemStatus.ManualReview)
+        if (item.Status is not OrderItemStatus.ManualReview)
         {
             return Result<BookingReviewResult, BookingReviewFailure>.Success(
-                new BookingReviewResult(order.Id, item.Id, item.Status, item.Status is FlightOrderItemStatus.Confirmed or FlightOrderItemStatus.Failed, AlreadySettled: true));
+                new BookingReviewResult(order.Id, item.Id, item.Status, item.Status is OrderItemStatus.Confirmed or OrderItemStatus.Failed, AlreadySettled: true));
         }
 
         var context = new TransitionContext(timeProvider.GetUtcNow(), $"staff:{command.StaffId}", command.Source.CorrelationId);
@@ -119,7 +119,7 @@ internal sealed class ResolveBookingReviewHandler(IOrderStore store, FlightBooki
 
         booking.SettleAfterReviewOutcome(order, context);
         store.Audit(AuditEntry.For(command.Source, context.At, context.Actor, OutcomeAction, $"order-item:{item.Id}",
-            $"{FlightOrderItemStatus.ManualReview}",
+            $"{OrderItemStatus.ManualReview}",
             $"{item.Status} ({command.Outcome}; seen booking {seen}{(command.SupplierReference is { } desk ? $"; supplier reference {desk}" : "; same travellers and flights, price not above agreed: confirmed")}); {command.Reason}"));
         if (await store.TrySaveAsync(cancellationToken))
         {
@@ -127,7 +127,7 @@ internal sealed class ResolveBookingReviewHandler(IOrderStore store, FlightBooki
         }
 
         store.Audit(AuditEntry.For(command.Source, context.At, context.Actor, OutcomeAction, $"order-item:{item.Id}",
-            $"{FlightOrderItemStatus.ManualReview}", $"not saved: the order changed at the same time; {command.Reason}"));
+            $"{OrderItemStatus.ManualReview}", $"not saved: the order changed at the same time; {command.Reason}"));
         await store.TrySaveAsync(cancellationToken);
         return Failure(BookingReviewFailure.Conflict);
     }

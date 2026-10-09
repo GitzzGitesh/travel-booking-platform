@@ -203,7 +203,7 @@ public sealed class AdminOrderEndpointTests(SqlApiFactory api) : IClassFixture<S
 
         using var early = await Check(orderId, itemId, "TICKET-200");
         (await Read(early)).GetProperty("resolved").GetBoolean().ShouldBeFalse();
-        (await LoadOrder(orderId)).Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+        (await LoadOrder(orderId)).Items[0].Status.ShouldBe(OrderItemStatus.ManualReview);
 
         api.Clock.Advance(TimeSpan.FromMinutes(16));
         using var later = await Check(orderId, itemId, "TICKET-200");
@@ -272,7 +272,7 @@ public sealed class AdminOrderEndpointTests(SqlApiFactory api) : IClassFixture<S
         (await Problem(cancelled)).ShouldBe((HttpStatusCode.Conflict, "no-supplier-booking-seen")); // only a lookup releases this hold
         (await CountOutbox(orderId, "OrderPaymentReleaseRequested")).ShouldBe(0);
         withoutPermission.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
-        (await LoadOrder(orderId)).Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+        (await LoadOrder(orderId)).Items[0].Status.ShouldBe(OrderItemStatus.ManualReview);
     }
 
     // Concurrency (testing rules): outcomes recorded at the same moment settle the payment exactly once.

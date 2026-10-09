@@ -47,7 +47,7 @@ internal sealed class ExpireUnpaidOrderHandler(IOrderStore store, IOrderPayments
     {
         var context = new TransitionContext(timeProvider.GetUtcNow(), Actor);
         if (await store.FindAsync(orderId, cancellationToken) is not { } order
-            || !order.Items.Any(i => i.Status is FlightOrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= context.At))
+            || !order.Items.Any(i => i.Status is OrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= context.At))
         {
             return ExpiryOutcome.NothingToDo;
         }

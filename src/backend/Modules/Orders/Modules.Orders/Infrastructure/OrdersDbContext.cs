@@ -71,7 +71,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         order.ToTable("Orders");
         order.HasKey(o => o.Id);
         order.Property(o => o.Id).ValueGeneratedNever();
-        order.Property(o => o.IdempotencyKey).HasMaxLength(Application.CreateFlightOrderHandler.MaxIdempotencyKeyLength).IsUnicode(false);
+        order.Property(o => o.IdempotencyKey).HasMaxLength(Application.CreateOrderHandler.MaxIdempotencyKeyLength).IsUnicode(false);
         order.Property(o => o.CustomerId).HasMaxLength(Order.MaxCustomerIdLength);
 
         // Idempotent creation per customer, enforced by the database; also the customer's order-history lookup path.
@@ -87,13 +87,13 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         order.HasMany(o => o.Timeline).WithOne().HasForeignKey(e => e.OrderId).OnDelete(DeleteBehavior.Restrict);
         order.Navigation(o => o.Timeline).HasField("_timeline").UsePropertyAccessMode(PropertyAccessMode.Field);
 
-        var item = modelBuilder.Entity<FlightOrderItem>();
+        var item = modelBuilder.Entity<OrderItem>();
         // The table keeps its name: items of every product live in it (ADR 0030 §6), told apart by Product.
         item.ToTable("FlightOrderItems", table =>
         {
             table.HasCheckConstraint(
                 "CK_FlightOrderItems_Status",
-                $"[Status] IN ({string.Join(", ", Enum.GetNames<FlightOrderItemStatus>().Select(name => $"'{name}'"))})");
+                $"[Status] IN ({string.Join(", ", Enum.GetNames<OrderItemStatus>().Select(name => $"'{name}'"))})");
             table.HasCheckConstraint(
                 "CK_FlightOrderItems_Product",
                 $"[Product] IN ({string.Join(", ", Enum.GetNames<OrderProduct>().Select(name => $"'{name}'"))})");

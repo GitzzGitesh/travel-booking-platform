@@ -68,7 +68,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
         replay.Value.Created.ShouldBeFalse();
         replay.Value.Order.Id.ShouldBe(first.Value.Order.Id);
-        reused.Error.ShouldBeOfType<CreateFlightOrderFailure.IdempotencyKeyReused>();
+        reused.Error.ShouldBeOfType<CreateOrderFailure.IdempotencyKeyReused>();
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => Create(NewKey(), selection.Id)));
 
         results.Count(r => r.IsSuccess).ShouldBe(1);
-        results.Where(r => !r.IsSuccess).ShouldAllBe(r => r.Error is CreateFlightOrderFailure.SelectionAlreadyOrdered);
+        results.Where(r => !r.IsSuccess).ShouldAllBe(r => r.Error is CreateOrderFailure.SelectionAlreadyOrdered);
         (await CountOrdersFor(selection.Id)).ShouldBe(1);
     }
 
@@ -108,7 +108,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         var sameKey = await Create(key, (await ConfirmedSelection("JFK", owner: "test-customer-2")).Id, customer: "test-customer-2");
 
         // Another customer's selection is simply not found: nothing tells whether it exists or is ordered.
-        theirs.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(ItemUnavailable.NotFound));
+        theirs.Error.ShouldBe(new CreateOrderFailure.SelectionUnavailable(ItemUnavailable.NotFound));
         sameKey.Value.Created.ShouldBeTrue(); // keys are per customer
         using var scope = api.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IOrderStore>();
@@ -124,7 +124,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
         var result = await Create(NewKey(), selected);
 
-        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(ItemUnavailable.NeedsPriceCheck));
+        result.Error.ShouldBe(new CreateOrderFailure.SelectionUnavailable(ItemUnavailable.NeedsPriceCheck));
     }
 
     [Theory]
@@ -139,7 +139,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
         var result = await Create(NewKey(), selected);
 
-        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(Enum.Parse<ItemUnavailable>(reason.ToString())));
+        result.Error.ShouldBe(new CreateOrderFailure.SelectionUnavailable(Enum.Parse<ItemUnavailable>(reason.ToString())));
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
         (await firstStore.TrySaveAsync(TestContext.Current.CancellationToken)).ShouldBeTrue();
         (await secondStore.TrySaveAsync(TestContext.Current.CancellationToken)).ShouldBeFalse();
-        (await Load(created.Id)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Booking);
+        (await Load(created.Id)).Items[0].Status.ShouldBe(OrderItemStatus.Booking);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
         result.Status.ShouldBe(CheckoutStatus.Booked);
         var stored = await Load(order.Id);
         stored.PaymentAuthorizationId.ShouldBe(result.PaymentId.ToString());
-        (stored.Items[0].Status, stored.Items[0].Ticketing).ShouldBe((FlightOrderItemStatus.Confirmed, TicketingStatus.Issued));
+        (stored.Items[0].Status, stored.Items[0].Ticketing).ShouldBe((OrderItemStatus.Confirmed, TicketingStatus.Issued));
         stored.Items[0].SupplierLocator.ShouldNotBeNullOrEmpty();
         stored.PaymentSettlementRequestedAt.ShouldNotBeNull();
         stored.Timeline[^1].ProviderReference.ShouldBe(result.PaymentId.ToString());
@@ -263,11 +263,11 @@ public sealed class FlightOrderCreationTests(SqlApiFactory api) : IClassFixture<
 
     private const string _customer = "test-customer-1";
 
-    private async Task<TravelBooking.BuildingBlocks.Result<CreatedOrder, CreateFlightOrderFailure>> Create(string key, Guid selectedOfferId, string? customer = null)
+    private async Task<TravelBooking.BuildingBlocks.Result<CreatedOrder, CreateOrderFailure>> Create(string key, Guid selectedOfferId, string? customer = null)
     {
         using var scope = api.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<CreateFlightOrderHandler>()
-            .HandleAsync(new CreateFlightOrder(customer ?? _customer, key, selectedOfferId, "test-trace"), TestContext.Current.CancellationToken);
+        return await scope.ServiceProvider.GetRequiredService<CreateOrderHandler>()
+            .HandleAsync(new CreateOrder(customer ?? _customer, key, selectedOfferId, "test-trace"), TestContext.Current.CancellationToken);
     }
 
     private async Task Change(Guid orderId, Func<Order, bool> transition)

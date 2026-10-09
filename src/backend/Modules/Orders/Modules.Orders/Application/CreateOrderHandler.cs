@@ -58,38 +58,38 @@ internal interface IOrderStore
     /// Operations queue: orders with an item in <paramref name="status"/>, oldest first, created after
     /// <paramref name="after"/> in (CreatedAt, Id) order (the cursor: no order is skipped on ties), with their items, read-only.
     /// </summary>
-    Task<IReadOnlyList<Order>> FindWithItemStatusAsync(FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Order>> FindWithItemStatusAsync(OrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken);
 
     /// <summary>Adds an audit entry, saved atomically with the next <see cref="TrySaveAsync"/> (ADR 0022).</summary>
     void Audit(BuildingBlocks.Audit.AuditEntry entry);
 }
 
 /// <summary><paramref name="CustomerId"/> is the authenticated customer (Q8); the actor recorded on the timeline.</summary>
-internal sealed record CreateFlightOrder(string CustomerId, string IdempotencyKey, Guid SelectedOfferId, string? CorrelationId, OrderProduct Product = OrderProduct.Flight);
+internal sealed record CreateOrder(string CustomerId, string IdempotencyKey, Guid SelectedOfferId, string? CorrelationId, OrderProduct Product = OrderProduct.Flight);
 
 internal sealed record CreatedOrder(Order Order, bool Created);
 
-internal abstract record CreateFlightOrderFailure
+internal abstract record CreateOrderFailure
 {
-    private CreateFlightOrderFailure()
+    private CreateOrderFailure()
     {
     }
 
-    internal sealed record InvalidIdempotencyKey : CreateFlightOrderFailure;
+    internal sealed record InvalidIdempotencyKey : CreateOrderFailure;
 
     /// <summary>No authenticated customer: orders need a signed-in customer (Q8).</summary>
-    internal sealed record CustomerRequired : CreateFlightOrderFailure;
+    internal sealed record CustomerRequired : CreateOrderFailure;
 
     /// <summary>The key was already used for a different selection (409: never a second effect).</summary>
-    internal sealed record IdempotencyKeyReused : CreateFlightOrderFailure;
+    internal sealed record IdempotencyKeyReused : CreateOrderFailure;
 
     /// <summary>
     /// The caller already has an order for this selection (under another key): at most one booking per selection.
     /// Selections belong to one customer, so another customer's order is never reported here.
     /// </summary>
-    internal sealed record SelectionAlreadyOrdered(Guid OrderId) : CreateFlightOrderFailure;
+    internal sealed record SelectionAlreadyOrdered(Guid OrderId) : CreateOrderFailure;
 
-    internal sealed record SelectionUnavailable(ItemUnavailable Reason) : CreateFlightOrderFailure;
+    internal sealed record SelectionUnavailable(ItemUnavailable Reason) : CreateOrderFailure;
 }
 
 /// <summary>
@@ -97,20 +97,20 @@ internal abstract record CreateFlightOrderFailure
 /// return the original order, enforced by unique constraints on the key and on the selection, not by a check alone.
 /// No supplier or payment call is made here; the price comes from Flights, never from the client.
 /// </summary>
-internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, IOrderStore store, TimeProvider timeProvider)
+internal sealed class CreateOrderHandler(OrderItemSelections selections, IOrderStore store, TimeProvider timeProvider)
 {
     public const int MaxIdempotencyKeyLength = 100;
 
-    public async Task<Result<CreatedOrder, CreateFlightOrderFailure>> HandleAsync(CreateFlightOrder command, CancellationToken cancellationToken)
+    public async Task<Result<CreatedOrder, CreateOrderFailure>> HandleAsync(CreateOrder command, CancellationToken cancellationToken)
     {
         if (!Order.IsValidCustomerId(command.CustomerId))
         {
-            return Failure(new CreateFlightOrderFailure.CustomerRequired());
+            return Failure(new CreateOrderFailure.CustomerRequired());
         }
 
         if (!IsValidKey(command.IdempotencyKey))
         {
-            return Failure(new CreateFlightOrderFailure.InvalidIdempotencyKey());
+            return Failure(new CreateOrderFailure.InvalidIdempotencyKey());
         }
 
         if (await Replay(command, cancellationToken) is { } replayed)
@@ -121,7 +121,7 @@ internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, I
         var selection = await selections.GetBookableAsync(command.Product, command.SelectedOfferId, command.CustomerId, cancellationToken);
         if (!selection.IsSuccess)
         {
-            return Failure(new CreateFlightOrderFailure.SelectionUnavailable(selection.Error));
+            return Failure(new CreateOrderFailure.SelectionUnavailable(selection.Error));
         }
 
         var bookable = selection.Value;
@@ -136,7 +136,7 @@ internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, I
 
         if (await store.TryAddAsync(order, cancellationToken))
         {
-            return Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(order, Created: true));
+            return Result<CreatedOrder, CreateOrderFailure>.Success(new CreatedOrder(order, Created: true));
         }
 
         // A concurrent request won the key or the selection: answer as a replay would. The selection is the caller's
@@ -145,13 +145,13 @@ internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, I
             ?? throw new InvalidOperationException("An order insert conflicted, but neither the key nor the caller's selection is taken.");
     }
 
-    private async Task<Result<CreatedOrder, CreateFlightOrderFailure>?> Replay(CreateFlightOrder command, CancellationToken cancellationToken)
+    private async Task<Result<CreatedOrder, CreateOrderFailure>?> Replay(CreateOrder command, CancellationToken cancellationToken)
     {
         if (await store.FindByIdempotencyKeyAsync(command.CustomerId, command.IdempotencyKey, cancellationToken) is { } existing)
         {
             return existing.Items.Any(i => i.SelectedOfferId == command.SelectedOfferId)
-                ? Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(existing, Created: false))
-                : Failure(new CreateFlightOrderFailure.IdempotencyKeyReused());
+                ? Result<CreatedOrder, CreateOrderFailure>.Success(new CreatedOrder(existing, Created: false))
+                : Failure(new CreateOrderFailure.IdempotencyKeyReused());
         }
 
         if (await store.FindOrderIdBySelectedOfferAsync(command.SelectedOfferId, cancellationToken) is not { } orderId)
@@ -163,13 +163,13 @@ internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, I
         // lookup above: look again before calling it someone else's order.
         if (await store.FindByIdempotencyKeyAsync(command.CustomerId, command.IdempotencyKey, cancellationToken) is { } ours && ours.Id == orderId)
         {
-            return Result<CreatedOrder, CreateFlightOrderFailure>.Success(new CreatedOrder(ours, Created: false));
+            return Result<CreatedOrder, CreateOrderFailure>.Success(new CreatedOrder(ours, Created: false));
         }
 
         // The caller's own order for this selection is named. Another customer's is never revealed: the request goes on
         // as if there were none, and the selection (theirs, not the caller's) is not found.
         return await store.FindOwnedAsync(orderId, command.CustomerId, cancellationToken) is not null
-            ? Failure(new CreateFlightOrderFailure.SelectionAlreadyOrdered(orderId))
+            ? Failure(new CreateOrderFailure.SelectionAlreadyOrdered(orderId))
             : null;
     }
 
@@ -179,6 +179,6 @@ internal sealed class CreateFlightOrderHandler(OrderItemSelections selections, I
     internal static bool IsValidKey(string? key) =>
         key is { Length: > 0 and <= MaxIdempotencyKeyLength } && key.All(c => c is >= '!' and <= '~');
 
-    private static Result<CreatedOrder, CreateFlightOrderFailure> Failure(CreateFlightOrderFailure failure) =>
-        Result<CreatedOrder, CreateFlightOrderFailure>.Failure(failure);
+    private static Result<CreatedOrder, CreateOrderFailure> Failure(CreateOrderFailure failure) =>
+        Result<CreatedOrder, CreateOrderFailure>.Failure(failure);
 }

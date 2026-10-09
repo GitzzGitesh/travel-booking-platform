@@ -77,8 +77,8 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
     }
 
     public async Task<IReadOnlyList<Guid>> FindWithExpiredUnpaidItemsAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
-        await db.Set<FlightOrderItem>().AsNoTracking()
-            .Where(i => i.Status == FlightOrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= now)
+        await db.Set<OrderItem>().AsNoTracking()
+            .Where(i => i.Status == OrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= now)
             .GroupBy(i => EF.Property<Guid>(i, "OrderId"))
             .OrderBy(g => g.Min(i => i.OfferExpiresAt))
             .Select(g => g.Key)
@@ -86,9 +86,9 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
-        await db.Set<FlightOrderItem>().AsNoTracking()
-            .Where(i => (i.Status == FlightOrderItemStatus.PendingConfirmation
-                    || (i.Status == FlightOrderItemStatus.Booking && (i.BookingStartedAt == null || i.BookingStartedAt <= startedBefore)))
+        await db.Set<OrderItem>().AsNoTracking()
+            .Where(i => (i.Status == OrderItemStatus.PendingConfirmation
+                    || (i.Status == OrderItemStatus.Booking && (i.BookingStartedAt == null || i.BookingStartedAt <= startedBefore)))
                 && (i.NextBookingLookupAt == null || i.NextBookingLookupAt <= now))
             .GroupBy(i => EF.Property<Guid>(i, "OrderId"))
             .OrderBy(g => g.Min(i => i.NextBookingLookupAt ?? i.BookingStartedAt))
@@ -97,7 +97,7 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<Order>> FindWithItemStatusAsync(
-        FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
+        OrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
         await db.Orders.AsNoTracking().Include(o => o.Items)
             .Where(o => o.Items.Any(i => i.Status == status))
             .Where(o => after == null || o.CreatedAt > after.Value.CreatedAt || (o.CreatedAt == after.Value.CreatedAt && o.Id.CompareTo(after.Value.Id) > 0))
@@ -121,11 +121,11 @@ internal sealed class SqlOrderStore(OrdersDbContext db) : IOrderStore
         var graph = entries.Where(e => e.Entity switch
         {
             Order order => order.Id == orderId,
-            FlightOrderItem => e.Property("OrderId").CurrentValue is Guid owner && owner == orderId,
+            OrderItem => e.Property("OrderId").CurrentValue is Guid owner && owner == orderId,
             OrderTimelineEntry timeline => timeline.OrderId == orderId,
             _ => false,
         }).ToList();
-        var itemIds = graph.Select(e => e.Entity).OfType<FlightOrderItem>().Select(i => i.Id).ToHashSet();
+        var itemIds = graph.Select(e => e.Entity).OfType<OrderItem>().Select(i => i.Id).ToHashSet();
         var owned = entries.Where(e => e.Metadata.IsOwned() && e.Metadata.FindOwnership() is { } ownership
             && ownership.Properties.Any(p => e.Property(p.Name).CurrentValue is Guid owner && itemIds.Contains(owner)));
         foreach (var entry in owned.Concat(graph).ToList())

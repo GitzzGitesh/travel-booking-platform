@@ -50,15 +50,15 @@ internal static class AdminOrderEndpoints
 {
     public const int MaxPageSize = 50;
 
-    private static readonly FlightOrderItemStatus[] _queues =
-        [FlightOrderItemStatus.ManualReview, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.Booking];
+    private static readonly OrderItemStatus[] _queues =
+        [OrderItemStatus.ManualReview, OrderItemStatus.PendingConfirmation, OrderItemStatus.Booking];
 
     // Oldest first; the cursor is the last order's creation time (ticks) and id. itemStatus: ManualReview (default),
     // PendingConfirmation or Booking.
     public static async Task<Results<Ok<AdminOrderPage>, ProblemHttpResult>> Queue(
         IOrderStore store, CancellationToken cancellationToken, string? itemStatus = null, int limit = 20, string? cursor = null)
     {
-        var status = FlightOrderItemStatus.ManualReview;
+        var status = OrderItemStatus.ManualReview;
         if ((itemStatus is not null && (!Enum.TryParse(itemStatus, ignoreCase: false, out status) || !_queues.Contains(status)))
             || limit is < 1 or > MaxPageSize)
         {
@@ -171,7 +171,7 @@ internal sealed record AdminOrderItem(
     Guid ItemId, Guid SelectedOfferId, string Status, OrderAmountResponse AgreedPrice, string? ProviderId, string? BookingReference, string? Ticketing, DateTimeOffset? BookingStartedAt,
     string Product = "Flight")
 {
-    public static AdminOrderItem From(FlightOrderItem item) => new(
+    public static AdminOrderItem From(OrderItem item) => new(
         item.Id,
         item.SelectedOfferId,
         item.Status.ToString(),
@@ -192,7 +192,7 @@ internal sealed record AdminHotelStay(
     Guid ItemId, string Hotel, string Address, string CityCode, string CountryCode, DateOnly CheckIn, DateOnly CheckOut, int Nights, string Room,
     string Board, string TimeZone, bool Booked, CancellationTermsResponse? AgreedCancellation)
 {
-    public static AdminHotelStay From(FlightOrderItem item, HotelStay stay) => new(
+    public static AdminHotelStay From(OrderItem item, HotelStay stay) => new(
         item.Id, stay.PropertyName, stay.AddressLine, stay.CityCode, stay.CountryCode, stay.CheckIn, stay.CheckOut, stay.Nights, stay.Room, stay.Board,
         stay.TimeZone, stay.Booked,
         item.CancellationTerms is { } terms

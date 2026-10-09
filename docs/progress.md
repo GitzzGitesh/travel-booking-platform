@@ -304,7 +304,7 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - booking emails use product-neutral wording;
   - guest data is kept until check-out, by the existing retention rule.
 - **Follow-ups (recorded):**
-  - rename the C# types `FlightOrderItem`, `FlightOrderItemStatus`, `FlightBookingOrchestrator` and `CreateFlightOrder*` to product-neutral names, with no migration (the table name stays). The public schema `CreateFlightOrderRequest` keeps its name in v1, deliberately;
+  - **done in row 26:** rename the C# types `FlightOrderItem`, `FlightOrderItemStatus`, `FlightBookingOrchestrator` and `CreateFlightOrder*` to product-neutral names, with no migration (the table name stays). The public schema `CreateFlightOrderRequest` keeps its name in v1, deliberately;
   - before hotel cancellation (H4), read the booked rate's cancellation terms (deadline and penalty) from Hotels for the refund decision;
   - check the guests' ages against the searched ages before payment, once customer-web collects them (H3); today a mismatch is refused before anything is sent, and the hold is released.
 - **Worker** composes Hotels (and its mock in Development and Staging) to reconcile hotel bookings. Hotels' database is needed only when it is used, so flights never depend on its configuration; E2E and CI apply the Hotels migrations too.
@@ -347,6 +347,12 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - The confirmation email lists the hotel and address, the dates and nights, the room and board, and the cancellation terms with the deadline in the hotel's time zone. No guest names.
 - **Operations:** the admin order view shows each item's product and a hotel item's stay with the cancellation terms the customer agreed to (additive `stays` in the staff API).
 - **Next:** cancellation through a hotel supplier's own system (once a supplier is chosen, Q6) and the property's own confirmation code (F-51) stay external. The Hotels product slice is otherwise complete on the mock. |
+| 26 | **Orders: product-neutral names; trips show the product** | **Done.**
+- **Rename:** `OrderItem`, `OrderItemStatus`, `BookingOrchestrator`, `CreateOrderHandler`, `CreateOrder` and `CreateOrderFailure` replace the flight-named types (the follow-up recorded in row 22).
+  - No schema change: the table stays `FlightOrderItems`, and EF's generated diff was empty, so only the model snapshot changed.
+  - The public v1 contract is unchanged: the schema `CreateFlightOrderRequest` and the operation `CreateFlightOrder` keep their names.
+  - Log categories of these classes changed accordingly; event names (alerts) did not.
+- **My trips** labels each booking as a flight or a hotel stay, and the empty state links both searches. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

@@ -11,18 +11,18 @@ public sealed class OrderTests
     private static readonly TransitionContext _system = new(Now.AddMinutes(1), "system", "trace-1");
 
     // Every status an item can actually reach (Draft is transient inside CreateForFlight).
-    private static readonly FlightOrderItemStatus[] _reachable = Enum.GetValues<FlightOrderItemStatus>().Where(s => s is not FlightOrderItemStatus.Draft).ToArray();
+    private static readonly OrderItemStatus[] _reachable = Enum.GetValues<OrderItemStatus>().Where(s => s is not OrderItemStatus.Draft).ToArray();
 
     // Item-level transitions: target -> allowed sources (booking-lifecycle.md; Booking -> ManualReview for a mismatch).
     // Booking itself is order-level (StartBooking) and tested separately.
-    private static readonly Dictionary<FlightOrderItemStatus, FlightOrderItemStatus[]> _legal = new()
+    private static readonly Dictionary<OrderItemStatus, OrderItemStatus[]> _legal = new()
     {
-        [FlightOrderItemStatus.Abandoned] = [FlightOrderItemStatus.AwaitingPayment],
-        [FlightOrderItemStatus.PendingConfirmation] = [FlightOrderItemStatus.Booking],
-        [FlightOrderItemStatus.ManualReview] = [FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation],
-        [FlightOrderItemStatus.Confirmed] = [FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.ManualReview],
-        [FlightOrderItemStatus.Failed] = [FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.ManualReview],
-        [FlightOrderItemStatus.Cancelled] = [FlightOrderItemStatus.Confirmed], // ADR 0027: cancelled at the supplier after confirmation
+        [OrderItemStatus.Abandoned] = [OrderItemStatus.AwaitingPayment],
+        [OrderItemStatus.PendingConfirmation] = [OrderItemStatus.Booking],
+        [OrderItemStatus.ManualReview] = [OrderItemStatus.Booking, OrderItemStatus.PendingConfirmation],
+        [OrderItemStatus.Confirmed] = [OrderItemStatus.Booking, OrderItemStatus.PendingConfirmation, OrderItemStatus.ManualReview],
+        [OrderItemStatus.Failed] = [OrderItemStatus.Booking, OrderItemStatus.PendingConfirmation, OrderItemStatus.ManualReview],
+        [OrderItemStatus.Cancelled] = [OrderItemStatus.Confirmed], // ADR 0027: cancelled at the supplier after confirmation
     };
 
     [Fact]
@@ -31,7 +31,7 @@ public sealed class OrderTests
         var order = NewOrder();
 
         var item = order.Items.ShouldHaveSingleItem();
-        item.Status.ShouldBe(FlightOrderItemStatus.AwaitingPayment);
+        item.Status.ShouldBe(OrderItemStatus.AwaitingPayment);
         item.AgreedPrice.ShouldBe(Price);
         item.AcceptedPriceQuoteId.ShouldBeNull();
         order.Total.ShouldBe(Price);
@@ -70,8 +70,8 @@ public sealed class OrderTests
     [MemberData(nameof(EveryItemTransition))]
     public void Only_documented_transitions_are_legal_and_each_is_recorded(string fromName, string toName)
     {
-        var from = Enum.Parse<FlightOrderItemStatus>(fromName);
-        var to = Enum.Parse<FlightOrderItemStatus>(toName);
+        var from = Enum.Parse<OrderItemStatus>(fromName);
+        var to = Enum.Parse<OrderItemStatus>(toName);
         var order = OrderAt(from, out var item);
         var entries = order.Timeline.Count;
 
@@ -102,29 +102,29 @@ public sealed class OrderTests
         order.StartBooking("auth-1", _system).Value.ShouldBe(OrderStatus.Pending);
 
         order.PaymentAuthorizationId.ShouldBe("auth-1");
-        order.Items[0].Status.ShouldBe(FlightOrderItemStatus.Booking);
+        order.Items[0].Status.ShouldBe(OrderItemStatus.Booking);
         order.Timeline.Last().ProviderReference.ShouldBe("auth-1");
     }
 
     [Fact]
     public void Replaying_the_same_authorization_is_a_no_op_and_another_one_is_a_conflict()
     {
-        var order = OrderAt(FlightOrderItemStatus.PendingConfirmation, out _);
+        var order = OrderAt(OrderItemStatus.PendingConfirmation, out _);
         var entries = order.Timeline.Count;
 
         order.StartBooking("auth-1", _system).IsSuccess.ShouldBeTrue();
         order.StartBooking("auth-2", _system).Error.ShouldBe(new OrderTransitionError.ConflictingReference("paymentAuthorizationId"));
 
         order.Timeline.Count.ShouldBe(entries);
-        order.Items[0].Status.ShouldBe(FlightOrderItemStatus.PendingConfirmation);
+        order.Items[0].Status.ShouldBe(OrderItemStatus.PendingConfirmation);
     }
 
     [Fact]
     public void An_abandoned_order_cannot_start_booking()
     {
-        var order = OrderAt(FlightOrderItemStatus.Abandoned, out _);
+        var order = OrderAt(OrderItemStatus.Abandoned, out _);
 
-        order.StartBooking("auth-1", _system).Error.ShouldBe(new OrderTransitionError.Illegal(FlightOrderItemStatus.Abandoned, FlightOrderItemStatus.Booking));
+        order.StartBooking("auth-1", _system).Error.ShouldBe(new OrderTransitionError.Illegal(OrderItemStatus.Abandoned, OrderItemStatus.Booking));
     }
 
     [Fact]
@@ -135,18 +135,18 @@ public sealed class OrderTests
         var result = order.StartBooking("auth-1", new TransitionContext(Now.AddMinutes(30), "system"));
 
         result.Error.ShouldBe(new OrderTransitionError.OfferExpired(order.Items[0].Id));
-        order.Items[0].Status.ShouldBe(FlightOrderItemStatus.AwaitingPayment);
+        order.Items[0].Status.ShouldBe(OrderItemStatus.AwaitingPayment);
         order.PaymentAuthorizationId.ShouldBeNull();
     }
 
     [Fact]
     public void Re_applying_a_transition_is_a_no_op_and_adds_nothing_to_the_timeline()
     {
-        var order = OrderAt(FlightOrderItemStatus.PendingConfirmation, out var item);
+        var order = OrderAt(OrderItemStatus.PendingConfirmation, out var item);
         order.Confirm(item, "mock", "ABC234", _system);
         var entries = order.Timeline.Count;
 
-        order.Confirm(item, "mock", "ABC234", _system).Value.ShouldBe(FlightOrderItemStatus.Confirmed);
+        order.Confirm(item, "mock", "ABC234", _system).Value.ShouldBe(OrderItemStatus.Confirmed);
 
         order.Timeline.Count.ShouldBe(entries);
     }
@@ -154,7 +154,7 @@ public sealed class OrderTests
     [Fact]
     public void A_confirmation_records_the_supplier_reference_and_a_different_one_later_is_a_conflict()
     {
-        var order = OrderAt(FlightOrderItemStatus.Booking, out var item);
+        var order = OrderAt(OrderItemStatus.Booking, out var item);
         order.Confirm(item, "mock", "ABC234", _system);
 
         order.Confirm(item, "mock", "XYZ789", _system).Error.ShouldBe(new OrderTransitionError.ConflictingReference("supplierLocator"));
@@ -165,10 +165,10 @@ public sealed class OrderTests
     [Fact]
     public void Confirmation_requires_the_supplier_locator()
     {
-        var order = OrderAt(FlightOrderItemStatus.Booking, out var item);
+        var order = OrderAt(OrderItemStatus.Booking, out var item);
 
         order.Confirm(item, "mock", "", _system).Error.ShouldBeOfType<OrderTransitionError.MissingReference>();
-        order.Items[0].Status.ShouldBe(FlightOrderItemStatus.Booking);
+        order.Items[0].Status.ShouldBe(OrderItemStatus.Booking);
     }
 
     [Fact]
@@ -182,15 +182,15 @@ public sealed class OrderTests
     [Fact]
     public void The_order_status_is_derived_from_its_items()
     {
-        Order.Derive([FlightOrderItemStatus.Draft]).ShouldBe(OrderStatus.Draft);
-        Order.Derive([FlightOrderItemStatus.AwaitingPayment]).ShouldBe(OrderStatus.AwaitingPayment);
-        Order.Derive([FlightOrderItemStatus.Confirmed, FlightOrderItemStatus.PendingConfirmation]).ShouldBe(OrderStatus.Pending);
-        Order.Derive([FlightOrderItemStatus.Booking]).ShouldBe(OrderStatus.Pending);
-        Order.Derive([FlightOrderItemStatus.ManualReview, FlightOrderItemStatus.Failed]).ShouldBe(OrderStatus.Pending);
-        Order.Derive([FlightOrderItemStatus.Confirmed, FlightOrderItemStatus.Confirmed]).ShouldBe(OrderStatus.Confirmed);
-        Order.Derive([FlightOrderItemStatus.Confirmed, FlightOrderItemStatus.Failed]).ShouldBe(OrderStatus.PartiallyConfirmed);
-        Order.Derive([FlightOrderItemStatus.Failed, FlightOrderItemStatus.Failed]).ShouldBe(OrderStatus.Failed);
-        Order.Derive([FlightOrderItemStatus.Abandoned]).ShouldBe(OrderStatus.Abandoned);
+        Order.Derive([OrderItemStatus.Draft]).ShouldBe(OrderStatus.Draft);
+        Order.Derive([OrderItemStatus.AwaitingPayment]).ShouldBe(OrderStatus.AwaitingPayment);
+        Order.Derive([OrderItemStatus.Confirmed, OrderItemStatus.PendingConfirmation]).ShouldBe(OrderStatus.Pending);
+        Order.Derive([OrderItemStatus.Booking]).ShouldBe(OrderStatus.Pending);
+        Order.Derive([OrderItemStatus.ManualReview, OrderItemStatus.Failed]).ShouldBe(OrderStatus.Pending);
+        Order.Derive([OrderItemStatus.Confirmed, OrderItemStatus.Confirmed]).ShouldBe(OrderStatus.Confirmed);
+        Order.Derive([OrderItemStatus.Confirmed, OrderItemStatus.Failed]).ShouldBe(OrderStatus.PartiallyConfirmed);
+        Order.Derive([OrderItemStatus.Failed, OrderItemStatus.Failed]).ShouldBe(OrderStatus.Failed);
+        Order.Derive([OrderItemStatus.Abandoned]).ShouldBe(OrderStatus.Abandoned);
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public sealed class OrderTests
     [InlineData("Confirmed")]
     public void Only_an_item_awaiting_payment_takes_new_terms(string status)
     {
-        var order = OrderAt(Enum.Parse<FlightOrderItemStatus>(status), out var item);
+        var order = OrderAt(Enum.Parse<OrderItemStatus>(status), out var item);
 
         order.RefreshOffer(item, Price, Now.AddMinutes(50), null, _system).Error.ShouldBeOfType<OrderTransitionError.Illegal>();
         order.RefreshOffer(Guid.NewGuid(), Price, Now.AddMinutes(50), null, _system).Error.ShouldBeOfType<OrderTransitionError.ItemNotFound>();
@@ -255,40 +255,40 @@ public sealed class OrderTests
     internal static Order NewOrder(Guid? selectedOfferId = null, TravellerNeeds? needs = null) =>
         Order.CreateForFlight("cust-1", "key-1", selectedOfferId ?? Guid.NewGuid(), Price, Now.AddMinutes(30), null, new TransitionContext(Now, "customer", "trace-0"), needs ?? OneAdult);
 
-    private static Result<FlightOrderItemStatus, OrderTransitionError> Apply(Order order, Guid item, FlightOrderItemStatus to) => to switch
+    private static Result<OrderItemStatus, OrderTransitionError> Apply(Order order, Guid item, OrderItemStatus to) => to switch
     {
-        FlightOrderItemStatus.Abandoned => order.Abandon(item, "Offer expired before payment", _system),
-        FlightOrderItemStatus.PendingConfirmation => order.AwaitConfirmation(item, "Supplier timeout", _system),
-        FlightOrderItemStatus.ManualReview => order.RequireManualReview(item, "Mismatch", _system),
-        FlightOrderItemStatus.Confirmed => order.Confirm(item, "mock", "ABC234", _system),
-        FlightOrderItemStatus.Failed => order.Fail(item, "Rejected", _system),
-        FlightOrderItemStatus.Cancelled => order.CancelConfirmed(item, "DESK-1", _system),
+        OrderItemStatus.Abandoned => order.Abandon(item, "Offer expired before payment", _system),
+        OrderItemStatus.PendingConfirmation => order.AwaitConfirmation(item, "Supplier timeout", _system),
+        OrderItemStatus.ManualReview => order.RequireManualReview(item, "Mismatch", _system),
+        OrderItemStatus.Confirmed => order.Confirm(item, "mock", "ABC234", _system),
+        OrderItemStatus.Failed => order.Fail(item, "Rejected", _system),
+        OrderItemStatus.Cancelled => order.CancelConfirmed(item, "DESK-1", _system),
         _ => throw new ArgumentOutOfRangeException(nameof(to)),
     };
 
     /// <summary>An order whose item has been driven to <paramref name="status"/> by legal transitions.</summary>
-    private static Order OrderAt(FlightOrderItemStatus status, out Guid item)
+    private static Order OrderAt(OrderItemStatus status, out Guid item)
     {
         var order = NewOrder();
         item = order.Items[0].Id;
-        if (status is FlightOrderItemStatus.AwaitingPayment)
+        if (status is OrderItemStatus.AwaitingPayment)
         {
             return order;
         }
 
-        if (status is FlightOrderItemStatus.Abandoned)
+        if (status is OrderItemStatus.Abandoned)
         {
-            Apply(order, item, FlightOrderItemStatus.Abandoned).IsSuccess.ShouldBeTrue();
+            Apply(order, item, OrderItemStatus.Abandoned).IsSuccess.ShouldBeTrue();
             return order;
         }
 
         order.StartBooking("auth-1", _system).IsSuccess.ShouldBeTrue();
-        if (status is FlightOrderItemStatus.Cancelled)
+        if (status is OrderItemStatus.Cancelled)
         {
-            Apply(order, item, FlightOrderItemStatus.Confirmed).IsSuccess.ShouldBeTrue();
+            Apply(order, item, OrderItemStatus.Confirmed).IsSuccess.ShouldBeTrue();
         }
 
-        if (status is not FlightOrderItemStatus.Booking)
+        if (status is not OrderItemStatus.Booking)
         {
             Apply(order, item, status).IsSuccess.ShouldBeTrue();
         }

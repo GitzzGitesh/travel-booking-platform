@@ -251,7 +251,7 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         db.Entry(refundCase).State.ShouldBe(EntityState.Unchanged); // still tracked
         // Nothing of the torn first read is left tracked: exactly the reloaded order, its items and their owned values.
         db.ChangeTracker.Entries<Order>().ShouldHaveSingleItem().Entity.ShouldBeSameAs(loaded);
-        db.ChangeTracker.Entries<FlightOrderItem>().Select(e => e.Entity).ShouldBe(loaded.Items, ignoreOrder: true);
+        db.ChangeTracker.Entries<OrderItem>().Select(e => e.Entity).ShouldBe(loaded.Items, ignoreOrder: true);
         var owned = db.ChangeTracker.Entries().Where(e => e.Metadata.IsOwned()).Select(e => e.Entity).ToList();
         owned.ShouldNotBeEmpty(); // the items' traveller needs (owned)
         owned.ShouldAllBe(o => loaded.Items.Any(i => ReferenceEquals(i.TravellerNeeds, o)));
@@ -410,7 +410,7 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         again.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await Read(again)).GetProperty("type").GetString().ShouldBe("cancellation-already-requested");
         stranger.StatusCode.ShouldBe(HttpStatusCode.NotFound); // never says another customer's order exists
-        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Confirmed); // nothing is cancelled by asking
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(OrderItemStatus.Confirmed); // nothing is cancelled by asking
 
         using var open = await Send(HttpMethod.Get, "/api/admin/v1/cancellation-requests", Staff(TestStaffTokens.Operations));
         (await Read(open)).EnumerateArray().ShouldContain(r => r.GetProperty("requestId").GetGuid() == requestId);
@@ -561,7 +561,7 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         var caseId = refundCase.GetProperty("caseId").GetGuid();
         (refundCase.GetProperty("status").GetString(), refundCase.GetProperty("amount").GetProperty("amount").GetString())
             .ShouldBe(("PendingApproval", price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture))); // computed by the server
-        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.Cancelled); // the cancellation is a fact at once
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(OrderItemStatus.Cancelled); // the cancellation is a fact at once
         await Run("orders.outbox");
         (await CountRefunds(order)).ShouldBe(0); // nothing refunded before approval
 
@@ -839,7 +839,7 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
 
         checkout.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         (await Read(checkout)).GetProperty("outcome").GetString().ShouldBe("BookingPending");
-        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.PendingConfirmation);
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(OrderItemStatus.PendingConfirmation);
         (await CountOutbox(order, "OrderPaymentCaptureRequested")).ShouldBe(0); // never charged on an unknown booking
 
         await Run(ReconcileBookingsJob.Name);
@@ -861,7 +861,7 @@ public sealed class CheckoutBookingTests(SqlApiFactory api) : IClassFixture<SqlA
         checkout.StatusCode.ShouldBe(HttpStatusCode.Accepted);
 
         await Run(ReconcileBookingsJob.Name);
-        (await LoadOrder(order)).Items[0].Status.ShouldBe(FlightOrderItemStatus.PendingConfirmation); // not found yet proves nothing
+        (await LoadOrder(order)).Items[0].Status.ShouldBe(OrderItemStatus.PendingConfirmation); // not found yet proves nothing
 
         api.Clock.Advance(TimeSpan.FromMinutes(16));
         await Run(ReconcileBookingsJob.Name);

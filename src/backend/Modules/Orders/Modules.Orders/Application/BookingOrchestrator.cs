@@ -58,14 +58,14 @@ internal sealed record ItemBookingOutcome(ItemBookingStatus Status, string? Prov
 /// limit → ManualReview, with an alert. Each item is booked and looked up through its own product's Contracts (Flights
 /// or Hotels, ADR 0030 §6): never another module, never a fallback between them.
 /// </summary>
-internal sealed partial class FlightBookingOrchestrator(
+internal sealed partial class BookingOrchestrator(
     IOrderStore store,
     IFlightBookings flights,
     IHotelBookings hotels,
     IOrderTravellers travellers,
     TimeProvider timeProvider,
     IOptions<BookingReconciliationOptions> options,
-    ILogger<FlightBookingOrchestrator> logger)
+    ILogger<BookingOrchestrator> logger)
 {
     public const string ReconciliationActor = "system:booking-reconciliation";
     private const int _saveAttempts = 3;
@@ -77,7 +77,7 @@ internal sealed partial class FlightBookingOrchestrator(
     /// </summary>
     public async Task<Order> BookAsync(Order order, TransitionContext context, CancellationToken cancellationToken)
     {
-        var items = order.Items.Where(i => i.Status is FlightOrderItemStatus.Booking).ToList();
+        var items = order.Items.Where(i => i.Status is OrderItemStatus.Booking).ToList();
         if (items.Count == 0)
         {
             return order;
@@ -129,7 +129,7 @@ internal sealed partial class FlightBookingOrchestrator(
     }
 
     // Well inside LookupAfter (and so NotFoundConclusiveAfter): a send is never in flight when reconciliation concludes.
-    private bool TooLateToSend(FlightOrderItem item) =>
+    private bool TooLateToSend(OrderItem item) =>
         item.BookingStartedAt is not { } started || timeProvider.GetUtcNow() - started >= options.Value.LookupAfter / 2;
 
     /// <summary>
@@ -137,7 +137,7 @@ internal sealed partial class FlightBookingOrchestrator(
     /// Found as agreed → Confirmed; absent after the supplier's consistency window → Failed; anything else stays in
     /// review with the check on the timeline. The payment settles once nothing is unsettled (same save, by the caller).
     /// </summary>
-    public async Task<FlightOrderItemStatus> CheckReviewAsync(Order order, Guid itemId, string reason, TransitionContext context, CancellationToken cancellationToken)
+    public async Task<OrderItemStatus> CheckReviewAsync(Order order, Guid itemId, string reason, TransitionContext context, CancellationToken cancellationToken)
     {
         var item = order.Items.Single(i => i.Id == itemId);
         ItemBookingOutcome outcome;
@@ -175,12 +175,12 @@ internal sealed partial class FlightBookingOrchestrator(
     public void SettleAfterReviewOutcome(Order order, TransitionContext context) => Settle(order, context);
 
     // An item from before booking start times were recorded was never sent (booking did not exist then): look it up now.
-    private bool NeedsLookup(FlightOrderItem item, DateTimeOffset now) =>
+    private bool NeedsLookup(OrderItem item, DateTimeOffset now) =>
         (item.NextBookingLookupAt is null || item.NextBookingLookupAt <= now)
-        && (item.Status is FlightOrderItemStatus.PendingConfirmation
-            || (item.Status is FlightOrderItemStatus.Booking && (item.BookingStartedAt is not { } started || now - started >= options.Value.LookupAfter)));
+        && (item.Status is OrderItemStatus.PendingConfirmation
+            || (item.Status is OrderItemStatus.Booking && (item.BookingStartedAt is not { } started || now - started >= options.Value.LookupAfter)));
 
-    private async Task<ItemBookingOutcome> BookItemAsync(Order order, FlightOrderItem item, BookingTravellers people, TransitionContext context, CancellationToken cancellationToken)
+    private async Task<ItemBookingOutcome> BookItemAsync(Order order, OrderItem item, BookingTravellers people, TransitionContext context, CancellationToken cancellationToken)
     {
         try
         {
@@ -230,7 +230,7 @@ internal sealed partial class FlightBookingOrchestrator(
     }
 
     // A lookup by our reference (the item id), with the product's own module. A read: safe to repeat.
-    private async Task<ItemBookingOutcome> LookupAsync(Order order, FlightOrderItem item, CancellationToken cancellationToken) =>
+    private async Task<ItemBookingOutcome> LookupAsync(Order order, OrderItem item, CancellationToken cancellationToken) =>
         item.Product is OrderProduct.Hotel
             ? Map(await hotels.ReconcileAsync(item.SelectedOfferId, order.CustomerId, item.Id.ToString(), item.AgreedPrice, cancellationToken))
             : Map(await flights.ReconcileAsync(item.SelectedOfferId, order.CustomerId, item.Id.ToString(), item.AgreedPrice, cancellationToken));
@@ -308,7 +308,7 @@ internal sealed partial class FlightBookingOrchestrator(
         switch (outcome.Status)
         {
             case ItemBookingStatus.Booked when outcome is { ProviderId: { } providerId, Locator: { } locator }:
-                if (!order.Confirm(itemId, providerId, locator, context, outcome.Ticketing).IsSuccess && item.Status is FlightOrderItemStatus.Failed)
+                if (!order.Confirm(itemId, providerId, locator, context, outcome.Ticketing).IsSuccess && item.Status is OrderItemStatus.Failed)
                 {
                     // Found after it was concluded absent: its hold may be released already. A person must act now.
                     LogBookingFoundAfterFailure(logger, order.Id, itemId);
@@ -332,12 +332,12 @@ internal sealed partial class FlightBookingOrchestrator(
                 break;
         }
 
-        if (reconciling && item.Status is FlightOrderItemStatus.PendingConfirmation && sinceStart >= options.Value.ManualReviewAfter)
+        if (reconciling && item.Status is OrderItemStatus.PendingConfirmation && sinceStart >= options.Value.ManualReviewAfter)
         {
             order.RequireManualReview(itemId, $"Booking still unknown {options.Value.ManualReviewAfter.TotalHours:0} hours after it started", context);
             LogUnresolved(logger, order.Id, itemId);
         }
-        else if (reconciling && item.Status is FlightOrderItemStatus.PendingConfirmation)
+        else if (reconciling && item.Status is OrderItemStatus.PendingConfirmation)
         {
             // Look again later, backing off (30 s, 1, 2, 4 ... up to 30 minutes): a supplier outage costs few lookups.
             var delay = TimeSpan.FromSeconds(Math.Min(30 * Math.Pow(2, item.BookingLookups), TimeSpan.FromMinutes(30).TotalSeconds));
@@ -354,9 +354,9 @@ internal sealed partial class FlightBookingOrchestrator(
                 // The customer's notice, in the same save as the charge (ADR 0024): exactly once per settlement.
                 store.Publish(new OrderBookingSettled(Guid.NewGuid(), context.At, order.Id,
                     order.Status is OrderStatus.Confirmed ? BookingOutcome.Confirmed : BookingOutcome.PartiallyConfirmed,
-                    [.. order.Items.Where(i => i.Status is FlightOrderItemStatus.Confirmed && i.SupplierLocator is not null).Select(i => i.SupplierLocator!)],
+                    [.. order.Items.Where(i => i.Status is OrderItemStatus.Confirmed && i.SupplierLocator is not null).Select(i => i.SupplierLocator!)],
                     capture.Amount, context.CorrelationId,
-                    [.. order.Items.Where(i => i.Status is FlightOrderItemStatus.Confirmed && i.SupplierLocator is not null)
+                    [.. order.Items.Where(i => i.Status is OrderItemStatus.Confirmed && i.SupplierLocator is not null)
                         .Select(i => new BookedItem(i.Product.ToString(), i.SelectedOfferId, i.SupplierLocator!, i.CancellationTerms?.Refundable,
                             i.CancellationTerms?.FreeUntil, i.CancellationTerms?.PenaltyAmount, i.AgreedPrice.Currency.Value))]), context.CorrelationId);
                 break;
@@ -425,7 +425,7 @@ internal sealed partial class ReconcileBookingsJob(
             try
             {
                 await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<FlightBookingOrchestrator>().ReconcileAsync(orderId, cancellationToken);
+                await scope.ServiceProvider.GetRequiredService<BookingOrchestrator>().ReconcileAsync(orderId, cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

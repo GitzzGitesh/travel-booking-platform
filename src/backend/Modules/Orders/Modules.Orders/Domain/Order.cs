@@ -18,7 +18,7 @@ internal enum OrderProduct
 /// cancellation states come with their stories. Draft is transient: an item is only created from a selection Flights has
 /// already revalidated, so price changes and expiry before ordering are handled there (F-01, F-02).
 /// </summary>
-internal enum FlightOrderItemStatus
+internal enum OrderItemStatus
 {
     Draft,
     AwaitingPayment,
@@ -112,7 +112,7 @@ internal abstract record OrderTransitionError
 
     internal sealed record ItemNotFound(Guid ItemId) : OrderTransitionError;
 
-    internal sealed record Illegal(FlightOrderItemStatus From, FlightOrderItemStatus To) : OrderTransitionError;
+    internal sealed record Illegal(OrderItemStatus From, OrderItemStatus To) : OrderTransitionError;
 
     internal sealed record MissingReference(string Name) : OrderTransitionError;
 
@@ -133,7 +133,7 @@ internal abstract record OrderTransitionError
 /// </summary>
 internal sealed class Order
 {
-    private readonly List<FlightOrderItem> _items = [];
+    private readonly List<OrderItem> _items = [];
     private readonly List<OrderTimelineEntry> _timeline = [];
 
     private Order()
@@ -169,7 +169,7 @@ internal sealed class Order
     /// <summary>When the charge (or, with nothing booked, the release) of the payment was requested: once per order.</summary>
     public DateTimeOffset? PaymentSettlementRequestedAt { get; private set; }
 
-    public IReadOnlyList<FlightOrderItem> Items => _items;
+    public IReadOnlyList<OrderItem> Items => _items;
 
     public IReadOnlyList<OrderTimelineEntry> Timeline => _timeline;
 
@@ -213,7 +213,7 @@ internal sealed class Order
             CreatedAt = context.At,
             UpdatedAt = context.At,
         };
-        var item = new FlightOrderItem(Guid.NewGuid(), selectedOfferId, agreedPrice, offerExpiresAt, consent, product);
+        var item = new OrderItem(Guid.NewGuid(), selectedOfferId, agreedPrice, offerExpiresAt, consent, product);
         if (needs is not null)
         {
             item.SetTravellerNeeds(needs);
@@ -225,7 +225,7 @@ internal sealed class Order
             ? $"Order created from a confirmed {selection} selection"
             : $"Order created from a confirmed {selection} selection at an accepted changed price (quote {consent.AcceptedPriceQuoteId}, accepted {consent.AcceptedAt:O})";
         order.Record(item, null, reason, context, providerReference: null);
-        order.Move(item, FlightOrderItemStatus.AwaitingPayment, "Price confirmed with the supplier", context, providerReference: null);
+        order.Move(item, OrderItemStatus.AwaitingPayment, "Price confirmed with the supplier", context, providerReference: null);
         return order;
     }
 
@@ -234,26 +234,26 @@ internal sealed class Order
     /// decline is not this: the item stays AwaitingPayment for another attempt (F-20); and an authorization with an
     /// unknown outcome (timeout) is resolved on the payment side before anything is abandoned.
     /// </summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> Abandon(Guid itemId, string reason, TransitionContext context) =>
-        Transition(itemId, FlightOrderItemStatus.Abandoned, reason, context, providerReference: null, FlightOrderItemStatus.AwaitingPayment);
+    public Result<OrderItemStatus, OrderTransitionError> Abandon(Guid itemId, string reason, TransitionContext context) =>
+        Transition(itemId, OrderItemStatus.Abandoned, reason, context, providerReference: null, OrderItemStatus.AwaitingPayment);
 
     /// <summary>
     /// Adopts an item's terms from a fresh supplier revalidation, right before payment: the offer's new expiry and, when
     /// the customer accepted a changed price in Flights (F-01), that price with its consent evidence. A different price
     /// without a newly accepted quote is refused. Only while the item awaits payment; a price change is on the timeline.
     /// </summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> RefreshOffer(
+    public Result<OrderItemStatus, OrderTransitionError> RefreshOffer(
         Guid itemId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, TransitionContext context, bool? documentsRequired = null,
         CancellationTerms? terms = null)
     {
         if (Find(itemId) is not { } item)
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId));
+            return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId));
         }
 
-        if (item.Status is not FlightOrderItemStatus.AwaitingPayment)
+        if (item.Status is not OrderItemStatus.AwaitingPayment)
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, FlightOrderItemStatus.AwaitingPayment));
+            return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, OrderItemStatus.AwaitingPayment));
         }
 
         // The supplier may state (or drop) a document requirement at a later revalidation: the latest one applies (Q9).
@@ -266,7 +266,7 @@ internal sealed class Order
         var repriced = agreedPrice != item.AgreedPrice;
         if (repriced && (agreedPrice.Currency != item.AgreedPrice.Currency || consent is null || consent.AcceptedPriceQuoteId == item.AcceptedPriceQuoteId))
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
+            return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
         }
 
         // A hotel's terms as agreed right before payment (the supplier's selection is Confirmed only once the customer
@@ -275,7 +275,7 @@ internal sealed class Order
         {
             if (consent is null || (!repriced && consent.AcceptedPriceQuoteId == item.AcceptedPriceQuoteId))
             {
-                return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
+                return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.PriceNotAccepted(itemId));
             }
 
             item.SetCancellationTerms(terms);
@@ -291,7 +291,7 @@ internal sealed class Order
 
         if (!repriced && offerExpiresAt == item.OfferExpiresAt)
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Success(item.Status); // nothing new
+            return Result<OrderItemStatus, OrderTransitionError>.Success(item.Status); // nothing new
         }
 
         item.RefreshTerms(offerExpiresAt, repriced ? agreedPrice : null, repriced ? consent : null);
@@ -305,7 +305,7 @@ internal sealed class Order
             Revision++;
         }
 
-        return Result<FlightOrderItemStatus, OrderTransitionError>.Success(item.Status);
+        return Result<OrderItemStatus, OrderTransitionError>.Success(item.Status);
     }
 
     /// <summary>
@@ -327,9 +327,9 @@ internal sealed class Order
                 : Result<OrderStatus, OrderTransitionError>.Failure(new OrderTransitionError.ConflictingReference(nameof(paymentAuthorizationId)));
         }
 
-        if (_items.FirstOrDefault(i => i.Status is not FlightOrderItemStatus.AwaitingPayment) is { } notReady)
+        if (_items.FirstOrDefault(i => i.Status is not OrderItemStatus.AwaitingPayment) is { } notReady)
         {
-            return Result<OrderStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(notReady.Status, FlightOrderItemStatus.Booking));
+            return Result<OrderStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(notReady.Status, OrderItemStatus.Booking));
         }
 
         if (_items.FirstOrDefault(i => i.OfferExpiresAt <= context.At) is { } expired)
@@ -341,7 +341,7 @@ internal sealed class Order
         foreach (var item in _items)
         {
             item.StartBooking(context.At);
-            Move(item, FlightOrderItemStatus.Booking, "Payment authorized; booking with the supplier", context, paymentAuthorizationId);
+            Move(item, OrderItemStatus.Booking, "Payment authorized; booking with the supplier", context, paymentAuthorizationId);
         }
 
         return Result<OrderStatus, OrderTransitionError>.Success(Status);
@@ -375,32 +375,32 @@ internal sealed class Order
     /// </summary>
     public int AbandonExpired(TransitionContext context)
     {
-        var expired = _items.Where(i => i.Status is FlightOrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= context.At).ToList();
+        var expired = _items.Where(i => i.Status is OrderItemStatus.AwaitingPayment && i.OfferExpiresAt <= context.At).ToList();
         foreach (var item in expired)
         {
-            Move(item, FlightOrderItemStatus.Abandoned, "The offer expired before payment", context, providerReference: null);
+            Move(item, OrderItemStatus.Abandoned, "The offer expired before payment", context, providerReference: null);
         }
 
         return expired.Count;
     }
 
     /// <summary>The supplier confirmed the booking at the agreed price, directly or found by reconciliation.</summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> Confirm(
+    public Result<OrderItemStatus, OrderTransitionError> Confirm(
         Guid itemId, string providerId, string supplierLocator, TransitionContext context, TicketingStatus? ticketing = TicketingStatus.Pending)
     {
         if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(supplierLocator))
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(supplierLocator)));
+            return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(supplierLocator)));
         }
 
-        if (Find(itemId) is { Status: FlightOrderItemStatus.Confirmed } confirmed
+        if (Find(itemId) is { Status: OrderItemStatus.Confirmed } confirmed
             && (confirmed.ProviderId != providerId || confirmed.SupplierLocator != supplierLocator))
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ConflictingReference(nameof(supplierLocator)));
+            return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ConflictingReference(nameof(supplierLocator)));
         }
 
-        var result = Transition(itemId, FlightOrderItemStatus.Confirmed, "Supplier booking confirmed", context, $"{providerId}:{supplierLocator}",
-            FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.ManualReview);
+        var result = Transition(itemId, OrderItemStatus.Confirmed, "Supplier booking confirmed", context, $"{providerId}:{supplierLocator}",
+            OrderItemStatus.Booking, OrderItemStatus.PendingConfirmation, OrderItemStatus.ManualReview);
         if (result.IsSuccess)
         {
             Find(itemId)!.RecordSupplierBooking(providerId, supplierLocator, ticketing);
@@ -413,21 +413,21 @@ internal sealed class Order
     /// The supplier definitely has no booking: a definitive refusal while booking, or reconciliation confirming absence
     /// after the supplier's consistency window, or an operator's decision in manual review. Only now may payment be voided.
     /// </summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> Fail(Guid itemId, string reason, TransitionContext context) =>
-        Transition(itemId, FlightOrderItemStatus.Failed, reason, context, providerReference: null,
-            FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation, FlightOrderItemStatus.ManualReview);
+    public Result<OrderItemStatus, OrderTransitionError> Fail(Guid itemId, string reason, TransitionContext context) =>
+        Transition(itemId, OrderItemStatus.Failed, reason, context, providerReference: null,
+            OrderItemStatus.Booking, OrderItemStatus.PendingConfirmation, OrderItemStatus.ManualReview);
 
     /// <summary>The booking outcome is unknown (timeout, ambiguous error): reconcile by our reference, never resubmit.</summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> AwaitConfirmation(Guid itemId, string reason, TransitionContext context) =>
-        Transition(itemId, FlightOrderItemStatus.PendingConfirmation, reason, context, providerReference: null, FlightOrderItemStatus.Booking);
+    public Result<OrderItemStatus, OrderTransitionError> AwaitConfirmation(Guid itemId, string reason, TransitionContext context) =>
+        Transition(itemId, OrderItemStatus.PendingConfirmation, reason, context, providerReference: null, OrderItemStatus.Booking);
 
     /// <summary>
     /// A person must decide: reconciliation is unresolved after its limit, or a booking exists but not as agreed
     /// (a supplier mismatch, found while booking or reconciling).
     /// </summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> RequireManualReview(Guid itemId, string reason, TransitionContext context, string? providerReference = null) =>
-        Transition(itemId, FlightOrderItemStatus.ManualReview, reason, context, providerReference,
-            FlightOrderItemStatus.Booking, FlightOrderItemStatus.PendingConfirmation);
+    public Result<OrderItemStatus, OrderTransitionError> RequireManualReview(Guid itemId, string reason, TransitionContext context, string? providerReference = null) =>
+        Transition(itemId, OrderItemStatus.ManualReview, reason, context, providerReference,
+            OrderItemStatus.Booking, OrderItemStatus.PendingConfirmation);
 
     /// <summary>
     /// The item went to review because the supplier holds a booking that is not as agreed (recorded with its
@@ -435,11 +435,11 @@ internal sealed class Order
     /// reference, so its absence now proves nothing (a person decides).
     /// </summary>
     public bool HadSupplierMismatch(Guid itemId) =>
-        _timeline.Any(e => e.ItemId == itemId && e.ToStatus == nameof(FlightOrderItemStatus.ManualReview) && e.ProviderReference is not null);
+        _timeline.Any(e => e.ItemId == itemId && e.ToStatus == nameof(OrderItemStatus.ManualReview) && e.ProviderReference is not null);
 
     /// <summary>The supplier booking last seen not as agreed for this item (its provider and locator), if any.</summary>
     public (string ProviderId, string Locator)? MismatchedBooking(Guid itemId) =>
-        _timeline.LastOrDefault(e => e.ItemId == itemId && e.ToStatus == nameof(FlightOrderItemStatus.ManualReview)
+        _timeline.LastOrDefault(e => e.ItemId == itemId && e.ToStatus == nameof(OrderItemStatus.ManualReview)
                 && e.ProviderReference is { } candidate && candidate.Contains(':', StringComparison.Ordinal) && !Guid.TryParse(candidate, out _))
             ?.ProviderReference is { } reference && reference.IndexOf(':', StringComparison.Ordinal) is > 0 and var separator && separator < reference.Length - 1
             ? (reference[..separator], reference[(separator + 1)..])
@@ -449,11 +449,11 @@ internal sealed class Order
     /// A confirmed booking cancelled at the supplier after the charge (ADR 0027), with the supplier desk's reference as
     /// evidence: recorded as a fact, before any refund is decided. Only a confirmed item.
     /// </summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> CancelConfirmed(Guid itemId, string deskReference, TransitionContext context) =>
+    public Result<OrderItemStatus, OrderTransitionError> CancelConfirmed(Guid itemId, string deskReference, TransitionContext context) =>
         string.IsNullOrWhiteSpace(deskReference)
-            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(deskReference)))
-            : Transition(itemId, FlightOrderItemStatus.Cancelled, "Cancelled at the supplier after the booking was confirmed", context, deskReference,
-                FlightOrderItemStatus.Confirmed);
+            ? Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(deskReference)))
+            : Transition(itemId, OrderItemStatus.Cancelled, "Cancelled at the supplier after the booking was confirmed", context, deskReference,
+                OrderItemStatus.Confirmed);
 
     /// <summary>
     /// Records a refund step on the timeline (ADR 0027: opened, decided, refunded or failed), on the cancelled items or, for
@@ -469,7 +469,7 @@ internal sealed class Order
     }
 
     /// <summary>Whether any item of this order was ever in manual review (ADR 0027: its refunds always need a second person).</summary>
-    public bool WasEverInReview => _timeline.Any(e => e.ToStatus == nameof(FlightOrderItemStatus.ManualReview));
+    public bool WasEverInReview => _timeline.Any(e => e.ToStatus == nameof(OrderItemStatus.ManualReview));
 
     /// <summary>
     /// A staff outcome for an item in review (ADR 0025): the supplier booking was cancelled at the supplier's desk, with
@@ -480,26 +480,26 @@ internal sealed class Order
     /// Only for a booking that was seen under our reference (a mismatch): an item in review because its outcome is
     /// unknown leaves review only through a supplier lookup, never through a person's statement that releases the hold.
     /// </remarks>
-    public Result<FlightOrderItemStatus, OrderTransitionError> CancelledAtSupplier(Guid itemId, string deskReference, TransitionContext context) =>
+    public Result<OrderItemStatus, OrderTransitionError> CancelledAtSupplier(Guid itemId, string deskReference, TransitionContext context) =>
         string.IsNullOrWhiteSpace(deskReference)
-            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(deskReference)))
+            ? Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference(nameof(deskReference)))
             : MismatchedBooking(itemId) is null
-            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference("supplierBooking"))
-            : Transition(itemId, FlightOrderItemStatus.Failed, "Cancelled at the supplier by operations; nothing is booked", context, deskReference,
-                FlightOrderItemStatus.ManualReview);
+            ? Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference("supplierBooking"))
+            : Transition(itemId, OrderItemStatus.Failed, "Cancelled at the supplier by operations; nothing is booked", context, deskReference,
+                OrderItemStatus.ManualReview);
 
     /// <summary>
     /// A staff outcome for an item in review (ADR 0025): the booking seen not as agreed is accepted, because a person
     /// checked that its travellers and flights are the customer's and its price is not above the agreed one. It is
     /// confirmed under that supplier reference, and the agreed price is charged, never more.
     /// </summary>
-    public Result<FlightOrderItemStatus, OrderTransitionError> AcceptAsBooked(Guid itemId, TransitionContext context) =>
+    public Result<OrderItemStatus, OrderTransitionError> AcceptAsBooked(Guid itemId, TransitionContext context) =>
         Find(itemId) is not { } item
-            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId))
-            : item.Status is not FlightOrderItemStatus.ManualReview
-            ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, FlightOrderItemStatus.Confirmed))
+            ? Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId))
+            : item.Status is not OrderItemStatus.ManualReview
+            ? Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, OrderItemStatus.Confirmed))
             : MismatchedBooking(itemId) is not { } booking
-                ? Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference("supplierBooking"))
+                ? Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.MissingReference("supplierBooking"))
                 : Confirm(itemId, booking.ProviderId, booking.Locator, context);
 
     /// <summary>
@@ -511,13 +511,13 @@ internal sealed class Order
     public PaymentSettlement? SettlePayment(TransitionContext context)
     {
         if (PaymentAuthorizationId is null || PaymentSettlementRequestedAt is not null || !Guid.TryParse(PaymentAuthorizationId, out var paymentId)
-            || _items.Any(i => i.Status is FlightOrderItemStatus.Booking or FlightOrderItemStatus.PendingConfirmation or FlightOrderItemStatus.ManualReview))
+            || _items.Any(i => i.Status is OrderItemStatus.Booking or OrderItemStatus.PendingConfirmation or OrderItemStatus.ManualReview))
         {
             return null;
         }
 
         PaymentSettlementRequestedAt = context.At;
-        var confirmed = _items.Where(i => i.Status is FlightOrderItemStatus.Confirmed).ToList();
+        var confirmed = _items.Where(i => i.Status is OrderItemStatus.Confirmed).ToList();
         if (confirmed.Count == 0)
         {
             foreach (var item in _items)
@@ -554,7 +554,7 @@ internal sealed class Order
     /// <summary>Records a check of an item in manual review that did not settle it (no status change).</summary>
     public void NoteReviewCheck(Guid itemId, string reason, TransitionContext context)
     {
-        if (Find(itemId) is { Status: FlightOrderItemStatus.ManualReview } item)
+        if (Find(itemId) is { Status: OrderItemStatus.ManualReview } item)
         {
             Record(item, item.Status, reason, context, providerReference: null);
         }
@@ -563,92 +563,92 @@ internal sealed class Order
     public static bool IsValidCustomerId(string? customerId) =>
         !string.IsNullOrWhiteSpace(customerId) && customerId.Length <= MaxCustomerIdLength;
 
-    internal static OrderStatus Derive(IReadOnlyList<FlightOrderItemStatus> items)
+    internal static OrderStatus Derive(IReadOnlyList<OrderItemStatus> items)
     {
-        if (items.Any(s => s is FlightOrderItemStatus.Booking or FlightOrderItemStatus.PendingConfirmation or FlightOrderItemStatus.ManualReview))
+        if (items.Any(s => s is OrderItemStatus.Booking or OrderItemStatus.PendingConfirmation or OrderItemStatus.ManualReview))
         {
             return OrderStatus.Pending;
         }
 
-        if (items.All(s => s is FlightOrderItemStatus.Confirmed))
+        if (items.All(s => s is OrderItemStatus.Confirmed))
         {
             return OrderStatus.Confirmed;
         }
 
-        if (items.All(s => s is FlightOrderItemStatus.Failed))
+        if (items.All(s => s is OrderItemStatus.Failed))
         {
             return OrderStatus.Failed;
         }
 
-        if (items.Any(s => s is FlightOrderItemStatus.Cancelled) && items.All(s => s is FlightOrderItemStatus.Cancelled or FlightOrderItemStatus.Failed))
+        if (items.Any(s => s is OrderItemStatus.Cancelled) && items.All(s => s is OrderItemStatus.Cancelled or OrderItemStatus.Failed))
         {
             return OrderStatus.Cancelled;
         }
 
-        if (items.Any(s => s is FlightOrderItemStatus.Confirmed)
-            && items.All(s => s is FlightOrderItemStatus.Confirmed or FlightOrderItemStatus.Failed or FlightOrderItemStatus.Cancelled))
+        if (items.Any(s => s is OrderItemStatus.Confirmed)
+            && items.All(s => s is OrderItemStatus.Confirmed or OrderItemStatus.Failed or OrderItemStatus.Cancelled))
         {
             return OrderStatus.PartiallyConfirmed;
         }
 
-        if (items.All(s => s is FlightOrderItemStatus.Abandoned))
+        if (items.All(s => s is OrderItemStatus.Abandoned))
         {
             return OrderStatus.Abandoned;
         }
 
-        return items.Any(s => s is FlightOrderItemStatus.AwaitingPayment) ? OrderStatus.AwaitingPayment : OrderStatus.Draft;
+        return items.Any(s => s is OrderItemStatus.AwaitingPayment) ? OrderStatus.AwaitingPayment : OrderStatus.Draft;
     }
 
-    private Result<FlightOrderItemStatus, OrderTransitionError> Transition(
-        Guid itemId, FlightOrderItemStatus to, string reason, TransitionContext context, string? providerReference, params FlightOrderItemStatus[] allowedFrom)
+    private Result<OrderItemStatus, OrderTransitionError> Transition(
+        Guid itemId, OrderItemStatus to, string reason, TransitionContext context, string? providerReference, params OrderItemStatus[] allowedFrom)
     {
         if (Find(itemId) is not { } item)
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId));
+            return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.ItemNotFound(itemId));
         }
 
         if (item.Status == to)
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Success(to); // already applied: a no-op
+            return Result<OrderItemStatus, OrderTransitionError>.Success(to); // already applied: a no-op
         }
 
         if (!allowedFrom.Contains(item.Status))
         {
-            return Result<FlightOrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, to));
+            return Result<OrderItemStatus, OrderTransitionError>.Failure(new OrderTransitionError.Illegal(item.Status, to));
         }
 
         Move(item, to, reason, context, providerReference);
-        return Result<FlightOrderItemStatus, OrderTransitionError>.Success(to);
+        return Result<OrderItemStatus, OrderTransitionError>.Success(to);
     }
 
-    private void Move(FlightOrderItem item, FlightOrderItemStatus to, string reason, TransitionContext context, string? providerReference)
+    private void Move(OrderItem item, OrderItemStatus to, string reason, TransitionContext context, string? providerReference)
     {
         var from = item.Status;
         item.MoveTo(to);
         Record(item, from, reason, context, providerReference);
     }
 
-    private void Record(FlightOrderItem item, FlightOrderItemStatus? from, string reason, TransitionContext context, string? providerReference)
+    private void Record(OrderItem item, OrderItemStatus? from, string reason, TransitionContext context, string? providerReference)
     {
         _timeline.Add(new OrderTimelineEntry(Id, item.Id, context.At, context.Actor, from?.ToString(), item.Status.ToString(), reason, context.CorrelationId, providerReference));
         UpdatedAt = context.At;
         Revision++;
     }
 
-    private FlightOrderItem? Find(Guid itemId) => _items.SingleOrDefault(i => i.Id == itemId);
+    private OrderItem? Find(Guid itemId) => _items.SingleOrDefault(i => i.Id == itemId);
 }
 
 /// <summary>
 /// One flight booking in an order. Its <see cref="Id"/> is our client reference at the supplier and the basis of the
 /// capture idempotency key (ADR 0005). Status changes only through <see cref="Order"/>.
 /// </summary>
-internal sealed class FlightOrderItem
+internal sealed class OrderItem
 {
-    private FlightOrderItem()
+    private OrderItem()
     {
     }
 
-    internal FlightOrderItem(Guid id, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, OrderProduct product = OrderProduct.Flight)
+    internal OrderItem(Guid id, Guid selectedOfferId, Money agreedPrice, DateTimeOffset offerExpiresAt, PriceConsent? consent, OrderProduct product = OrderProduct.Flight)
     {
         Id = id;
         Product = product;
@@ -657,7 +657,7 @@ internal sealed class FlightOrderItem
         OfferExpiresAt = offerExpiresAt;
         AcceptedPriceQuoteId = consent?.AcceptedPriceQuoteId;
         PriceAcceptedAt = consent?.AcceptedAt;
-        Status = FlightOrderItemStatus.Draft;
+        Status = OrderItemStatus.Draft;
     }
 
     public Guid Id { get; private set; }
@@ -678,7 +678,7 @@ internal sealed class FlightOrderItem
 
     public DateTimeOffset? PriceAcceptedAt { get; private set; }
 
-    public FlightOrderItemStatus Status { get; private set; }
+    public OrderItemStatus Status { get; private set; }
 
     public string? ProviderId { get; private set; }
 
@@ -704,7 +704,7 @@ internal sealed class FlightOrderItem
 
     internal void SetCancellationTerms(CancellationTerms terms) => CancellationTerms = terms;
 
-    internal void MoveTo(FlightOrderItemStatus status) => Status = status;
+    internal void MoveTo(OrderItemStatus status) => Status = status;
 
     internal void RefreshTerms(DateTimeOffset offerExpiresAt, Money? agreedPrice, PriceConsent? consent)
     {

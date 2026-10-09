@@ -7,7 +7,7 @@ using TravelBooking.Modules.Orders.Domain;
 
 namespace TravelBooking.Modules.Orders.UnitTests;
 
-public sealed class CreateFlightOrderHandlerTests
+public sealed class CreateOrderHandlerTests
 {
     private static readonly Guid _selection = Guid.NewGuid();
 
@@ -49,7 +49,7 @@ public sealed class CreateFlightOrderHandlerTests
 
         var reused = await Handler(store).HandleAsync(Command("key-1") with { SelectedOfferId = Guid.NewGuid() }, TestContext.Current.CancellationToken);
 
-        reused.Error.ShouldBeOfType<CreateFlightOrderFailure.IdempotencyKeyReused>();
+        reused.Error.ShouldBeOfType<CreateOrderFailure.IdempotencyKeyReused>();
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class CreateFlightOrderHandlerTests
 
         var second = await Handler(store).HandleAsync(Command("key-2"), TestContext.Current.CancellationToken);
 
-        second.Error.ShouldBe(new CreateFlightOrderFailure.SelectionAlreadyOrdered(first.Value.Order.Id));
+        second.Error.ShouldBe(new CreateOrderFailure.SelectionAlreadyOrdered(first.Value.Order.Id));
         store.Orders.ShouldHaveSingleItem();
     }
 
@@ -73,7 +73,7 @@ public sealed class CreateFlightOrderHandlerTests
         var someoneElse = await Handler(store).HandleAsync(Command("key-1", customer: "cust-2"), TestContext.Current.CancellationToken);
 
         // The selection is cust-1's: for anyone else it is simply not found, whether ordered or not.
-        someoneElse.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(ItemUnavailable.NotFound));
+        someoneElse.Error.ShouldBe(new CreateOrderFailure.SelectionUnavailable(ItemUnavailable.NotFound));
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class CreateFlightOrderHandlerTests
     {
         var result = await Handler(new FakeStore()).HandleAsync(Command("key-1", customer), TestContext.Current.CancellationToken);
 
-        result.Error.ShouldBeOfType<CreateFlightOrderFailure.CustomerRequired>();
+        result.Error.ShouldBeOfType<CreateOrderFailure.CustomerRequired>();
     }
 
     [Theory]
@@ -110,7 +110,7 @@ public sealed class CreateFlightOrderHandlerTests
 
         var result = await Handler(store, new StubSelections(reason)).HandleAsync(Command("key-1"), TestContext.Current.CancellationToken);
 
-        result.Error.ShouldBe(new CreateFlightOrderFailure.SelectionUnavailable(Enum.Parse<ItemUnavailable>(reason.ToString())));
+        result.Error.ShouldBe(new CreateOrderFailure.SelectionUnavailable(Enum.Parse<ItemUnavailable>(reason.ToString())));
         store.Orders.ShouldBeEmpty();
     }
 
@@ -122,7 +122,7 @@ public sealed class CreateFlightOrderHandlerTests
     {
         var result = await Handler(new FakeStore()).HandleAsync(Command(key), TestContext.Current.CancellationToken);
 
-        result.Error.ShouldBeOfType<CreateFlightOrderFailure.InvalidIdempotencyKey>();
+        result.Error.ShouldBeOfType<CreateOrderFailure.InvalidIdempotencyKey>();
     }
 
     [Fact]
@@ -138,9 +138,9 @@ public sealed class CreateFlightOrderHandlerTests
         result.Value.Order.ShouldBeSameAs(winner);
     }
 
-    private static CreateFlightOrder Command(string key, string customer = "cust-1") => new(customer, key, _selection, "trace-0");
+    private static CreateOrder Command(string key, string customer = "cust-1") => new(customer, key, _selection, "trace-0");
 
-    private static CreateFlightOrderHandler Handler(FakeStore store, IFlightSelections? selections = null) =>
+    private static CreateOrderHandler Handler(FakeStore store, IFlightSelections? selections = null) =>
         new(new OrderItemSelections(selections ?? new StubSelections(null), new StubHotelSelections()), store, new FakeTimeProvider(OrderTests.Now));
 
     // The selection belongs to cust-1, as Flights enforces: anyone else gets NotFound.
@@ -198,7 +198,7 @@ public sealed class CreateFlightOrderHandlerTests
         public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(OrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public void Audit(TravelBooking.BuildingBlocks.Audit.AuditEntry entry)

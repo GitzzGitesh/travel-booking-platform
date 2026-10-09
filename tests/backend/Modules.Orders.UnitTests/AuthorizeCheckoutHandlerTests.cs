@@ -36,7 +36,7 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         result.ShouldBe(new CheckoutResult(_order.Id, CheckoutStatus.Booked, _payments.PaymentId));
         _order.Status.ShouldBe(OrderStatus.Confirmed);
-        (_order.Items[0].Status, _order.Items[0].SupplierLocator, _order.Items[0].Ticketing).ShouldBe((FlightOrderItemStatus.Confirmed, "LOC123", TicketingStatus.Issued));
+        (_order.Items[0].Status, _order.Items[0].SupplierLocator, _order.Items[0].Ticketing).ShouldBe((OrderItemStatus.Confirmed, "LOC123", TicketingStatus.Issued));
         var booked = _bookings.Booked.ShouldHaveSingleItem();
         (booked.ClientReference, booked.AgreedPrice, booked.Passengers.Count).ShouldBe((_order.Items[0].Id.ToString(), OrderTests.Price, 1));
         var capture = _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
@@ -427,7 +427,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         var replay = (await Handle()).Value;
 
         (first.Status, replay.Status).ShouldBe((CheckoutStatus.BookingPending, CheckoutStatus.BookingPending));
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.PendingConfirmation);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.PendingConfirmation);
         _bookings.Booked.Count.ShouldBe(1);
         _store.Published.ShouldBeEmpty();
     }
@@ -439,7 +439,7 @@ public sealed class AuthorizeCheckoutHandlerTests
 
         (await Handle()).Value.Status.ShouldBe(CheckoutStatus.BookingPending);
 
-        _order.Items[0].Status.ShouldBe(FlightOrderItemStatus.ManualReview);
+        _order.Items[0].Status.ShouldBe(OrderItemStatus.ManualReview);
         _store.Published.ShouldBeEmpty();
     }
 
@@ -454,8 +454,8 @@ public sealed class AuthorizeCheckoutHandlerTests
         _store.Published.OfType<OrderPaymentReleaseRequested>().ShouldHaveSingleItem();
     }
 
-    private FlightBookingOrchestrator Orchestrator() =>
-        new(_store, _bookings, new StubHotelBookings(), _travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<FlightBookingOrchestrator>.Instance);
+    private BookingOrchestrator Orchestrator() =>
+        new(_store, _bookings, new StubHotelBookings(), _travellers, _clock, Options.Create(new BookingReconciliationOptions()), NullLogger<BookingOrchestrator>.Instance);
 
     private sealed class StubTravellers : IOrderTravellers
     {
@@ -582,7 +582,7 @@ public sealed class AuthorizeCheckoutHandlerTests
         public Task<IReadOnlyList<Guid>> FindBookingsToReconcileAsync(DateTimeOffset startedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(FlightOrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<Order>> FindWithItemStatusAsync(OrderItemStatus status, (DateTimeOffset CreatedAt, Guid Id)? after, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public void Audit(TravelBooking.BuildingBlocks.Audit.AuditEntry entry)

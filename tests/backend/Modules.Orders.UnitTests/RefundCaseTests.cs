@@ -21,11 +21,11 @@ public sealed class RefundCaseTests
         var order = Confirmed();
 
         order.CancelConfirmed(order.Items[0].Id, " ", _staff).Error.ShouldBe(new OrderTransitionError.MissingReference("deskReference"));
-        order.CancelConfirmed(order.Items[0].Id, "DESK-CXL-1", _staff).Value.ShouldBe(FlightOrderItemStatus.Cancelled);
+        order.CancelConfirmed(order.Items[0].Id, "DESK-CXL-1", _staff).Value.ShouldBe(OrderItemStatus.Cancelled);
         order.Status.ShouldBe(OrderStatus.Cancelled);
         order.Timeline[^1].ProviderReference.ShouldBe("DESK-CXL-1");
         order.CancelConfirmed(order.Items[0].Id, "DESK-CXL-1", _staff).IsSuccess.ShouldBeTrue(); // the same again: no change
-        order.Timeline.Count(e => e.ToStatus == nameof(FlightOrderItemStatus.Cancelled)).ShouldBe(1);
+        order.Timeline.Count(e => e.ToStatus == nameof(OrderItemStatus.Cancelled)).ShouldBe(1);
 
         var unbooked = OrderTests.NewOrder();
         unbooked.CancelConfirmed(unbooked.Items[0].Id, "DESK-CXL-2", _staff).IsSuccess.ShouldBeFalse();
@@ -78,9 +78,9 @@ public sealed class RefundCaseTests
     [Fact]
     public void Cancelled_items_derive_the_order_status()
     {
-        Order.Derive([FlightOrderItemStatus.Cancelled, FlightOrderItemStatus.Confirmed]).ShouldBe(OrderStatus.PartiallyConfirmed);
-        Order.Derive([FlightOrderItemStatus.Cancelled, FlightOrderItemStatus.Failed]).ShouldBe(OrderStatus.Cancelled);
-        Order.Derive([FlightOrderItemStatus.Cancelled]).ShouldBe(OrderStatus.Cancelled);
+        Order.Derive([OrderItemStatus.Cancelled, OrderItemStatus.Confirmed]).ShouldBe(OrderStatus.PartiallyConfirmed);
+        Order.Derive([OrderItemStatus.Cancelled, OrderItemStatus.Failed]).ShouldBe(OrderStatus.Cancelled);
+        Order.Derive([OrderItemStatus.Cancelled]).ShouldBe(OrderStatus.Cancelled);
     }
 
     private static Money Money(decimal amount) => new(amount, new CurrencyCode("XTS"));
