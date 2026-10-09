@@ -11,4 +11,10 @@ public static class RateLimitPolicies
 
     /// <summary>Anonymous calls that reach a paid supplier (search, revalidation): a tighter limit against scraping.</summary>
     public const string SupplierCalls = "supplier-calls";
+
+    /// <summary>
+    /// Payment provider notifications (webhooks): anonymous, authenticated by the provider's signature. Their own budget, so a
+    /// provider's burst never competes with customers for the anonymous one, and a flood is cut before any signature check.
+    /// </summary>
+    public const string PaymentNotifications = "payment-notifications";
 }

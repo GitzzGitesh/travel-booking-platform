@@ -159,7 +159,9 @@ internal sealed partial class PaymentAttemptReconciler(
             case PaymentOutcome.Authorized:
                 await SendCaptureAsync(attempt, cancellationToken); // still only held: the same key never charges twice
                 break;
-            case PaymentOutcome.Unknown or PaymentOutcome.Rejected when timeProvider.GetUtcNow() - attempt.CaptureRequestedAt >= CaptureUnresolvedAfter:
+            // Measured from when this capture began, so a capture begun again after a review has its own limit.
+            case PaymentOutcome.Unknown or PaymentOutcome.Rejected
+                when attempt.CaptureStartedAt is { } started && timeProvider.GetUtcNow() - started >= CaptureUnresolvedAfter:
                 await ResolveCaptureAsync(attempt, PaymentAttemptStatus.ManualReview, "Capture still unknown after its limit; the hold must not lapse unnoticed", cancellationToken);
                 break;
             case PaymentOutcome.Unknown or PaymentOutcome.Rejected:

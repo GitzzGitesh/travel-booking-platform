@@ -36,6 +36,7 @@ public static class OrdersModule
             .ValidateOnStart();
         services.AddScoped<IOrderTravellerNeeds, OrderTravellerNeedsQuery>();
         services.AddScoped<CustomerOrderDetailsQuery>(); // the customer's own order page, with what each item booked
+        services.AddScoped<OperationsOrderDetailsQuery>(); // the operations order page, with its hotel stays
 
         // The module's own schema. The connection string is resolved on first use; migrations are never applied at
         // startup (database rules).

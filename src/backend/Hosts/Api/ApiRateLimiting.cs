@@ -29,6 +29,9 @@ public sealed class ApiRateLimitingOptions
 
     public RateLimitWindowOptions SupplierCalls { get; set; } = new();
 
+    /// <summary>Payment provider notifications (webhooks), per sending address: see <see cref="RateLimitPolicies.PaymentNotifications"/>.</summary>
+    public RateLimitWindowOptions PaymentNotifications { get; set; } = new();
+
     /// <summary>
     /// A signed-in customer's writes (orders, travellers, and checkout when exposed; Q10), per customer: see
     /// <see cref="CustomerWriteLimiter"/>. Sized for the largest booking (an order, its travellers, nine documents, checkout).
@@ -48,7 +51,7 @@ internal static class ApiRateLimiting
     {
         services.AddOptions<ApiRateLimitingOptions>()
             .Bind(configuration.GetSection(ApiRateLimitingOptions.SectionName))
-            .Validate(o => IsValid(o.Anonymous) && IsValid(o.SupplierCalls) && IsValid(o.Customer), "RateLimiting windows need PermitLimit 1-100000 and WindowSeconds 1-3600.")
+            .Validate(o => IsValid(o.Anonymous) && IsValid(o.SupplierCalls) && IsValid(o.PaymentNotifications) && IsValid(o.Customer), "RateLimiting windows need PermitLimit 1-100000 and WindowSeconds 1-3600.")
             .ValidateOnStart();
 
         services.AddRateLimiter(limiter =>
@@ -56,6 +59,7 @@ internal static class ApiRateLimiting
             limiter.OnRejected = WriteRejection;
             AddPolicy(limiter, RateLimitPolicies.Anonymous, options => options.Anonymous);
             AddPolicy(limiter, RateLimitPolicies.SupplierCalls, options => options.SupplierCalls);
+            AddPolicy(limiter, RateLimitPolicies.PaymentNotifications, options => options.PaymentNotifications);
         });
 
         // Per signed-in customer, after authorization (an endpoint filter), for their writes only.
