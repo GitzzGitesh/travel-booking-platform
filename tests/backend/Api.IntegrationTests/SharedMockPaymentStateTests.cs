@@ -219,6 +219,33 @@ public sealed class SharedMockPaymentStateTests(SqlApiFactory api) : IClassFixtu
         (await workerProcess.CaptureAsync(capture, Ct)).Value.State.ShouldBe(PaymentState.Captured);
     }
 
+    // Another call holds the payment past the wait: the mock is unavailable (nothing done), and the call succeeds once the
+    // payment is free, as a provider's "busy, try later" would.
+    [Fact]
+    public async Task A_payment_held_by_another_call_past_the_wait_makes_the_mock_unavailable_and_nothing_is_done()
+    {
+        var process = Process(lockTimeoutMilliseconds: 500);
+        var authorized = (await process.AuthorizeAsync(Authorization(MockPaymentMethods.Approved), Ct)).Value;
+        var capture = new CaptureDetails(authorized.Reference, authorized.Payment, Key(), Eur(120m));
+
+        await using (var holder = new Microsoft.Data.SqlClient.SqlConnection(api.ConnectionString))
+        {
+            await holder.OpenAsync(Ct);
+            await using var transaction = (Microsoft.Data.SqlClient.SqlTransaction)await holder.BeginTransactionAsync(Ct);
+            await using (var hold = new Microsoft.Data.SqlClient.SqlCommand(
+                "EXEC sp_getapplock @Resource = @resource, @LockMode = 'Exclusive', @LockOwner = 'Transaction'", holder, transaction))
+            {
+                hold.Parameters.AddWithValue("@resource", "paymentsmock:" + authorized.Reference.Value);
+                await hold.ExecuteNonQueryAsync(Ct);
+            }
+
+            (await process.CaptureAsync(capture, Ct)).Error.Kind.ShouldBe(ProviderErrorKind.Unavailable);
+        }
+
+        (await process.RetrieveAsync(authorized.Reference, Ct)).Value.Payment.ShouldNotBeNull().State.ShouldBe(PaymentState.Authorized);
+        (await process.CaptureAsync(capture, Ct)).Value.State.ShouldBe(PaymentState.Captured); // the same key, once free
+    }
+
     // A state store that cannot be reached is the provider being unavailable: never a success, never an exception.
     [Fact]
     public async Task An_unreachable_state_store_makes_the_provider_unavailable()
@@ -237,10 +264,14 @@ public sealed class SharedMockPaymentStateTests(SqlApiFactory api) : IClassFixtu
     }
 
     // One process's composition of the mock, as each host composes it (Development, the shared state).
-    private IPaymentProvider Process(string? connectionString = null)
+    private IPaymentProvider Process(string? connectionString = null, int? lockTimeoutMilliseconds = null)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection([new("ConnectionStrings:Payments", connectionString ?? api.ConnectionString)])
+            .AddInMemoryCollection(
+            [
+                new("ConnectionStrings:Payments", connectionString ?? api.ConnectionString),
+                new($"{MockPaymentProviderOptions.SectionName}:LockTimeoutMilliseconds", (lockTimeoutMilliseconds ?? 15_000).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ])
             .Build();
         var services = new ServiceCollection()
             .AddLogging()
@@ -262,7 +293,7 @@ public sealed class SharedMockPaymentStateTests(SqlApiFactory api) : IClassFixtu
         _processes.Add(services);
         return new MockPaymentProvider(
             Options.Create(new MockPaymentProviderOptions()),
-            new SqlMockPaymentLedger(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<SqlMockPaymentLedger>.Instance));
+            new SqlMockPaymentLedger(services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new MockPaymentProviderOptions()), NullLogger<SqlMockPaymentLedger>.Instance));
     }
 
     // Fails the next commit once armed: before it reaches the database, or after it did (its answer lost).

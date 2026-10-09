@@ -105,6 +105,12 @@ internal sealed class PaymentAttempt
 
     public bool IsCaptureInProgress => Status is PaymentAttemptStatus.Capturing or PaymentAttemptStatus.CaptureUnknown;
 
+    /// <summary>
+    /// When the latest capture began (its move into Capturing, from the history), null if none has. A capture begun again
+    /// after a review starts its own clock.
+    /// </summary>
+    public DateTimeOffset? CaptureStartedAt => _events.LastOrDefault(e => e.ToStatus == nameof(PaymentAttemptStatus.Capturing))?.At;
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>When the funds were first held (the attempt first became Authorized): the hold lapses a provider-set time later (ADR 0025).</summary>

@@ -145,7 +145,8 @@ public static class PaymentsModule
         endpoints.MapPost("/payments/notifications/{providerId}", PaymentNotificationEndpoint.Handle)
             .WithName("ReceivePaymentNotification")
             .ExcludeFromDescription()
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.PaymentNotifications);
         return endpoints;
     }
 

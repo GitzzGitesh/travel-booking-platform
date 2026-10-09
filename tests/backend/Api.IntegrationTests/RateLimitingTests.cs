@@ -45,6 +45,9 @@ public sealed class RateLimitingTests(WebApplicationFactory<Program> factory) : 
         // Customer sign-in (ADR 0028): per client, through the /api/v1 group; likewise.
         ["/api/v1/session/sign-in"] = RateLimitPolicies.Anonymous,
         ["/api/v1/session/development-sign-in"] = RateLimitPolicies.Anonymous,
+
+        // Payment provider notifications (webhooks, ADR 0006): their own budget, mapped when a provider sends them.
+        ["/api/v1/payments/notifications/{providerId}"] = RateLimitPolicies.PaymentNotifications,
     };
 
     [Fact]
@@ -64,6 +67,19 @@ public sealed class RateLimitingTests(WebApplicationFactory<Program> factory) : 
             policy.ShouldBe(_routePolicies[endpoint.RoutePattern.RawText!], endpoint.RoutePattern.RawText);
             endpoint.Metadata.GetMetadata<DisableRateLimitingAttribute>().ShouldBeNull();
         }
+    }
+
+    // The webhook route is mapped only when a provider sends notifications: composed here, it has its own policy.
+    [Fact]
+    public void Payment_notifications_have_their_own_rate_limit_policy()
+    {
+        using var host = factory.WithWebHostBuilder(b => b.UseEnvironment("Development")
+            .ConfigureTestServices(services => services.AddSingleton<TravelBooking.Modules.Payments.Ports.IPaymentNotifications, TestPaymentNotifications>()));
+
+        var webhook = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+            .Single(e => e.RoutePattern.RawText == "/api/v1/payments/notifications/{providerId}");
+
+        webhook.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName.ShouldBe(RateLimitPolicies.PaymentNotifications);
     }
 
     [Fact]
@@ -182,6 +198,7 @@ public sealed class RateLimitingTests(WebApplicationFactory<Program> factory) : 
     [InlineData("ForwardedHeaders:KnownNetworks:0", "10.0.0.0/99")]
     [InlineData("RateLimiting:SupplierCalls:PermitLimit", "0")]
     [InlineData("RateLimiting:Anonymous:WindowSeconds", "0")]
+    [InlineData("RateLimiting:PaymentNotifications:PermitLimit", "0")]
     public void Invalid_configuration_stops_the_host_at_startup(string key, string value)
     {
         using var host = Host(settings: new() { [key] = value });

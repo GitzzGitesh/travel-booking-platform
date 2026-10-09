@@ -76,6 +76,12 @@ public sealed class MockPaymentProviderOptions
 
     /// <summary>Where the mock keeps its payments (ADR 0032). Shared by default, so the Api and the Worker see the same ones.</summary>
     public MockPaymentState State { get; set; } = MockPaymentState.Shared;
+
+    /// <summary>
+    /// How long a call on the shared state waits for another call on the same payment before the mock reports itself
+    /// unavailable (1 to 60 000 ms).
+    /// </summary>
+    public int LockTimeoutMilliseconds { get; set; } = 15_000;
 }
 
 public static class MockPaymentProviderRegistration
@@ -90,6 +96,7 @@ public static class MockPaymentProviderRegistration
             .Bind(configuration.GetSection(MockPaymentProviderOptions.SectionName))
             .Validate<IHostEnvironment>((_, environment) => environment.IsDevelopment() || environment.IsStaging(), "The mock payment provider only runs in Development or Staging.")
             .Validate(options => Enum.IsDefined(options.Scenario), $"{MockPaymentProviderOptions.SectionName}:Scenario is not a defined scenario.")
+            .Validate(options => options.LockTimeoutMilliseconds is > 0 and <= 60_000, $"{MockPaymentProviderOptions.SectionName}:LockTimeoutMilliseconds must be 1 to 60000.")
             // In Staging the Api and the Worker run apart: keeping payments in one process would split them again (ADR 0032).
             .Validate<IHostEnvironment>((options, environment) => options.State is not MockPaymentState.InProcess || environment.IsDevelopment(),
                 $"{MockPaymentProviderOptions.SectionName}:State InProcess is for Development only (tests); Staging shares the mock's payments.")

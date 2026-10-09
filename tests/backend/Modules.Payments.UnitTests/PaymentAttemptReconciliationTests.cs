@@ -551,6 +551,29 @@ public sealed class PaymentAttemptReconciliationTests
         _provider.Voids.ShouldBeEmpty();
     }
 
+    // The limit runs from when the current capture began: a capture sent again after a review, long after Orders asked
+    // for it, is looked up again on a passing failure instead of going straight back to a person.
+    [Fact]
+    public async Task A_capture_begun_again_after_a_review_has_its_own_limit()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestCapture(attempt, _total);
+        _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.InvalidRequest, "refused"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        attempt.Status.ShouldBe(PaymentAttemptStatus.ManualReview);
+
+        _clock.Advance(TimeSpan.FromHours(30));
+        attempt.ResolveReview(PaymentAttemptStatus.Authorized, "TICKET-902 still held at the provider", new PaymentChange(_clock.GetUtcNow(), "staff:902", null))
+            .IsSuccess.ShouldBeTrue();
+        _provider.OnCapture = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        _provider.OnLookupError = new ProviderError(ProviderErrorKind.Unavailable, "down");
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.CaptureUnknown); // its own capture is minutes old
+        _provider.Voids.ShouldBeEmpty();
+    }
+
     private Task RequestCapture(PaymentAttempt attempt, Money amount) => CaptureHandler().HandleAsync(Capture(attempt, amount), Ct);
 
     private static OrderPaymentCaptureRequested Capture(PaymentAttempt attempt, Money amount) => new(Guid.NewGuid(), _now, attempt.OrderId, attempt.Id, amount, "trace-7");

@@ -104,25 +104,10 @@ internal static class AdminOrderEndpoints
     }
 
     public static async Task<Results<Ok<AdminOrderDetail>, NotFound>> Get(
-        Guid orderId, IOrderStore store, ICancellationRequestStore cancellations, IHotelStays hotelStays, CancellationToken cancellationToken)
-    {
-        if (await store.FindAsync(orderId, cancellationToken) is not { } order)
-        {
-            return TypedResults.NotFound();
-        }
-
-        // A hotel item's stay (ADR 0030), so operations can handle it with the property's desk: non-personal facts only.
-        var stays = new List<AdminHotelStay>();
-        foreach (var item in order.Items.Where(i => i.Product is OrderProduct.Hotel))
-        {
-            if (await hotelStays.GetStayAsync(item.SelectedOfferId, cancellationToken) is { } stay)
-            {
-                stays.Add(AdminHotelStay.From(item, stay));
-            }
-        }
-
-        return TypedResults.Ok(AdminOrderDetail.From(order, await cancellations.FindLatestForOrderAsync(order.Id, cancellationToken), stays));
-    }
+        Guid orderId, OperationsOrderDetailsQuery query, CancellationToken cancellationToken) =>
+        await query.GetAsync(orderId, cancellationToken) is { } details
+            ? TypedResults.Ok(AdminOrderDetail.From(details.Order, details.Cancellation, [.. details.Stays.Select(s => AdminHotelStay.From(s.Item, s.Stay))]))
+            : TypedResults.NotFound();
 
     public static async Task<Results<Ok<BookingReviewCheckResponse>, ProblemHttpResult>> CheckReview(
         Guid orderId, Guid itemId, BookingReviewCheckRequest request, ClaimsPrincipal user, HttpContext http,

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TravelBooking.BuildingBlocks.Providers;
 using TravelBooking.Modules.Payments.Ports;
 
@@ -19,10 +20,9 @@ namespace TravelBooking.Integrations.Payments.Mock.Persistence;
 /// different payments (never done by the Payments module, whose keys name their attempt) meets the key's primary key
 /// instead: the later call rolls back and is reported unavailable, never applied twice.
 /// </remarks>
-internal sealed partial class SqlMockPaymentLedger(IServiceScopeFactory scopes, ILogger<SqlMockPaymentLedger> logger) : IMockPaymentLedger
+internal sealed partial class SqlMockPaymentLedger(
+    IServiceScopeFactory scopes, IOptions<MockPaymentProviderOptions> options, ILogger<SqlMockPaymentLedger> logger) : IMockPaymentLedger
 {
-    /// <summary>How long a call waits for another call on the same payment before the provider reports it unavailable.</summary>
-    private const int _lockTimeoutMilliseconds = 15_000;
 
     public async Task<T> RunAsync<T>(PaymentReference reference, OperationKey? key, Func<MockLedgerEntry, T> operation, CancellationToken cancellationToken)
     {
@@ -35,7 +35,7 @@ internal sealed partial class SqlMockPaymentLedger(IServiceScopeFactory scopes, 
             {
                 var db = scope.ServiceProvider.GetRequiredService<MockPaymentsDbContext>();
                 transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-                result = await ApplyAsync(db, reference, key, operation, cancellationToken);
+                result = await ApplyAsync(db, reference, key, operation, options.Value.LockTimeoutMilliseconds, cancellationToken);
             }
             catch (Exception failure) when (failure is DbException or DbUpdateException or InvalidOperationException)
             {
@@ -70,13 +70,14 @@ internal sealed partial class SqlMockPaymentLedger(IServiceScopeFactory scopes, 
 
     // Under the payment's lock: read what the call can see, run it, and stage what it changed (saved, not committed).
     private static async Task<T> ApplyAsync<T>(
-        MockPaymentsDbContext db, PaymentReference reference, OperationKey? key, Func<MockLedgerEntry, T> operation, CancellationToken cancellationToken)
+        MockPaymentsDbContext db, PaymentReference reference, OperationKey? key, Func<MockLedgerEntry, T> operation, int lockTimeoutMilliseconds,
+        CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"""
             DECLARE @granted int;
             EXEC @granted = sp_getapplock @Resource = {"paymentsmock:" + reference.Value}, @LockMode = 'Exclusive',
-                @LockOwner = 'Transaction', @LockTimeout = {_lockTimeoutMilliseconds};
+                @LockOwner = 'Transaction', @LockTimeout = {lockTimeoutMilliseconds};
             IF @granted < 0 THROW 50001, 'The mock payment is busy.', 1;
             """,
             cancellationToken);
