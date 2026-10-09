@@ -41,6 +41,9 @@ internal sealed class PaymentNotificationRecord
 
     public int Attempts { get; private set; }
 
+    /// <summary>Not processed again before this, after a failed attempt (null: as soon as the job runs).</summary>
+    public DateTimeOffset? NextAttemptAt { get; private set; }
+
     public string? Outcome { get; private set; }
 
     public static PaymentNotificationRecord For(string providerId, PaymentNotification notification, DateTimeOffset receivedAt) => new()
@@ -63,6 +66,9 @@ internal sealed class PaymentNotificationRecord
     }
 
     public void CountAttempt() => Attempts++;
+
+    /// <summary>After a failed attempt: wait longer each time (2 s, 4 s, … at most five minutes), as the outbox does (ADR 0007).</summary>
+    public void DeferRetry(DateTimeOffset now) => NextAttemptAt = now + TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Attempts)));
 }
 
 internal interface IPaymentNotificationStore
@@ -70,8 +76,8 @@ internal interface IPaymentNotificationStore
     /// <summary>Adds the notification; false if this provider event was already recorded (a duplicate delivery).</summary>
     Task<bool> TryAddAsync(PaymentNotificationRecord notification, CancellationToken cancellationToken);
 
-    /// <summary>Unprocessed notifications, oldest first, tracked for <see cref="SaveAsync"/>.</summary>
-    Task<IReadOnlyList<PaymentNotificationRecord>> FindUnprocessedAsync(int limit, CancellationToken cancellationToken);
+    /// <summary>Unprocessed notifications due at <paramref name="now"/> (not deferred), oldest first, tracked for <see cref="SaveAsync"/>.</summary>
+    Task<IReadOnlyList<PaymentNotificationRecord>> FindUnprocessedAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken);
 
     /// <summary>The attempt a notification is about: by our reference, else by the provider's payment id.</summary>
     Task<Guid?> FindAttemptAsync(string providerId, string? reference, string? providerPaymentId, CancellationToken cancellationToken);
@@ -156,7 +162,7 @@ internal sealed partial class ProcessPaymentNotificationsJob(
     {
         var startedAt = timeProvider.GetUtcNow();
         var handled = 0;
-        foreach (var notification in await store.FindUnprocessedAsync(BatchSize, cancellationToken))
+        foreach (var notification in await store.FindUnprocessedAsync(startedAt, BatchSize, cancellationToken))
         {
             if (BackgroundJobRun.IsOver(startedAt, timeProvider))
             {
@@ -176,6 +182,10 @@ internal sealed partial class ProcessPaymentNotificationsJob(
                 {
                     // The attempt itself stays on the reconciliation work list; only this prompt is given up.
                     notification.MarkProcessed($"Gave up after {MaxAttempts} attempts ({exception.GetType().Name})", timeProvider.GetUtcNow());
+                }
+                else
+                {
+                    notification.DeferRetry(timeProvider.GetUtcNow()); // a failing notification never blocks the others, nor runs every 10 s
                 }
             }
 

@@ -6,6 +6,7 @@ using TravelBooking.BuildingBlocks.Background;
 using TravelBooking.BuildingBlocks.Background.Persistence;
 using TravelBooking.Integrations.Payments.Mock;
 using TravelBooking.Modules.Orders.Application;
+using TravelBooking.Modules.Orders.Contracts;
 using TravelBooking.Modules.Orders.Domain;
 using TravelBooking.Modules.Orders.Infrastructure;
 using TravelBooking.Modules.Payments.Contracts;
@@ -152,6 +153,32 @@ public sealed class BackgroundProcessingTests(SqlApiFactory api) : IClassFixture
         (await LoadOrder(order.Id)).Timeline.Count(e => e.ToStatus == "Abandoned").ShouldBe(1);
     }
 
+    // Events are stored under their declared name; a message written before names were declared holds the CLR full name,
+    // and is still delivered once.
+    [Fact]
+    public async Task A_message_stored_under_the_events_former_clr_name_is_still_delivered()
+    {
+        var order = await NewOrder();
+        var payment = await Authorize(order, MockPaymentMethods.Approved);
+        api.Clock.Advance(TimeSpan.FromMinutes(31));
+        await Expire(order.Id);
+
+        using (var scope = api.Services.CreateScope())
+        {
+            var messages = scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Set<OutboxMessage>()
+                .Where(m => m.Payload.Contains(order.Id.ToString()));
+            (await messages.SingleAsync(Ct)).Type.ShouldBe("orders.OrderPaymentReleaseRequested");
+            await messages.ExecuteUpdateAsync(set => set.SetProperty(m => m.Type, typeof(OrderPaymentReleaseRequested).FullName!), Ct);
+        }
+
+        await Run(_ordersOutbox);
+
+        (await LoadPayment(payment)).Events.Count(e => e.Reason.StartsWith("Release requested", StringComparison.Ordinal)).ShouldBe(1);
+        using var check = api.Services.CreateScope();
+        (await check.ServiceProvider.GetRequiredService<OrdersDbContext>().Set<OutboxMessage>()
+            .SingleAsync(m => m.Payload.Contains(order.Id.ToString()), Ct)).ProcessedAt.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task A_message_no_handler_accepts_backs_off_instead_of_blocking_the_outbox()
     {
@@ -230,5 +257,6 @@ public sealed class BackgroundProcessingTests(SqlApiFactory api) : IClassFixture
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    [IntegrationEventName("tests.UnhandledTestEvent")]
     private sealed record UnhandledTestEvent(Guid EventId, DateTimeOffset OccurredAt) : IIntegrationEvent;
 }

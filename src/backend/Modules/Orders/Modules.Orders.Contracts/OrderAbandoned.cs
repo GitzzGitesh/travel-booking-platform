@@ -7,4 +7,5 @@ namespace TravelBooking.Modules.Orders.Contracts;
 /// funds (the expiry job abandons an order only then). Customers shortens the retention of its travellers' personal
 /// data (Q9, approved 2026-09-29). Published through the Orders outbox in the same transaction as the abandonment (ADR 0007).
 /// </summary>
+[IntegrationEventName("orders.OrderAbandoned")]
 public sealed record OrderAbandoned(Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, string? CorrelationId) : IIntegrationEvent;

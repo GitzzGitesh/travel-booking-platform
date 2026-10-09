@@ -24,9 +24,12 @@ The provider reported something unexpected: a different amount, a captured payme
 - Repeating the resolution changes nothing.
 - A payment the provider once had but no longer finds stays in review: check the Stripe account and key in use before anything else.
 - **Alert `PaymentHoldNotReleasable`:** a hold is to be released but has no provider payment id to void. Void it in the provider's dashboard, then record it with finance.
+- **Alert `PaymentReleaseUnresolved`:** a release (void) stayed unresolved for 24 hours after it began, because the provider kept refusing the lookup. The attempt is in `ManualReview`. Once the provider answers lookups again, resolve the review with what it shows. If the payment is still held, resolve it to `Authorized`, and the Worker releases it again with a new void. Never void it by hand (see "Do NOT").
 
 ### Case C: outbox message given up (`FailedAt` set)
 The release request never reached Payments. Find the cause from `LastError` and the Worker logs (search for the message id). Once it is fixed, a database administrator can clear `FailedAt` and set `NextAttemptAt` to now on that one row. Redelivery is safe, because the Payments inbox ignores duplicates.
+
+**After a deploy or a rollback:** outbox messages are stored under each event's declared name (`orders.OrderPaymentReleaseRequested`, …). A Worker older than the declared names cannot dispatch those messages; it gives them up after about 13 minutes with "Unknown integration event type". So deploy the Worker together with, or before, the Api, and apply the Payments migrations first. Never roll back past the declared names without draining the outbox. If messages were given up this way, re-queue them as above once the current Worker is live. A capture request given up this way means a confirmed booking was never charged.
 
 ## Do NOT
 - Do not authorize again, capture, or void the payment by hand at the provider. The Worker's void uses our key (`{attempt}:void`), and a manual void outside it leaves our record wrong.

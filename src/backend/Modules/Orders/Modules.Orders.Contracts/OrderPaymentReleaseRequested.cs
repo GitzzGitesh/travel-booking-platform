@@ -7,4 +7,5 @@ namespace TravelBooking.Modules.Orders.Contracts;
 /// releases the hold (void, or cancel an unfinished challenge) once the payment's outcome is known. Published through the
 /// Orders outbox in the same transaction as the order's timeline note (ADR 0007).
 /// </summary>
+[IntegrationEventName("orders.OrderPaymentReleaseRequested")]
 public sealed record OrderPaymentReleaseRequested(Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid PaymentId, string Reason, string? CorrelationId) : IIntegrationEvent;

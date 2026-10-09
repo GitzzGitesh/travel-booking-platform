@@ -18,6 +18,7 @@ public enum RefundCaseKind
 /// under our key <c>{RefundId}:refund</c>. The amount was computed by the server and never exceeds what can still be
 /// refunded. Published through the Orders outbox in the same transaction as the approval.
 /// </summary>
+[IntegrationEventName("orders.OrderRefundRequested")]
 public sealed record OrderRefundRequested(
     Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid PaymentId, Guid RefundId, Money Amount, string? CorrelationId) : IIntegrationEvent;
 
@@ -26,13 +27,16 @@ public sealed record OrderRefundRequested(
 /// the same save, for the customer's notice. <paramref name="ExpectedRefund"/> is the refund the server computed: not a
 /// promise (it still needs a second person's approval; zero when nothing is refunded), so it is never told to the customer.
 /// </summary>
+[IntegrationEventName("orders.OrderCancellationRecorded")]
 public sealed record OrderCancellationRecorded(
     Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid RefundCaseId, Money ExpectedRefund, string? CorrelationId) : IIntegrationEvent;
 
 /// <summary>A customer asked to cancel a booking (ADR 0029): for the customer's acknowledgement. Nothing is cancelled yet.</summary>
+[IntegrationEventName("orders.CustomerCancellationRequested")]
 public sealed record CustomerCancellationRequested(
     Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid RequestId, string? CorrelationId) : IIntegrationEvent;
 
 /// <summary>A customer's cancellation request was declined by a person (ADR 0029): the customer is told support will contact them.</summary>
+[IntegrationEventName("orders.CustomerCancellationDeclined")]
 public sealed record CustomerCancellationDeclined(
     Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid RequestId, string? CorrelationId) : IIntegrationEvent;

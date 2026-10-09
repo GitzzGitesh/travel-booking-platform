@@ -151,6 +151,34 @@ public sealed class PaymentNotificationTests(SqlApiFactory api) : IClassFixture<
         await scope.ServiceProvider.GetRequiredService<PaymentAttemptReconciler>().ReconcileAsync(attemptId, Ct);
     }
 
+    // The back-off as SQL Server runs it: a notification whose attempt failed is not picked up again before its next
+    // attempt is due, and is picked up once it is (the job's work list, NextAttemptAt).
+    [Fact]
+    public async Task A_notification_that_failed_waits_until_its_next_attempt_is_due()
+    {
+        var eventId = $"evt-backoff-{Guid.NewGuid():N}";
+        var now = api.Clock.GetUtcNow();
+        using (var scope = api.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IPaymentNotificationStore>();
+            var record = PaymentNotificationRecord.For("mockpay",
+                new PaymentNotification(eventId, PaymentNotificationKind.Payment, new PaymentReference($"pay-{Guid.NewGuid():N}"), null), now);
+            (await store.TryAddAsync(record, Ct)).ShouldBeTrue();
+            record.CountAttempt();
+            record.DeferRetry(now); // failed once: next attempt in 2 s
+            await store.SaveAsync(Ct);
+        }
+
+        (await Due(now.AddSeconds(1))).ShouldNotContain(eventId);
+        (await Due(now.AddSeconds(2))).ShouldContain(eventId);
+    }
+
+    private async Task<List<string>> Due(DateTimeOffset at)
+    {
+        using var scope = api.Services.CreateScope();
+        return [.. (await scope.ServiceProvider.GetRequiredService<IPaymentNotificationStore>().FindUnprocessedAsync(at, 10_000, Ct)).Select(n => n.EventId)];
+    }
+
     private async Task<Result<OrderPaymentResult, OrderPaymentFailure>> Authorize(string token)
     {
         using var scope = api.Services.CreateScope();
