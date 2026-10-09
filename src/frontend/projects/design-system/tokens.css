@@ -1,0 +1,150 @@
+/*
+ * Travel booking design tokens, shared by customer-web and admin-web (docs/architecture/design-system.md).
+ * A stylesheet only: each app imports it from its own styles.css, so the apps never import each other (ADR 0009).
+ *
+ * Contrast (WCAG 2.2 AA), measured: ink on signal orange 5.1:1 (6.1:1 on hover), accent text on white 5.7:1 and on the
+ * canvas 5.1:1, muted text on white 6.4:1, white on carbon 16.7:1, signal orange on carbon 5.1:1, strong lines on
+ * white 3.2:1 (component boundaries). White text is never set on orange (3.3:1).
+ */
+
+/* Archivo (SIL Open Font License 1.1, fonts/OFL.txt): one variable family with weight and width axes. Self-hosted, so
+   no third-party origin is needed under the strict CSP. */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  src: url('./fonts/archivo-latin-wdth-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  src: url('./fonts/archivo-latin-ext-wdth-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Signal orange: the one loud colour. Fills carry ink text; orange text on light surfaces uses the accent text tone. */
+  --color-brand: #f2600c;
+  --color-brand-hover: #fb7a2e;
+  --color-brand-soft: #fdebdd;
+  --color-brand-line: #f5b88f;
+  --color-accent-text: #b63f00;
+  --color-on-brand: #1c1e21;
+
+  /* Carbon and stone: structure, not decoration. */
+  --color-ink: #1c1e21;
+  --color-ink-2: #3b3f45;
+  --color-muted: #5a5f66;
+  --color-line: #d8dad6;
+  --color-line-strong: #8d9189;
+  --color-surface: #ffffff;
+  --color-canvas: #f1f2ef;
+  --color-night: #1c1e21;
+  --color-night-2: #2a2d31;
+  --color-on-night: #ffffff;
+  --color-on-night-muted: #b9bdc2;
+  --color-line-on-night: #7a7f86;
+  --color-danger-on-night: #ff9f93;
+  --color-success-on-night: #86e0a8;
+
+  /* Feedback: each with a soft tint for its background. */
+  --color-success: #1a7f45;
+  --color-success-soft: #e8f5ec;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+  --color-warning: #8a4b00;
+  --color-warning-soft: #fdf1e1;
+  --color-info: #1f5fbf;
+  --color-info-soft: #e9f0fb;
+
+  --color-focus: #b63f00;
+  --color-focus-on-night: #ff9a57;
+
+  /* Type: Archivo at normal width for reading, condensed (narrower stretch) for codes, times and prices. */
+  --font-sans:
+    'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --stretch-condensed: 72%;
+  --stretch-semi: 88%;
+
+  /* A classical scale (Bringhurst): 12, 14, 16, 18, 21, 24, 30, 36, 48, 60. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.3125rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  --text-display: clamp(2.25rem, 1.4rem + 3.6vw, 3.75rem);
+
+  /* Space: a 4px base. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+  --space-9: 4rem;
+
+  /* Shape and depth: radius grows with the size of the surface; shadows only on things that float. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgb(28 30 33 / 0.06);
+  --shadow-md: 0 6px 20px -8px rgb(28 30 33 / 0.18);
+  --shadow-lg: 0 24px 56px -18px rgb(28 30 33 / 0.32);
+
+  /* Motion: one language for both apps. Short for feedback, longer only for things entering the page. */
+  --ease-out: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-instant: 90ms;
+  --duration-quick: 160ms;
+  --duration-base: 240ms;
+  --duration-enter: 360ms;
+  --stagger: 40ms;
+
+  --page-max: 1200px;
+  --gutter: clamp(1rem, 3vw, 2rem);
+  --tap: 44px;
+}
+
+/* Reduced motion: transitions and animations end at once; nothing moves on its own. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-quick: 0ms;
+    --duration-base: 0ms;
+    --duration-enter: 0ms;
+    --stagger: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

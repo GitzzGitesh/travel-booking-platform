@@ -1,10 +1,8 @@
+/* The search hero sits on the stone canvas: the pass below is the page's one loud object. */
 .hero {
-  --color-focus: #fdba74;
-  padding-block: var(--space-6) var(--space-8);
-  background:
-    radial-gradient(60rem 24rem at 85% -10%, rgb(249 115 22 / 0.32), transparent 60%),
-    var(--color-night);
-  color: var(--color-on-night);
+  padding-block: var(--space-7) var(--space-8);
+  background: var(--color-canvas);
+  color: var(--color-ink);
 }
 
 .hero-copy {
@@ -13,19 +11,19 @@
 }
 
 h1 {
-  font-size: var(--text-display);
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-size: var(--text-4xl);
+  font-weight: 750;
+  letter-spacing: -0.015em;
 }
 
 .lede {
   margin-block-start: var(--space-2);
+  max-width: 34rem;
   font-size: var(--text-lg);
-  color: var(--color-on-night-muted);
+  color: var(--color-muted);
 }
 
 .search {
-  --color-focus: #c2410c;
   position: relative;
   padding: var(--space-4) var(--space-5) var(--space-7);
   color: var(--color-ink);
@@ -82,6 +80,7 @@ h1 {
   background: transparent;
   font-size: var(--text-2xl);
   font-weight: 800;
+  font-stretch: var(--stretch-condensed);
   line-height: 1.15;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -90,7 +89,8 @@ h1 {
 
 .code-input::placeholder {
   font-size: var(--text-xl);
-  font-weight: 600;
+  font-weight: 500;
+  font-stretch: 100%;
   letter-spacing: 0;
   text-transform: none;
   color: var(--color-muted);
@@ -115,22 +115,23 @@ h1 {
 
 .submit-row .btn {
   min-width: 16rem;
-  box-shadow: 0 8px 24px rgb(249 115 22 / 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .content {
   padding-block: var(--space-8) var(--space-8);
 }
 
+/* What booking here means: three plain statements under hairlines, not a row of icon cards. */
 .highlights h2 {
-  margin-block-end: var(--space-4);
+  margin-block-end: var(--space-5);
   font-size: var(--text-2xl);
 }
 
 .highlights ul {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: var(--space-4);
+  gap: var(--space-5) var(--space-6);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -138,16 +139,21 @@ h1 {
 
 .highlights li {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-5);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-block-start: 2px solid var(--color-ink);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .highlights .icon {
-  width: 2rem;
-  height: 2rem;
-  padding: 6px;
-  border-radius: var(--radius-md);
-  background: var(--color-brand-soft);
+  grid-row: span 2;
+  width: 1.5rem;
+  height: 1.5rem;
   color: var(--color-accent-text);
 }
 
@@ -290,7 +296,9 @@ h1 {
 .sel-price .amount {
   font-size: var(--text-2xl);
   font-weight: 800;
-  color: #fdba74;
+  color: var(--color-focus-on-night);
+  font-stretch: var(--stretch-condensed);
+  font-variant-numeric: tabular-nums;
 }
 
 .note {
@@ -298,7 +306,7 @@ h1 {
   display: flex;
   gap: var(--space-2);
   padding-block-start: var(--space-2);
-  border-block-start: 1px solid #3f3f46;
+  border-block-start: 1px solid var(--color-night-2);
   font-size: var(--text-sm);
 }
 
@@ -320,13 +328,13 @@ h1 {
   align-items: center;
   gap: var(--space-2);
   font-weight: 600;
-  color: #86efac;
+  color: var(--color-success-on-night);
 }
 
 .check-problem {
   flex-basis: 100%;
   font-size: var(--text-sm);
-  color: #fca5a5;
+  color: var(--color-danger-on-night);
 }
 
 .price-change {
