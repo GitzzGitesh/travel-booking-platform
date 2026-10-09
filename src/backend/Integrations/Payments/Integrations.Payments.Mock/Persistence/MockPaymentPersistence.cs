@@ -9,10 +9,12 @@ internal static class MockPaymentPersistence
 {
     public static IServiceCollection AddSqlMockPaymentLedger(this IServiceCollection services, IConfiguration configuration)
     {
-        // The connection string is resolved on first use; migrations are never applied at startup (database rules).
-        // No automatic retry: a call is one transaction under an application lock, and a failure is reported to the
-        // caller as the provider being unavailable (or an unknown outcome), as a real provider's would be.
-        services.AddDbContextFactory<MockPaymentsDbContext>(options => options.UseSqlServer(
+        // Scoped, as the modules' contexts are: the connection string is resolved when a call first needs it, never when
+        // the host is built (a host without the Payments database still starts, and the mock then reports itself
+        // unavailable). Migrations are never applied at startup (database rules). No automatic retry: a call is one
+        // transaction under an application lock, and a failure is reported to the caller as the provider being
+        // unavailable (or an unknown outcome), as a real provider's would be.
+        services.AddDbContext<MockPaymentsDbContext>(options => options.UseSqlServer(
             configuration.GetConnectionString(MockPaymentsDbContext.ConnectionStringName)
                 ?? throw new InvalidOperationException(
                     $"Connection string '{MockPaymentsDbContext.ConnectionStringName}' is not configured (the mock payment provider keeps its payments there)."),

@@ -92,7 +92,7 @@ public sealed class PaymentOperationsHostTests(WebApplicationFactory<Program> fa
         using var production = factory.WithWebHostBuilder(b => b.UseEnvironment("Production"));
 
         production.Services.GetServices<IPaymentProvider>().ShouldNotContain(p => p.Id == MockPaymentProvider.ProviderId);
-        production.Services.GetService<IDbContextFactory<MockPaymentsDbContext>>().ShouldBeNull();
+        production.Services.GetService<DbContextOptions<MockPaymentsDbContext>>().ShouldBeNull();
         production.Services.GetService<MockPaymentsDbContext>().ShouldBeNull();
     }
 

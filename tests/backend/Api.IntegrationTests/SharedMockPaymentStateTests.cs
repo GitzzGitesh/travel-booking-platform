@@ -252,17 +252,17 @@ public sealed class SharedMockPaymentStateTests(SqlApiFactory api) : IClassFixtu
     }
 
     // The mock on the shared state, with an interceptor on its database calls (the commit failures above).
-    private IPaymentProvider Intercepted(IInterceptor interceptor) =>
-        new MockPaymentProvider(
-            Options.Create(new MockPaymentProviderOptions()),
-            new SqlMockPaymentLedger(new InterceptedContexts(api.ConnectionString, interceptor), NullLogger<SqlMockPaymentLedger>.Instance));
-
-    private sealed class InterceptedContexts(string connectionString, IInterceptor interceptor) : IDbContextFactory<MockPaymentsDbContext>
+    private IPaymentProvider Intercepted(IInterceptor interceptor)
     {
-        public MockPaymentsDbContext CreateDbContext() => new(new DbContextOptionsBuilder<MockPaymentsDbContext>()
-            .UseSqlServer(connectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", MockPaymentsDbContext.Schema))
-            .AddInterceptors(interceptor)
-            .Options);
+        var services = new ServiceCollection()
+            .AddDbContext<MockPaymentsDbContext>(options => options
+                .UseSqlServer(api.ConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", MockPaymentsDbContext.Schema))
+                .AddInterceptors(interceptor))
+            .BuildServiceProvider();
+        _processes.Add(services);
+        return new MockPaymentProvider(
+            Options.Create(new MockPaymentProviderOptions()),
+            new SqlMockPaymentLedger(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<SqlMockPaymentLedger>.Instance));
     }
 
     // Fails the next commit once armed: before it reaches the database, or after it did (its answer lost).

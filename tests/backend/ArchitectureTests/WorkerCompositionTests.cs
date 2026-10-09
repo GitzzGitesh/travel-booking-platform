@@ -35,7 +35,7 @@ public sealed class WorkerCompositionTests
         using var host = Worker(Environments.Production);
 
         host.Services.GetServices<IPaymentProvider>().ShouldBeEmpty();
-        host.Services.GetService<IDbContextFactory<MockPaymentsDbContext>>().ShouldBeNull();
+        host.Services.GetService<DbContextOptions<MockPaymentsDbContext>>().ShouldBeNull();
         host.Services.GetService<MockPaymentsDbContext>().ShouldBeNull();
     }
 
