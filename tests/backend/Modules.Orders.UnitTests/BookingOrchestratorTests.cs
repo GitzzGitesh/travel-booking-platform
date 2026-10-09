@@ -282,6 +282,43 @@ public sealed class BookingOrchestratorTests
         _store.Published.OfType<OrderPaymentCaptureRequested>().ShouldHaveSingleItem();
     }
 
+    [Fact]
+    public async Task Each_booking_outcome_is_counted_once_when_saved_with_its_product_and_no_ids()
+    {
+        var measured = new List<(long Value, Dictionary<string, object?> Tags)>();
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (ReferenceEquals(instrument, BookingOrchestrator.BookingOutcomes))
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            var copy = new Dictionary<string, object?>();
+            foreach (var tag in tags)
+            {
+                copy[tag.Key] = tag.Value;
+            }
+
+            lock (measured)
+            {
+                measured.Add((value, copy));
+            }
+        });
+        listener.Start();
+        var order = HotelOrder();
+
+        await Orchestrator(new Guests()).BookAsync(order, new TransitionContext(_clock.GetUtcNow(), "customer:cust-1"), TestContext.Current.CancellationToken);
+        await Orchestrator(new NoTravellers()).ReconcileAsync(order.Id, TestContext.Current.CancellationToken); // nothing left to change
+
+        var mine = measured.Where(m => Equals(m.Tags.GetValueOrDefault("product"), "Hotel")).ToList();
+        var outcome = mine.ShouldHaveSingleItem();
+        outcome.Value.ShouldBe(1);
+        outcome.Tags.ShouldBe(new Dictionary<string, object?> { ["product"] = "Hotel", ["outcome"] = "Confirmed" });
+    }
+
     private Order HotelOrder()
     {
         var order = Order.CreateForHotel("cust-1", "key-h", Guid.NewGuid(), OrderTests.Price, OrderTests.Now.AddMinutes(30), null,

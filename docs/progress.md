@@ -353,6 +353,16 @@ _Last updated: 2026-10-02 (Phase 3 complete with mock providers; Phase 4: identi
   - The public v1 contract is unchanged: the schema `CreateFlightOrderRequest` and the operation `CreateFlightOrder` keep their names.
   - Log categories of these classes changed accordingly; event names (alerts) did not.
 - **My trips** labels each booking as a flight or a hotel stay, and the empty state links both searches. |
+| 27 | **Observability: OpenTelemetry in both hosts (ADR 0031)** | **Done.**
+- **One extension, `AddPlatformTelemetry` (one source file in `src/backend/Hosts/Shared`, compiled into both hosts):**
+  - traces from ASP.NET Core (health probes excluded), HttpClient and every `TravelBooking.*` source, including the outbox spans that were never collected before;
+  - metrics from ASP.NET Core, HttpClient, the .NET runtime and every `TravelBooking.*` meter;
+  - logs through OpenTelemetry.
+- **Export only where configured:** Azure Monitor by `APPLICATIONINSIGHTS_CONNECTION_STRING`, OTLP by `OTEL_EXPORTER_OTLP_ENDPOINT` (locally, the Aspire dashboard). With neither, nothing leaves the host.
+- **No personal data:** query values are redacted (a test pins it), there are no SQL statements (EF Core logs below Warning are not exported), no bodies, and metric tags are never ids.
+- **First business metric:** `travelbooking.orders.booking_outcomes` (product, outcome), counted once when saved.
+- **Packages (ADR 0003's stack):** OpenTelemetry 1.19 (Apache-2.0) and the Azure Monitor exporter 1.10 (MIT); the in-memory exporter for tests only.
+- **Next:** deployment readiness (hosting ADR, container images, enforcing an exporter in Production), then more business metrics. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

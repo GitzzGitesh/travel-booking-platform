@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using TravelBooking.Api;
 using TravelBooking.BuildingBlocks.Http;
+using TravelBooking.Hosts.Observability;
 using TravelBooking.Integrations.Flights.Amadeus;
 using TravelBooking.Integrations.Flights.Duffel;
 using TravelBooking.Integrations.Flights.Mock;
@@ -21,6 +22,7 @@ using TravelBooking.Modules.Payments;
 AppContext.SetSwitch("Microsoft.AspNetCore.Authentication.SuppressAutoDefaultScheme", true);
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddPlatformTelemetry("travel-booking-api"); // ADR 0031
 
 // Don't advertise the server implementation.
 builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
