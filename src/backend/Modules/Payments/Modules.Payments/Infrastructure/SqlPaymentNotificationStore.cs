@@ -24,9 +24,9 @@ internal sealed class SqlPaymentNotificationStore(PaymentsDbContext db) : IPayme
         }
     }
 
-    public async Task<IReadOnlyList<PaymentNotificationRecord>> FindUnprocessedAsync(int limit, CancellationToken cancellationToken) =>
+    public async Task<IReadOnlyList<PaymentNotificationRecord>> FindUnprocessedAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
         await db.PaymentNotifications
-            .Where(n => n.ProcessedAt == null)
+            .Where(n => n.ProcessedAt == null && (n.NextAttemptAt == null || n.NextAttemptAt <= now))
             .OrderBy(n => n.ReceivedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);

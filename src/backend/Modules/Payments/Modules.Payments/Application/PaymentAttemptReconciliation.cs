@@ -28,6 +28,13 @@ internal sealed partial class PaymentAttemptReconciler(
     /// <summary>A capture whose outcome still cannot be looked up after this goes to a person, well before a hold lapses (about 7 days).</summary>
     internal static readonly TimeSpan CaptureUnresolvedAfter = TimeSpan.FromHours(24);
 
+    /// <summary>
+    /// A release (void) whose lookup the provider still refuses this long after the void began goes to a person, as a capture
+    /// does: the job stops asking forever, and the hold is released by hand before it lapses. A void begun again after a
+    /// review has its own limit.
+    /// </summary>
+    internal static readonly TimeSpan VoidUnresolvedAfter = TimeSpan.FromHours(24);
+
     /// <summary>Brings the attempt up to date; says what it did (for notification records and logs).</summary>
     public async Task<string> ReconcileAsync(Guid attemptId, CancellationToken cancellationToken)
     {
@@ -229,6 +236,14 @@ internal sealed partial class PaymentAttemptReconciler(
             case PaymentOutcome.Authorized or PaymentOutcome.ActionRequired:
                 await SendVoidAsync(attempt, cancellationToken);
                 break;
+            case PaymentOutcome.Unknown or PaymentOutcome.Rejected
+                when attempt.VoidStartedAt is { } started && timeProvider.GetUtcNow() - started >= VoidUnresolvedAfter:
+                if (await ResolveVoidAsync(attempt, PaymentAttemptStatus.ManualReview, "Release still unresolved after its limit: the provider keeps refusing the lookup", cancellationToken))
+                {
+                    LogReleaseUnresolved(logger, attempt.Id, attempt.OrderId);
+                }
+
+                break;
             case PaymentOutcome.Unknown or PaymentOutcome.Rejected:
                 break; // the lookup itself failed: try again next run
             default:
@@ -256,19 +271,17 @@ internal sealed partial class PaymentAttemptReconciler(
         await ResolveVoidAsync(attempt, status, reason, cancellationToken);
     }
 
-    private async Task ResolveVoidAsync(PaymentAttempt attempt, PaymentAttemptStatus status, string reason, CancellationToken cancellationToken)
-    {
-        // A lost save is harmless: the attempt stays voiding, and the next run looks the void up.
-        if (attempt.ResolveVoid(status, reason, Change()).IsSuccess)
-        {
-            await store.TrySaveAsync(cancellationToken);
-        }
-    }
+    // True when the resolution was saved. A lost save is harmless: the attempt stays voiding, and the next run looks it up.
+    private async Task<bool> ResolveVoidAsync(PaymentAttempt attempt, PaymentAttemptStatus status, string reason, CancellationToken cancellationToken) =>
+        attempt.ResolveVoid(status, reason, Change()).IsSuccess && await store.TrySaveAsync(cancellationToken);
 
     private PaymentChange Change() => new(timeProvider.GetUtcNow(), Actor, null);
 
     [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentCaptureFailed", Message = "Alert: payment attempt {AttemptId} for order {OrderId} could not be charged for its confirmed booking ({Reason}); manual review")]
     private static partial void LogCaptureFailed(ILogger logger, Guid attemptId, Guid orderId, string reason);
+
+    [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentReleaseUnresolved", Message = "Alert: payment attempt {AttemptId} for order {OrderId} could not be released: its lookup kept failing past the limit; manual review")]
+    private static partial void LogReleaseUnresolved(ILogger logger, Guid attemptId, Guid orderId);
 
     [LoggerMessage(Level = LogLevel.Error, EventName = "PaymentHoldNotReleasable", Message = "Alert: payment attempt {AttemptId} ({Status}) is to be released but cannot be voided; manual action needed")]
     private static partial void LogCannotRelease(ILogger logger, Guid attemptId, string status);

@@ -8,5 +8,6 @@ namespace TravelBooking.Modules.Payments.Contracts;
 /// return it. Published through the Payments outbox in the same transaction as the outcome. An outcome still unknown is
 /// never published: it is looked up, and goes to a person if it stays unknown.
 /// </summary>
+[IntegrationEventName("payments.PaymentRefundSettled")]
 public sealed record PaymentRefundSettled(
     Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid PaymentId, Guid RefundId, Money Amount, bool Succeeded, string? CorrelationId) : IIntegrationEvent;

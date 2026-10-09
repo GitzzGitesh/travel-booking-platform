@@ -21,6 +21,7 @@ public enum BookingOutcome
 /// release of the hold), so the customer is told exactly what happened to their money. It carries only non-personal facts:
 /// the supplier references of the booked items and the amount charged, from the server-side order (never recomputed).
 /// </summary>
+[IntegrationEventName("orders.OrderBookingSettled")]
 public sealed record OrderBookingSettled(
     Guid EventId,
     DateTimeOffset OccurredAt,

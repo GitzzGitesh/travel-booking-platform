@@ -37,13 +37,38 @@ public interface IJobLeaseStore
 
 /// <summary>
 /// An event one module publishes for others through its transactional outbox (ADR 0007). The event type lives in the
-/// publishing module's Contracts project. <see cref="EventId"/> is the consumer's deduplication key (inbox).
+/// publishing module's Contracts project. <see cref="EventId"/> is the consumer's deduplication key (inbox). Every event
+/// declares its stored name with <see cref="IntegrationEventNameAttribute"/>.
 /// </summary>
 public interface IIntegrationEvent
 {
     Guid EventId { get; }
 
     DateTimeOffset OccurredAt { get; }
+}
+
+/// <summary>
+/// The name an integration event is stored and dispatched under ("orders.OrderAbandoned"): declared, never derived from
+/// the CLR type, so renaming or moving the type cannot strand messages already in an outbox. Never change a declared
+/// name; a new name is a new event.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+public sealed class IntegrationEventNameAttribute(string name) : Attribute
+{
+    public string Name { get; } = name;
+}
+
+public static class IntegrationEventNames
+{
+    /// <summary>The declared name of <typeparamref name="TEvent"/>; an event without one cannot be published.</summary>
+    public static string Of<TEvent>()
+        where TEvent : IIntegrationEvent =>
+        Of(typeof(TEvent));
+
+    public static string Of(Type eventType) =>
+        eventType.GetCustomAttributes(typeof(IntegrationEventNameAttribute), inherit: false) is [IntegrationEventNameAttribute declared, ..]
+            ? declared.Name
+            : throw new InvalidOperationException($"{eventType.Name} declares no [IntegrationEventName]: every integration event is stored under a declared name.");
 }
 
 /// <summary>

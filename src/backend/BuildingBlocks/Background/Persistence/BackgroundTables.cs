@@ -19,7 +19,10 @@ public sealed class OutboxMessage
     /// <summary>The event's own id: the consumers' deduplication key.</summary>
     public Guid Id { get; private set; }
 
-    /// <summary>The event's type name (its CLR full name), resolved by the dispatcher's registry.</summary>
+    /// <summary>
+    /// The event's declared name (<see cref="IntegrationEventNameAttribute"/>), resolved by the dispatcher's registry. Messages
+    /// written before names were declared hold the CLR full name, which the registry still accepts.
+    /// </summary>
     public string Type { get; private set; } = string.Empty;
 
     public string Payload { get; private set; } = string.Empty;
@@ -47,7 +50,7 @@ public sealed class OutboxMessage
         where TEvent : IIntegrationEvent => new()
         {
             Id = integrationEvent.EventId,
-            Type = typeof(TEvent).FullName!,
+            Type = IntegrationEventNames.Of<TEvent>(),
             Payload = JsonSerializer.Serialize(integrationEvent, JsonSerializerOptions.Web),
             OccurredAt = integrationEvent.OccurredAt,
             NextAttemptAt = integrationEvent.OccurredAt,

@@ -9,4 +9,5 @@ namespace TravelBooking.Modules.Orders.Contracts;
 /// capture releases the rest). Published through the Orders outbox in the same transaction as the confirmation, so a
 /// crash between confirming and charging never loses the charge (F-25).
 /// </summary>
+[IntegrationEventName("orders.OrderPaymentCaptureRequested")]
 public sealed record OrderPaymentCaptureRequested(Guid EventId, DateTimeOffset OccurredAt, Guid OrderId, Guid PaymentId, Money Amount, string? CorrelationId) : IIntegrationEvent;

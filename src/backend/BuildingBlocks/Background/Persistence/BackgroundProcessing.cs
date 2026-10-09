@@ -56,12 +56,18 @@ public sealed class EfJobLeaseStore<TContext>(TContext db, TimeProvider timeProv
     }
 }
 
-/// <summary>How to deliver one integration event type to its handlers (built at registration).</summary>
-public sealed record IntegrationEventRegistration(string Type, Func<IServiceProvider, string, CancellationToken, Task> Dispatch)
+/// <summary>
+/// How to deliver one integration event type to its handlers (built at registration). <paramref name="Type"/> is its
+/// declared name; <paramref name="LegacyType"/> its CLR full name, under which messages written before names were declared
+/// are still delivered.
+/// </summary>
+public sealed record IntegrationEventRegistration(string Type, string LegacyType, Func<IServiceProvider, string, CancellationToken, Task> Dispatch)
 {
+    public bool Handles(string storedType) => storedType == Type || storedType == LegacyType;
+
     public static IntegrationEventRegistration For<TEvent>()
         where TEvent : IIntegrationEvent =>
-        new(typeof(TEvent).FullName!, async (services, payload, cancellationToken) =>
+        new(IntegrationEventNames.Of<TEvent>(), typeof(TEvent).FullName!, async (services, payload, cancellationToken) =>
         {
             var integrationEvent = JsonSerializer.Deserialize<TEvent>(payload, JsonSerializerOptions.Web)
                 ?? throw new InvalidOperationException($"Empty payload for {typeof(TEvent).Name}.");
@@ -121,7 +127,7 @@ public sealed partial class OutboxDispatcher<TContext>(
             activity?.SetTag("correlation.id", message.CorrelationId);
             try
             {
-                var registration = registrations.FirstOrDefault(r => r.Type == message.Type)
+                var registration = registrations.FirstOrDefault(r => r.Handles(message.Type))
                     ?? throw new InvalidOperationException($"Unknown integration event type {message.Type}.");
                 await using var scope = scopes.CreateAsyncScope();
                 await registration.Dispatch(scope.ServiceProvider, message.Payload, cancellationToken);
@@ -264,7 +270,7 @@ public static class BackgroundServiceCollectionExtensions
         where THandler : class, IIntegrationEventHandler<TEvent>
     {
         services.AddScoped<IIntegrationEventHandler<TEvent>, THandler>();
-        if (!services.Any(d => d.ServiceType == typeof(IntegrationEventRegistration) && d.ImplementationInstance is IntegrationEventRegistration r && r.Type == typeof(TEvent).FullName))
+        if (!services.Any(d => d.ServiceType == typeof(IntegrationEventRegistration) && d.ImplementationInstance is IntegrationEventRegistration r && r.Type == IntegrationEventNames.Of<TEvent>()))
         {
             services.AddSingleton(IntegrationEventRegistration.For<TEvent>());
         }

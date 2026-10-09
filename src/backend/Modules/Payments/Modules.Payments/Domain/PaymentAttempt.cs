@@ -147,6 +147,12 @@ internal sealed class PaymentAttempt
 
     public bool IsVoidInProgress => Status is PaymentAttemptStatus.Voiding or PaymentAttemptStatus.VoidUnknown;
 
+    /// <summary>
+    /// When the latest void began (its move into Voiding, from the history), null if none has. A void begun again after a
+    /// review starts its own clock.
+    /// </summary>
+    public DateTimeOffset? VoidStartedAt => _events.LastOrDefault(e => e.ToStatus == nameof(PaymentAttemptStatus.Voiding))?.At;
+
     public static PaymentAttempt Start(Guid orderId, string customerId, string idempotencyKey, Money amount, PaymentChange change)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(customerId);

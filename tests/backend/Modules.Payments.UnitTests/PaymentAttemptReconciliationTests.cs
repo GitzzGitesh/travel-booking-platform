@@ -480,6 +480,59 @@ public sealed class PaymentAttemptReconciliationTests
         (attempt.Events.Count, _provider.Voids.Count, _provider.Captures.Count).ShouldBe((events, 0, 1));
     }
 
+    // A release whose lookup the provider keeps refusing is not retried forever: after its limit it goes to a person, and
+    // the void is never sent again blind.
+    [Fact]
+    public async Task A_release_whose_lookup_keeps_failing_goes_to_a_person_after_its_limit()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestRelease(attempt);
+        _provider.OnVoid = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        _provider.OnLookupError = new ProviderError(ProviderErrorKind.Unavailable, "down");
+
+        _clock.Advance(TimeSpan.FromHours(23));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        attempt.Status.ShouldBe(PaymentAttemptStatus.VoidUnknown); // still within the limit: looked up again next run
+
+        _clock.Advance(TimeSpan.FromHours(2));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.ManualReview);
+        var entry = attempt.Events[^1];
+        (entry.FromStatus, entry.ToStatus).ShouldBe((nameof(PaymentAttemptStatus.VoidUnknown), nameof(PaymentAttemptStatus.ManualReview)));
+        entry.Reason.ShouldStartWith("Release still unresolved after its limit");
+        _provider.Voids.Count.ShouldBe(1);
+        _provider.Captures.ShouldBeEmpty();
+    }
+
+    // The limit runs from when the current void began: a void sent again after a review, long after the release was
+    // requested, is looked up again on a passing failure instead of going straight back to a person.
+    [Fact]
+    public async Task A_void_begun_again_after_a_review_has_its_own_limit()
+    {
+        var attempt = await Attempt(Authorized());
+        await RequestRelease(attempt);
+        _provider.OnVoid = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.InvalidRequest, "refused"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        attempt.Status.ShouldBe(PaymentAttemptStatus.ManualReview);
+
+        _clock.Advance(TimeSpan.FromHours(30));
+        attempt.ResolveReview(PaymentAttemptStatus.Authorized, "TICKET-901 still held at the provider", new PaymentChange(_clock.GetUtcNow(), "staff:901", null))
+            .IsSuccess.ShouldBeTrue();
+        _provider.OnVoid = _ => Result<PaymentSnapshot, ProviderError>.Failure(new ProviderError(ProviderErrorKind.Unknown, "timeout"));
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        _provider.OnLookupError = new ProviderError(ProviderErrorKind.Unavailable, "down");
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+
+        attempt.Status.ShouldBe(PaymentAttemptStatus.VoidUnknown); // its own void is minutes old
+
+        _provider.OnLookupError = null;
+        _provider.OnLookup = reference => Found(reference, PaymentState.Voided);
+        await Reconciler().ReconcileAsync(attempt.Id, Ct);
+        attempt.Status.ShouldBe(PaymentAttemptStatus.Voided);
+    }
+
     [Fact]
     public async Task A_capture_that_stays_unknown_goes_to_a_person_before_the_hold_can_lapse()
     {
