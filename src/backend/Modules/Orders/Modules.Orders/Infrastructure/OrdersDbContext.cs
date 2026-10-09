@@ -112,6 +112,7 @@ internal sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options)
         item.Property(i => i.Product).HasConversion<string>().HasMaxLength(10).IsUnicode(false);
         item.Property(i => i.ProviderId).HasMaxLength(50);
         item.Property(i => i.SupplierLocator).HasMaxLength(100);
+        item.HasIndex(i => i.SupplierLocator).HasFilter("[SupplierLocator] IS NOT NULL"); // staff search by booking reference
         item.Property(i => i.Ticketing).HasConversion<string>().HasMaxLength(10);
         item.HasIndex(i => new { i.Status, i.NextBookingLookupAt }); // the booking reconciliation's work list
 
