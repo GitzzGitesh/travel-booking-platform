@@ -100,6 +100,16 @@ tbody tr:hover {
   border-block-end: 0;
 }
 
+/* A disclosure (for example "Decide" in a table row) is a control: a real target, never just its text (WCAG 2.5.8). */
+summary {
+  display: list-item;
+  min-block-size: 2rem;
+  padding-block: var(--space-1);
+  font-weight: 600;
+  color: var(--color-accent-text);
+  cursor: pointer;
+}
+
 /* Alerts: the tone is the edge and its tint. */
 .alert {
   padding: var(--space-3) var(--space-4);
