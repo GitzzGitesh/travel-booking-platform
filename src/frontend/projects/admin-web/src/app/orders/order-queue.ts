@@ -7,6 +7,7 @@ import {
   searchOrdersForOperations,
 } from '@travel-booking/admin-api-client';
 import type { AdminOrderSummary } from '@travel-booking/admin-api-client';
+import { StatusBadge } from '../shared/status';
 
 /** The operations queues the server offers (item status), first the one needing a person. */
 export const queues = [
@@ -20,7 +21,7 @@ type QueueStatus = (typeof queues)[number]['status'];
 /** Orders with an item in the chosen state, oldest first, paged by the server's cursor. */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, StatusBadge],
   selector: 'adm-order-queue',
   template: `
     <h1>Booking queues</h1>
@@ -56,7 +57,7 @@ type QueueStatus = (typeof queues)[number]['status'];
             @for (order of result.orders; track order.orderId) {
               <li>
                 <a class="mono" [routerLink]="['/orders', order.orderId]">{{ order.orderId }}</a>
-                · {{ order.status }}
+                <adm-status [value]="order.status" />
                 @for (item of order.items; track item.itemId) {
                   @if (item.bookingReference) {
                     · {{ item.bookingReference }}
@@ -107,11 +108,11 @@ type QueueStatus = (typeof queues)[number]['status'];
               <td>
                 <a class="mono" [routerLink]="['/orders', order.orderId]">{{ order.orderId }}</a>
               </td>
-              <td>{{ order.status }}</td>
+              <td><adm-status [value]="order.status" /></td>
               <td>
                 @for (item of order.items; track item.itemId) {
                   <div>
-                    {{ item.status }}
+                    <adm-status [value]="item.status" />
                     @if (item.bookingReference) {
                       · {{ item.bookingReference }}
                     }
@@ -140,23 +141,14 @@ type QueueStatus = (typeof queues)[number]['status'];
       display: flex;
       flex-wrap: wrap;
       align-items: end;
-      gap: 0.5rem;
-      margin-block-end: 1rem;
+      gap: var(--space-2);
+      margin-block-end: var(--space-4);
     }
     .queue-tabs {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-block-end: 1rem;
-    }
-    .queue-tabs button[aria-pressed='true'] {
-      background: #1a1a1a;
-      color: #fff;
-    }
-    caption {
-      text-align: start;
-      font-weight: 600;
-      padding-block-end: 0.5rem;
+      gap: var(--space-2);
+      margin-block-end: var(--space-4);
     }
   `,
 })

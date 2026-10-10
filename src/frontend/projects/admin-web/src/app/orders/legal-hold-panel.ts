@@ -110,14 +110,6 @@ const releaseProblems: Record<string, string> = {
       }
     </section>
   `,
-  styles: `
-    .action {
-      margin-block: 1.5rem;
-      padding: 1rem;
-      border: 1px solid #c8c8c8;
-      border-radius: 4px;
-    }
-  `,
 })
 export class LegalHoldPanel {
   private readonly api = inject(Api);

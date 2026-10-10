@@ -13,6 +13,7 @@ import { describeProblem, problemExtension, problemType } from '../shared/proble
 import { ReasonForm } from '../shared/reason-form';
 import { StaffSession } from '../staff-session';
 import { MoneyPipe } from '../shared/money';
+import { StatusBadge } from '../shared/status';
 
 /**
  * One payment attempt for operations: amounts, provider references and its history (no card data exists). A payment in
@@ -21,7 +22,7 @@ import { MoneyPipe } from '../shared/money';
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, MoneyPipe, ReasonForm, RouterLink],
+  imports: [DatePipe, MoneyPipe, ReasonForm, RouterLink, StatusBadge],
   selector: 'adm-payment-detail',
   template: `
     <h1>
@@ -45,7 +46,7 @@ import { MoneyPipe } from '../shared/money';
     @if (attempt(); as attempt) {
       <dl class="summary">
         <dt>Status</dt>
-        <dd>{{ attempt.status }}</dd>
+        <dd><adm-status [value]="attempt.status" /></dd>
         <dt>Order</dt>
         <dd class="mono">
           @if (session.can('orders.read')) {
@@ -126,7 +127,7 @@ import { MoneyPipe } from '../shared/money';
                   <td>{{ refund.requestedAt | date: 'yyyy-MM-dd HH:mm' : 'UTC' }}</td>
                   <td class="mono">{{ refund.refundId }}</td>
                   <td>{{ refund.amount | money }}</td>
-                  <td>{{ refund.status }}</td>
+                  <td><adm-status [value]="refund.status" /></td>
                   <td class="mono">{{ refund.providerRefundId ?? '—' }}</td>
                   <td>{{ refund.reason ?? '' }}</td>
                 </tr>
@@ -180,22 +181,6 @@ import { MoneyPipe } from '../shared/money';
           </tbody>
         </table>
       </div>
-    }
-  `,
-  styles: `
-    .summary {
-      display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: 0.25rem 1rem;
-    }
-    .summary dd {
-      margin: 0;
-    }
-    .action {
-      margin-block: 1.5rem;
-      padding: 1rem;
-      border: 1px solid #c8c8c8;
-      border-radius: 4px;
     }
   `,
 })

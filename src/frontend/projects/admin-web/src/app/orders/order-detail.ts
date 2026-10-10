@@ -20,6 +20,7 @@ import { LegalHoldPanel } from './legal-hold-panel';
 import { RefundPanel } from './refund-panel';
 import { ReviewOutcomeForm } from './review-outcome-form';
 import { MoneyPipe } from '../shared/money';
+import { StatusBadge } from '../shared/status';
 
 /**
  * One order for operations: its items, the append-only booking timeline, and the staff actions the permissions allow
@@ -35,6 +36,7 @@ import { MoneyPipe } from '../shared/money';
     RefundPanel,
     ReviewOutcomeForm,
     RouterLink,
+    StatusBadge,
   ],
   selector: 'adm-order-detail',
   template: `
@@ -60,7 +62,7 @@ import { MoneyPipe } from '../shared/money';
     @if (detail(); as detail) {
       <dl class="summary">
         <dt>Status</dt>
-        <dd>{{ detail.order.status }}</dd>
+        <dd><adm-status [value]="detail.order.status" /></dd>
         <dt>Created (UTC)</dt>
         <dd>{{ detail.order.createdAt | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</dd>
         <dt>Customer</dt>
@@ -97,7 +99,7 @@ import { MoneyPipe } from '../shared/money';
               <tr>
                 <td class="mono">{{ item.itemId }}</td>
                 <td>{{ item.product }}</td>
-                <td>{{ item.status }}</td>
+                <td><adm-status [value]="item.status" /></td>
                 <td>{{ item.agreedPrice | money }}</td>
                 <td>{{ item.providerId ?? '—' }}</td>
                 <td>{{ item.bookingReference ?? '—' }}</td>
@@ -235,22 +237,6 @@ import { MoneyPipe } from '../shared/money';
           </tbody>
         </table>
       </div>
-    }
-  `,
-  styles: `
-    .summary {
-      display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: 0.25rem 1rem;
-    }
-    .summary dd {
-      margin: 0;
-    }
-    .action {
-      margin-block: 1.5rem;
-      padding: 1rem;
-      border: 1px solid #c8c8c8;
-      border-radius: 4px;
     }
   `,
 })
