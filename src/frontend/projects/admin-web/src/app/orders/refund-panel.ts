@@ -114,6 +114,7 @@ const refundProblems: Record<string, string> = {
           <adm-reason-form
             label="Ticket reference to approve the refund"
             action="Approve refund"
+            primary
             [busy]="busy()"
             (submitted)="decide(refundCase.caseId, true, $event)"
           />
@@ -235,12 +236,21 @@ const refundProblems: Record<string, string> = {
           @if (invalid(); as invalid) {
             <p class="alert alert-error" role="alert">{{ invalid }}</p>
           }
-          <button type="submit" [disabled]="busy() || !kind()">Open case</button>
+          <button class="btn btn-primary" type="submit" [disabled]="busy() || !kind()">
+            Open case
+          </button>
         </form>
       }
 
       @if (message(); as message) {
-        <p class="alert" [class.alert-error]="message.error" role="status">{{ message.text }}</p>
+        <p
+          class="alert"
+          [class.alert-error]="message.error"
+          [class.alert-info]="!message.error"
+          role="status"
+        >
+          {{ message.text }}
+        </p>
       }
     </section>
   `,

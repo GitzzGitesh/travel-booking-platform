@@ -22,7 +22,7 @@ import { DEVELOPMENT_BUILD, StaffSession } from '../staff-session';
           </p>
         }
         <p>Sign in with your work account to continue.</p>
-        <a class="button button-primary" [href]="signInUrl()" (click)="signIn($event)">Sign in</a>
+        <a class="btn btn-primary" [href]="signInUrl()" (click)="signIn($event)">Sign in</a>
       }
       @case ('unavailable') {
         <p class="alert alert-error" role="alert">

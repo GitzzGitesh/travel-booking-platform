@@ -78,9 +78,11 @@ each other (ADR 0009).
 - **`prefers-reduced-motion: reduce`** sets every duration to zero (`tokens.css`).
 
 ## Components and conventions
-- **Shared primitives live in each app's `styles.css`:**
-  - customer-web: `.btn`, `.card`, `.badge`, `.chip`, `.segmented`, `.tile`, `.field-label`, `.field-error`, `.alert`, `.skeleton`, `dialog.modal-sheet`;
-  - admin-web: the same vocabulary, plus `.status` badges.
+- **One primitive vocabulary for both apps:** `design-system/primitives.css`, imported by each app after the tokens.
+  - Buttons `.btn` with `-primary`, `-outline`, `-dark`, `-ghost`, `-sm`, `-lg`; badges `.badge` with `-brand`, `-attention`, `-success`, `-danger`, `-info`, `-dark`; alerts `.alert` with `-error`, `-warning`, `-info`, `-success`; the `.segmented` control.
+  - Density is a setting, not a second vocabulary: admin-web sets `--control-min` (36px controls) and `--alert-padding`.
+  - App-only primitives stay in the app's `styles.css`: customer-web `.card`, `.chip`, `.tile`, `.field-*`, `.skeleton`, `dialog.modal-sheet`; admin-web tables, fields, `.summary` and `.action`.
+  - admin-web state badges (`<adm-status>`) are `.badge` in the five state tones; its queue chooser is a `.segmented` control.
   - Components keep only their own layout.
   - Colours, sizes and durations come from tokens, never from hex values in a component.
 - **Dates and amounts are British English** (`en-GB`), whatever the browser language: "Sun 14 Feb", "5 November 2026", a 24-hour clock and "TND 540.000". One constant per app sets it (`customer-web/src/app/display-locale.ts`, `admin-web/src/app/shared/money.ts`). It becomes the request's locale once markets and languages are decided (Q2). Amounts keep the currency the API sends and that currency's own decimals.

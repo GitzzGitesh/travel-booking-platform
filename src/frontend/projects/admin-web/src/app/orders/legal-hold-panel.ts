@@ -64,6 +64,7 @@ const releaseProblems: Record<string, string> = {
             <adm-reason-form
               label="Case reference to approve the release"
               action="Approve release"
+              primary
               [busy]="busy()"
               (submitted)="decide(pending.requestId, true, $event)"
             />
@@ -106,7 +107,14 @@ const releaseProblems: Record<string, string> = {
         <p class="alert alert-error" role="alert">The legal hold could not be loaded.</p>
       }
       @if (message(); as message) {
-        <p class="alert" [class.alert-error]="message.error" role="status">{{ message.text }}</p>
+        <p
+          class="alert"
+          [class.alert-error]="message.error"
+          [class.alert-info]="!message.error"
+          role="status"
+        >
+          {{ message.text }}
+        </p>
       }
     </section>
   `,

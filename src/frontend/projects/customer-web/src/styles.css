@@ -1,8 +1,9 @@
 /*
- * customer-web: shared primitives on the design tokens (docs/architecture/design-system.md). Components keep only
- * their own layout.
+ * customer-web: global styles on the design tokens (docs/architecture/design-system.md). Buttons, badges, alerts and the
+ * segmented control come from design-system/primitives.css, shared with admin-web. Components keep only their own layout.
  */
 @import '../../design-system/tokens.css';
+@import '../../design-system/primitives.css';
 
 *,
 *::before,
@@ -47,13 +48,6 @@ fieldset {
   min-inline-size: 0;
 }
 
-button,
-input,
-select {
-  font: inherit;
-  color: inherit;
-}
-
 a {
   color: var(--color-accent-text);
 }
@@ -69,20 +63,6 @@ svg.icon {
   stroke-linejoin: round;
 }
 
-:focus-visible {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 2px;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .page {
   width: 100%;
   max-width: var(--page-max);
@@ -92,87 +72,6 @@ svg.icon {
 
 .tabular {
   font-variant-numeric: tabular-nums;
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: var(--tap);
-  padding: var(--space-2) var(--space-5);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  line-height: 1.2;
-  text-decoration: none;
-  cursor: pointer;
-  transition:
-    background-color var(--duration-quick) var(--ease-out),
-    border-color var(--duration-quick) var(--ease-out),
-    box-shadow var(--duration-quick) var(--ease-out),
-    transform var(--duration-instant) var(--ease-out);
-}
-
-/* Press feedback: the control answers the hand, briefly. */
-.btn:active:not(:disabled, [aria-disabled='true']) {
-  transform: scale(0.98);
-}
-
-.btn:disabled,
-.btn[aria-disabled='true'] {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.btn-primary {
-  background: var(--color-brand);
-  color: var(--color-on-brand);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-brand-hover);
-}
-
-.btn-dark {
-  background: var(--color-ink);
-  color: var(--color-on-night);
-}
-
-.btn-dark:hover:not(:disabled) {
-  background: var(--color-night-2);
-}
-
-.btn-outline {
-  background: var(--color-surface);
-  border-color: var(--color-line-strong);
-  color: var(--color-ink);
-}
-
-.btn-outline:hover:not(:disabled) {
-  border-color: var(--color-ink);
-}
-
-.btn-ghost {
-  background: transparent;
-  color: var(--color-ink);
-}
-
-.btn-ghost:hover:not(:disabled) {
-  background: rgb(28 30 33 / 0.06);
-}
-
-.btn-lg {
-  min-height: 56px;
-  padding-inline: var(--space-6);
-  font-size: var(--text-lg);
-}
-
-.btn-sm {
-  min-height: 36px;
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-sm);
 }
 
 .icon-btn {
@@ -203,35 +102,6 @@ svg.icon {
   border-radius: var(--radius-lg);
 }
 
-/* Badges and chips */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-xs);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  line-height: 1.5;
-  background: var(--color-canvas);
-  color: var(--color-ink-2);
-}
-
-.badge-brand {
-  background: var(--color-brand-soft);
-  color: var(--color-accent-text);
-}
-
-.badge-success {
-  background: var(--color-success-soft);
-  color: var(--color-success);
-}
-
-.badge-dark {
-  background: var(--color-ink);
-  color: var(--color-on-night);
-}
-
 .chip {
   display: inline-flex;
   align-items: center;
@@ -248,81 +118,6 @@ svg.icon {
 
 .chip:hover {
   background: var(--color-canvas);
-}
-
-/* Segmented control: a group of radio-like options (trip type, cabin, sort) */
-.segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border-radius: var(--radius-sm);
-  background: var(--color-canvas);
-}
-
-.segmented button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 40px;
-  padding: var(--space-1) var(--space-4);
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-ink-2);
-  cursor: pointer;
-}
-
-.segmented button[aria-checked='true'],
-.segmented button[aria-pressed='true'] {
-  background: var(--color-ink);
-  color: var(--color-on-night);
-}
-
-.segmented button:disabled {
-  cursor: not-allowed;
-  color: var(--color-muted);
-}
-
-/* Segmented options built from native radios: arrow keys and form semantics come from the browser. */
-.segmented label {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 40px;
-  padding: var(--space-1) var(--space-4);
-  border-radius: var(--radius-xs);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-ink-2);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.segmented input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  margin: 0;
-  cursor: inherit;
-}
-
-.segmented label:has(input:checked) {
-  background: var(--color-ink);
-  color: var(--color-on-night);
-}
-
-.segmented label:has(input:focus-visible) {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 2px;
-}
-
-.segmented label:has(input:disabled) {
-  color: var(--color-muted);
-  cursor: not-allowed;
 }
 
 /* Search tiles: large, touch-friendly fields that open a picker or hold an input */
@@ -442,64 +237,6 @@ svg.icon {
   height: 20px;
   margin: 0;
   accent-color: var(--color-ink);
-}
-
-/* Alerts */
-/* Alerts: the tone is the coloured edge and its tint; the icon repeats it for people who do not see colour. */
-.alert {
-  display: flex;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--color-line);
-  border-inline-start-width: 4px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-
-.alert > .icon {
-  margin-block-start: 2px;
-}
-
-.alert h2,
-.alert h3 {
-  font-size: var(--text-lg);
-  margin-block-end: var(--space-1);
-}
-
-.alert-error {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-}
-
-.alert-error > .icon {
-  color: var(--color-danger);
-}
-
-.alert-warning {
-  background: var(--color-warning-soft);
-  border-color: var(--color-warning);
-}
-
-.alert-warning > .icon {
-  color: var(--color-warning);
-}
-
-.alert-info {
-  background: var(--color-info-soft);
-  border-color: var(--color-info);
-}
-
-.alert-info > .icon {
-  color: var(--color-info);
-}
-
-.alert-success {
-  background: var(--color-success-soft);
-  border-color: var(--color-success);
-}
-
-.alert-success > .icon {
-  color: var(--color-success);
 }
 
 /* Text inputs and selects: one look for every typed field (travellers, contact, hotel search). */

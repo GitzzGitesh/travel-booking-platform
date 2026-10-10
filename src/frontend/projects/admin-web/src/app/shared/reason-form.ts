@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
+import {
+  booleanAttribute,
+  ChangeDetectionStrategy,
+  Component,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 
 /** The server's rule for staff reasons (ADR 0022, AuditReasons): a ticket reference or a short plain note. */
 export const reasonPattern = /^[A-Za-z0-9][A-Za-z0-9 ._:/#-]{2,199}$/;
@@ -37,7 +44,15 @@ let nextId = 0;
           A ticket or case reference: never personal data or card numbers.
         }
       </span>
-      <button type="submit" [disabled]="busy()">{{ action() }}</button>
+      <button
+        class="btn"
+        [class.btn-primary]="primary()"
+        [class.btn-outline]="!primary()"
+        type="submit"
+        [disabled]="busy()"
+      >
+        {{ action() }}
+      </button>
     </form>
   `,
   styles: `
@@ -57,6 +72,8 @@ export class ReasonForm {
   readonly label = input('Ticket reference');
   readonly action = input.required<string>();
   readonly busy = input(false);
+  /** An approving action is filled; refusing, withdrawing and neutral actions are outlined (design-system.md, admin). */
+  readonly primary = input(false, { transform: booleanAttribute });
   readonly submitted = output<string>();
 
   protected readonly inputId = `reason-${++nextId}`;

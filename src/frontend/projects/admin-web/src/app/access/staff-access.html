@@ -4,7 +4,14 @@
   <p class="alert alert-error" role="alert">Staff access could not be loaded. Try again shortly.</p>
 }
 @if (message(); as message) {
-  <p class="alert" [class.alert-error]="message.error" role="status">{{ message.text }}</p>
+  <p
+    class="alert"
+    [class.alert-error]="message.error"
+    [class.alert-info]="!message.error"
+    role="status"
+  >
+    {{ message.text }}
+  </p>
 }
 
 @if (session.can('access.grants.request')) {
@@ -96,7 +103,7 @@
           A ticket reference: never personal data.
         }
       </span>
-      <button type="submit" [disabled]="busy()">Request</button>
+      <button class="btn btn-primary" type="submit" [disabled]="busy()">Request</button>
     </form>
   </section>
 }
@@ -129,6 +136,7 @@
                 <adm-reason-form
                   label="Ticket reference to approve"
                   action="Approve"
+                  primary
                   [busy]="busy()"
                   (submitted)="decide(request, true, $event)"
                 />
@@ -155,7 +163,7 @@
   </table>
 </div>
 @if (nextCursor()) {
-  <button type="button" (click)="loadMore()">Load more</button>
+  <button class="btn btn-outline" type="button" (click)="loadMore()">Load more</button>
 }
 
 <h2>Roles held</h2>
