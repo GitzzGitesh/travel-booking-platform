@@ -48,16 +48,20 @@ import { orderStatusLabel } from '../booking/order-status';
           <ul class="trip-list">
             @for (order of orders(); track order.orderId) {
               <li class="card trip">
-                <a [routerLink]="['/booking', order.orderId]">
-                  {{ order.items[0]?.product === 'Hotel' ? 'Hotel stay' : 'Flight' }} booked on
-                  {{ order.createdAt.slice(0, 10) }}
-                </a>
-                <span>{{ statusLabel(order.status) }}</span>
+                <div class="trip-main">
+                  <a [routerLink]="['/booking', order.orderId]">
+                    {{ order.items[0]?.product === 'Hotel' ? 'Hotel stay' : 'Flight' }} booked on
+                    {{ order.createdAt.slice(0, 10) }}
+                  </a>
+                  <span class="badge">{{ statusLabel(order.status) }}</span>
+                </div>
                 @if (order.items[0]; as item) {
-                  <span class="tabular">{{ formatMoney(item.agreedPrice) }}</span>
                   @if (item.bookingReference) {
-                    <span>Reference {{ item.bookingReference }}</span>
+                    <span class="trip-reference"
+                      >Reference <strong>{{ item.bookingReference }}</strong></span
+                    >
                   }
+                  <span class="tabular trip-price">{{ formatMoney(item.agreedPrice) }}</span>
                 }
               </li>
             }
@@ -79,8 +83,13 @@ import { orderStatusLabel } from '../booking/order-status';
   styles: `
     .trips {
       display: grid;
-      gap: var(--space-4);
-      padding-block: var(--space-6);
+      gap: var(--space-5);
+      padding-block: var(--space-6) var(--space-8);
+    }
+    h1 {
+      font-size: var(--text-4xl);
+      font-weight: 750;
+      letter-spacing: -0.015em;
     }
     .trip-list {
       display: grid;
@@ -89,11 +98,57 @@ import { orderStatusLabel } from '../booking/order-status';
       padding: 0;
       list-style: none;
     }
+    /* A trip as a ticket row: what and its status, the reference to keep, and what it cost. */
     .trip {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-2) var(--space-4);
-      padding: var(--space-4);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(7rem, auto);
+      align-items: center;
+      gap: var(--space-2) var(--space-6);
+      padding: var(--space-4) var(--space-5);
+      transition: border-color var(--duration-quick) var(--ease-out);
+    }
+    .trip:hover {
+      border-color: var(--color-line-strong);
+    }
+    .trip-main {
+      display: grid;
+      justify-items: start;
+      gap: var(--space-1);
+    }
+    .trip-main a {
+      font-weight: 700;
+    }
+    .trip-reference {
+      display: grid;
+      grid-column: 2;
+      font-size: var(--text-sm);
+      color: var(--color-muted);
+    }
+    .trip-reference strong {
+      font-size: var(--text-2xl);
+      font-weight: 800;
+      font-stretch: var(--stretch-condensed);
+      letter-spacing: 0.08em;
+      color: var(--color-ink);
+    }
+    .trip-price {
+      justify-self: end;
+      grid-column: 3;
+      font-size: var(--text-xl);
+      font-weight: 800;
+      font-stretch: var(--stretch-condensed);
+    }
+    @media (max-width: 639.98px) {
+      .trip {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .trip-reference {
+        grid-column: 1;
+      }
+      .trip-price {
+        justify-self: start;
+        grid-column: 1;
+      }
     }
     .trips > .btn {
       justify-self: start;
