@@ -39,6 +39,7 @@ import {
   type SelectedHotelOfferResponse,
 } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
+import { displayLocale } from '../display-locale';
 import { formatMoney } from '../flights/flight-format';
 import { boardLabel } from './hotel-format';
 
@@ -418,7 +419,7 @@ export class HotelSearchPage {
     if (!terms.refundable || !terms.freeCancellationUntil) {
       return 'Non-refundable';
     }
-    const deadline = new Intl.DateTimeFormat(undefined, {
+    const deadline = new Intl.DateTimeFormat(displayLocale, {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
@@ -461,7 +462,7 @@ export class HotelSearchPage {
     const check = this.priceCheck();
     const expiresAt =
       check.kind === 'confirmed' ? check.confirmed.offerExpiresAt : selection.offerExpiresAt;
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(displayLocale, {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
@@ -581,7 +582,7 @@ function toErrorState(error: unknown): SearchState {
 /** A local date (yyyy-mm-dd) as "Fri, 10 Apr", without shifting it through a time zone. */
 function shortDate(date: string): string {
   const [year, month, day] = date.split('-').map(Number);
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(displayLocale, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

@@ -47,6 +47,7 @@ import {
   type TravellerType,
 } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
+import { displayLocale } from '../display-locale';
 import { formatMoney, localDate, localTime } from '../flights/flight-format';
 import { boardLabel } from '../hotels/hotel-format';
 import { orderStatusLabel } from './order-status';
@@ -158,7 +159,7 @@ export class BookingPage {
     if (!terms.refundable || !terms.freeCancellationUntil) {
       return 'This rate is non-refundable: nothing is refunded if you cancel.';
     }
-    const deadline = new Intl.DateTimeFormat(undefined, {
+    const deadline = new Intl.DateTimeFormat(displayLocale, {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
@@ -274,7 +275,7 @@ export class BookingPage {
     const ageOn = state.kind === 'ready' ? ageOnDate(state.order) : null;
     const range = type === 'Infant' ? 'under 2' : type === 'Child' ? '2 to 11' : '12 or over';
     return ageOn
-      ? `This traveller must be ${range} years old on ${new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(ageOn + 'T00:00:00Z'))}.`
+      ? `This traveller must be ${range} years old on ${new Intl.DateTimeFormat(displayLocale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(ageOn + 'T00:00:00Z'))}.`
       : '';
   }
 

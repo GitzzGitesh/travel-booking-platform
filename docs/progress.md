@@ -465,9 +465,13 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - **Follow-ups:**
   - middle-dot meta strings that specs assert;
   - one primitive vocabulary across both apps (buttons, badges, alerts, segmented control);
-  - dates and money follow the browser locale while the UI is English (Q2: markets and i18n);
   - native date inputs on hotels against the custom flight calendar;
   - the dev server must be restarted after pulling `design-system/`, because its watcher misses the new folder (hot reload only; builds are fine). |
+| 34 | **Interim display: TND prices and English dates (product owner, 2026-10-10)** | **Done.**
+- **Prices:** the mock flight and hotel suppliers quote in Tunisian dinars (TND, three decimals) instead of the ISO test code XTS, so every journey shows TND, e.g. "TND 540.000". A display choice for synthetic prices, not a charge decision: Q5 and ADR 0006 still hold for real charges. Nothing converts: amounts keep the currency the API sends.
+- **Dates and amounts:** both apps format in British English (`en-GB`) whatever the browser language ("Sun 14 Feb", "5 November 2026", 24-hour clock), from one constant per app. Recorded under Q2 and Q5 in `open-questions.md` and in the design brief.
+- **Checked:** nothing in the money model assumes two decimals (ADR 0010); the mocks round to two, which are valid dinar amounts; the mock payment provider accepts any currency.
+- **Tests:** customer-web 86 and admin-web 42 unit tests (exact en-GB strings now, including TND); ProviderContracts, Flights and Hotels unit tests, and the Api flight-search and hotel tests. E2E asserts TND on the results. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

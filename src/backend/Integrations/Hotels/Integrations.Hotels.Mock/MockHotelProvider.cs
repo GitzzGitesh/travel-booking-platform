@@ -52,9 +52,10 @@ public static class MockHotelBookingScenarios
 }
 
 /// <summary>
-/// A deterministic hotel provider for development and tests (ADR 0004, ADR 0030): prepaid rates in the test currency
-/// XTS, one refundable rate with a deadline and a penalty, one non-refundable rate, and one refundable rate with fees at
-/// the property. Its offer token is its own (the core never parses it). No network, no randomness.
+/// A deterministic hotel provider for development and tests (ADR 0004, ADR 0030): prepaid rates in Tunisian dinars
+/// (TND, the development display currency; not a charge-currency decision, see Q5), one refundable rate with a deadline
+/// and a penalty, one non-refundable rate, and one refundable rate with fees at the property. Its offer token is its own
+/// (the core never parses it). No network, no randomness.
 /// </summary>
 public sealed class MockHotelProvider(TimeProvider timeProvider) : IHotelProvider
 {
@@ -63,7 +64,7 @@ public sealed class MockHotelProvider(TimeProvider timeProvider) : IHotelProvide
     /// <summary>How long a mock offer stays bookable.</summary>
     public static readonly TimeSpan OfferLifetime = TimeSpan.FromMinutes(30);
 
-    private static readonly CurrencyCode _xts = new("XTS");
+    private static readonly CurrencyCode _currency = new("TND");
 
     private static readonly (string Name, decimal Stars, string Room, BoardBasis Board, decimal Nightly, string Kind)[] _rates =
     [
@@ -144,7 +145,7 @@ public sealed class MockHotelProvider(TimeProvider timeProvider) : IHotelProvide
         }
 
         var surname = details.Guests[0].Surname.ToUpperInvariant();
-        var price = surname == MockHotelBookingScenarios.PriceMismatchSurname ? new Money(current.TotalPrice.Amount + 1m, _xts) : current.TotalPrice;
+        var price = surname == MockHotelBookingScenarios.PriceMismatchSurname ? new Money(current.TotalPrice.Amount + 1m, _currency) : current.TotalPrice;
         var confirmation = new HotelBookingConfirmation(details.ClientReference, ProviderId, ConfirmationNumber(details.ClientReference), price);
         return Task.FromResult(surname switch
         {
@@ -183,16 +184,16 @@ public sealed class MockHotelProvider(TimeProvider timeProvider) : IHotelProvide
         var rate = _rates[index];
         // Per night: the room for two, plus 25% per extra adult and 15 per child; rounded to the cent.
         var nightly = rate.Nightly * (1 + (0.25m * Math.Max(0, criteria.Adults - 2))) + (15m * criteria.ChildAges.Count);
-        var total = new Money(decimal.Round(nightly * criteria.Nights * priceFactor, 2, MidpointRounding.ToEven), _xts);
+        var total = new Money(decimal.Round(nightly * criteria.Nights * priceFactor, 2, MidpointRounding.ToEven), _currency);
         // Free cancellation ends two days before check-in, at noon UTC (the mock's properties keep UTC).
         var deadline = new DateTimeOffset(criteria.CheckIn.AddDays(-2).ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
         var cancellation = rate.Kind switch
         {
             "non-refundable" => CancellationPolicy.NonRefundable,
-            "refundable-penalty" => CancellationPolicy.FreeUntil(deadline, new Money(decimal.Round(nightly * priceFactor, 2, MidpointRounding.ToEven), _xts)),
+            "refundable-penalty" => CancellationPolicy.FreeUntil(deadline, new Money(decimal.Round(nightly * priceFactor, 2, MidpointRounding.ToEven), _currency)),
             _ => CancellationPolicy.FreeUntil(deadline, null),
         };
-        var fees = rate.Kind == "refundable-fees" ? new Money(2m * criteria.Nights, _xts) : (Money?)null;
+        var fees = rate.Kind == "refundable-fees" ? new Money(2m * criteria.Nights, _currency) : (Money?)null;
         return new HotelOffer(
             new HotelOfferRef(ProviderId, Token(criteria, index)),
             new HotelProperty($"mock-{index + 1}", rate.Name, $"{index + 1} Mock Street", criteria.Destination, "ZZ", rate.Stars, "UTC"),

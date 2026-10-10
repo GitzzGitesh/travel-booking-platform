@@ -1,11 +1,12 @@
 import type { FareAllowance, FlightFareResponse, MoneyResponse } from '@travel-booking/api-client';
+import { displayLocale } from '../display-locale';
 
 /**
  * Formats money from the API's STRING amount (api-design rules), without converting it to a float first:
  * Intl.NumberFormat formats decimal strings exactly (ES2023). The scale is the adapter's until pricing rounds to
  * ISO minor units (ADR 0010), so no fixed number of decimals is assumed.
  */
-export function formatMoney(money: MoneyResponse, locale?: string): string {
+export function formatMoney(money: MoneyResponse, locale = displayLocale): string {
   const format = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: money.currency,
@@ -21,7 +22,7 @@ export function localTime(localDateTime: string): string {
 }
 
 /** "2027-02-14T07:05:00" → "Sun, 14 Feb", formatted as the calendar date at that airport. */
-export function localDate(localDateTime: string, locale?: string): string {
+export function localDate(localDateTime: string, locale = displayLocale): string {
   const [year, month, day] = localDateTime.slice(0, 10).split('-').map(Number);
   return new Intl.DateTimeFormat(locale, {
     weekday: 'short',

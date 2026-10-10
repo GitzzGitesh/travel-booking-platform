@@ -1,3 +1,5 @@
+import { displayLocale } from '../../display-locale';
+
 /**
  * Calendar dates as ISO "yyyy-mm-dd" strings: they compare correctly as strings and are what the API takes.
  * All arithmetic runs on UTC midnights, so the customer's time zone and daylight saving never shift a day.
@@ -66,7 +68,11 @@ export function daysBetween(from: IsoDate, to: IsoDate): number {
   return Math.round((toUtc(to).getTime() - toUtc(from).getTime()) / dayMs);
 }
 
-function format(date: IsoDate, options: Intl.DateTimeFormatOptions, locale?: string): string {
+function format(
+  date: IsoDate,
+  options: Intl.DateTimeFormatOptions,
+  locale = displayLocale,
+): string {
   return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(toUtc(date));
 }
 

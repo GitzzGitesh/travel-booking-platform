@@ -10,7 +10,8 @@ namespace TravelBooking.Integrations.Flights.Mock;
 
 /// <summary>
 /// Deterministic flight offers: the same criteria and clock always give the same offers, with no randomness.
-/// Prices use XTS, the ISO 4217 code reserved for testing, so no charge currency is implied (Q5 is open).
+/// Prices are in Tunisian dinars (TND, three decimals), the product owner's display currency for development and demos
+/// (2026-10-10). That is not a charge-currency decision: Q5 and ADR 0006 still govern real charges.
 /// The fictional carrier ZZ and fixed timetable are not real schedules; arrival times ignore time-zone differences.
 /// Revalidation outcomes are chosen per offer by reserved test destinations (provider-integration.md: magic values),
 /// so one running Api can show every scenario; any other destination revalidates unchanged.
@@ -23,7 +24,7 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
     // The codeshare partner that operates the middle departure of each day (a marketing/operating carrier difference).
     private const string _operatingPartner = "ZY";
     private static readonly TimeSpan _ticketingWindow = TimeSpan.FromHours(24);
-    private static readonly CurrencyCode _testCurrency = new("XTS");
+    private static readonly CurrencyCode _currency = new("TND");
     private static readonly TimeSpan _offerLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan _flightDuration = new(2, 15, 0);
     private static readonly TimeOnly[] _departureTimes = [new(7, 5), new(12, 40), new(18, 25)];
@@ -57,7 +58,7 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
             [FlightCapability.Ticketing] = new(CapabilitySupport.Unsupported),
             [FlightCapability.Ancillaries] = new(CapabilitySupport.Unsupported),
             [FlightCapability.SeatSelection] = new(CapabilitySupport.Unsupported),
-            [FlightCapability.RequestedCurrency] = new(CapabilitySupport.Unsupported, "Always prices in XTS (the ISO test currency)"),
+            [FlightCapability.RequestedCurrency] = new(CapabilitySupport.Unsupported, "Always prices in TND (the development display currency)"),
             [FlightCapability.MarketCoverage] = new(CapabilitySupport.Supported, "Any airport pair (synthetic)"),
         });
 
@@ -272,7 +273,7 @@ internal sealed partial class MockFlightProvider(IOptions<MockFlightProviderOpti
     private static PassengerFare Fare(PassengerType type, int count, decimal perPassenger)
     {
         var taxes = decimal.Round(perPassenger * 0.15m, 2);
-        return new PassengerFare(type, count, new Money(perPassenger - taxes, _testCurrency), new Money(taxes, _testCurrency));
+        return new PassengerFare(type, count, new Money(perPassenger - taxes, _currency), new Money(taxes, _currency));
     }
 
     // A changed price, as a supplier would quote it: every passenger's fare rescaled, and the total their sum.

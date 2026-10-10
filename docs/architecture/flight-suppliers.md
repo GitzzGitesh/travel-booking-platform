@@ -35,7 +35,7 @@ Legend: **S** supported (documented and relied on by our mapping), **U** unsuppo
 | Schedule-change notifications | ? | ? | ? | ? | U |
 | Ticketing | ? | ? | ? | ? | U |
 | Ancillaries / seat selection | ? | ? | ? | ? | U |
-| Requested currency | ? | ? | ? | ? | U (XTS only) |
+| Requested currency | ? | ? | ? | ? | U (TND only) |
 | Market coverage | ? (commercial) | ? (commercial) | ? | ? | S (synthetic) |
 
 The declarations are the readiness record; the runtime acts only on the stage and the implemented operations (a provider that declares nothing implements nothing). Revise a declaration after verification with configuration, without a code change: `Integrations:Flights:<Name>:Capabilities:<Capability> = Supported | Unsupported | RequiresConfirmation`.

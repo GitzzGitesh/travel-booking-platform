@@ -38,6 +38,7 @@ import {
   type SelectedFlightOfferResponse,
 } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
+import { displayLocale } from '../display-locale';
 import { formatMoney } from './flight-format';
 import { FlightResults } from './flight-results';
 import { dayMonth, shortLabel } from './search/calendar';
@@ -524,7 +525,7 @@ export class FlightSearchPage {
 
   /** The instant the held offer expires, in the customer's own time zone, labelled with that zone. */
   protected heldUntil(offerExpiresAt: string): string {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(displayLocale, {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',

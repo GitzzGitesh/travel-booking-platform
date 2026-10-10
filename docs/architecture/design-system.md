@@ -83,6 +83,7 @@ each other (ADR 0009).
   - admin-web: the same vocabulary, plus `.status` badges.
   - Components keep only their own layout.
   - Colours, sizes and durations come from tokens, never from hex values in a component.
+- **Dates and amounts are British English** (`en-GB`), whatever the browser language: "Sun 14 Feb", "5 November 2026", a 24-hour clock and "TND 540.000". One constant per app sets it (`customer-web/src/app/display-locale.ts`, `admin-web/src/app/shared/money.ts`). It becomes the request's locale once markets and languages are decided (Q2). Amounts keep the currency the API sends and that currency's own decimals.
 - **Tests are a contract:** class names, ids, accessible names and texts that unit specs or Playwright use stay. A redesign changes how they look, not what they are called.
 - **Accessibility is checked, not assumed:**
   - axe (WCAG 2.2 AA) runs in Playwright on every journey.

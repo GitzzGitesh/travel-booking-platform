@@ -34,7 +34,7 @@ public sealed class MockFlightProviderTests : FlightProviderSearchContract
         var offers = await SearchOffers(OneWay());
 
         offers.ShouldAllBe(o => o.ExpiresAt == _now.AddMinutes(30));
-        offers.ShouldAllBe(o => o.TotalPrice.Currency.Value == "XTS");
+        offers.ShouldAllBe(o => o.TotalPrice.Currency.Value == "TND");
     }
 
     [Fact]
