@@ -7,7 +7,7 @@ import {
 } from '../../support/api';
 import { collectPageErrors, expectNoAccessibilityViolations } from '../../support/page-checks';
 
-/** A date `days` from today, as yyyy-mm-dd for the date inputs. */
+/** A date `days` from today, as yyyy-mm-dd: the calendar's data-date. */
 function inDays(days: number): string {
   const date = new Date();
   date.setDate(date.getDate() + days);
@@ -17,8 +17,12 @@ function inDays(days: number): string {
 
 async function searchParis(page: Page): Promise<void> {
   await page.getByLabel('Destination').fill('PAR');
-  await page.getByLabel('Check-in').fill(inDays(40));
-  await page.getByLabel('Check-out').fill(inDays(43));
+  // The calendar opens on this month and the next, which always hold a stay three weeks out.
+  await page.getByRole('button', { name: /^Check-in/ }).click();
+  const calendar = page.locator('dialog.calendar');
+  await calendar.locator(`button[data-date="${inDays(20)}"]`).click();
+  await calendar.locator(`button[data-date="${inDays(23)}"]`).click();
+  await expect(calendar).not.toBeVisible();
   await page.getByLabel('Adults').selectOption('1');
   await page.getByRole('button', { name: 'Search hotels' }).click();
 }

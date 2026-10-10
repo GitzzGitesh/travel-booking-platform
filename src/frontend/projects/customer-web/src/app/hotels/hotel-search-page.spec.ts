@@ -5,6 +5,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import type { HotelOfferResponse, SelectedHotelOfferResponse } from '@travel-booking/api-client';
 import { CustomerSession } from '../customer-session';
+import { addDays } from '../ui/calendar';
+import { installDialogShim } from '../ui/dialog.testing';
 import { HotelSearchPage } from './hotel-search-page';
 
 const searchUrl = '/api/v1/hotels/searches';
@@ -86,7 +88,12 @@ describe('HotelSearchPage', () => {
   const signedIn = signal(false);
   const navigate = vi.fn().mockResolvedValue(true);
 
+  // The calendar shows the months from today, so the stay is picked relative to it.
+  const checkIn = addDays(localToday(), 10);
+  const checkOut = addDays(checkIn, 3);
+
   beforeEach(async () => {
+    installDialogShim();
     signedIn.set(false);
     navigate.mockClear();
     await TestBed.configureTestingModule({
@@ -115,6 +122,15 @@ describe('HotelSearchPage', () => {
     input.dispatchEvent(new Event('input'));
   }
 
+  const day = (date: string) => $<HTMLButtonElement>(`dialog.calendar button[data-date="${date}"]`);
+
+  /** Opens the calendar from the check-in tile and picks both days: check-out follows check-in. */
+  async function pickStay(from: string, to: string): Promise<void> {
+    await click($('#checkIn'));
+    await click(day(from));
+    await click(day(to));
+  }
+
   function button(label: string, within: ParentNode = element): HTMLButtonElement {
     return [...within.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
       b.textContent?.includes(label),
@@ -134,8 +150,7 @@ describe('HotelSearchPage', () => {
 
   async function searchParis(): Promise<void> {
     fill('destination', 'par');
-    fill('checkIn', '2099-04-10');
-    fill('checkOut', '2099-04-13');
+    await pickStay(checkIn, checkOut);
     await click(button('Add a child'));
     await click(button('Search hotels'));
   }
@@ -160,13 +175,25 @@ describe('HotelSearchPage', () => {
     http.expectNone(searchUrl);
 
     fill('destination', 'par');
-    fill('checkIn', '2099-04-10');
-    fill('checkOut', '2099-04-10');
-    await click(button('Search hotels'));
-    expect(element.textContent).toContain('Check-out must be after check-in.');
-    http.expectNone(searchUrl);
+    await click($('#checkIn'));
+    await click(day(checkIn));
+    // A stay is 1 to 30 nights: the check-in day and the 31st night cannot be picked as check-out.
+    expect(element.querySelector('#calendar-heading')?.textContent).toContain(
+      'Choose your check-out date',
+    );
+    expect(day(checkIn).disabled).toBe(true);
+    expect(day(addDays(checkIn, 1)).disabled).toBe(false);
+    // A year ahead from the keyboard stops at the longest stay.
+    $('dialog.calendar .months').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'PageDown', shiftKey: true, bubbles: true }),
+    );
+    await fixture.whenStable();
+    expect(day(addDays(checkIn, 30)).tabIndex).toBe(0);
+    expect(day(addDays(checkIn, 30)).disabled).toBe(false);
+    await click(day(addDays(checkIn, 30)));
+    await pickStay(checkIn, checkOut);
+    expect($('#checkOut').textContent).not.toContain('Add date');
 
-    fill('checkOut', '2099-04-13');
     await click(button('Add a child'));
     expect(element.textContent).toContain('Child 1: age at check-out');
     await click(button('Search hotels'));
@@ -174,8 +201,8 @@ describe('HotelSearchPage', () => {
     const request = http.expectOne(searchUrl);
     expect(request.request.body).toEqual({
       destination: 'PAR',
-      checkIn: '2099-04-10',
-      checkOut: '2099-04-13',
+      checkIn,
+      checkOut,
       adults: 2,
       childAges: [8],
     });
@@ -207,7 +234,10 @@ describe('HotelSearchPage', () => {
     expect(cards[1].textContent).toContain('Breakfast included');
     expect(cards[1].textContent).toContain('Free cancellation until');
     expect(cards[1].textContent).toContain('Total for the stay');
-    expect($('.search-summary').textContent).toContain('3 nights · 2 adults, 1 child');
+    const facts = [...element.querySelectorAll('.search-summary li')].map((li) =>
+      li.textContent?.trim(),
+    );
+    expect(facts.slice(2)).toEqual(['3 nights', '2 adults, 1 child']);
   });
 
   it('F-53 shows changed terms with the new price and confirms only after acceptance, by quote id', async () => {
@@ -384,3 +414,9 @@ describe('HotelSearchPage', () => {
     expect(button('Search again', $('.selection'))).toBeTruthy();
   });
 });
+
+function localToday(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}

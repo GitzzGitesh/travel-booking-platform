@@ -1,6 +1,6 @@
 /*
- * The shared primitive vocabulary (docs/architecture/design-system.md): buttons, badges, alerts and the segmented
- * control, one set of names for customer-web and admin-web. Each app imports it after tokens.css and sets its own
+ * The shared primitive vocabulary (docs/architecture/design-system.md): buttons, badges, alerts, the segmented
+ * control and meta lists, one set of names for customer-web and admin-web. Each app imports it after tokens.css and sets its own
  * density (admin-web is denser) through --control-min and --alert-padding.
  */
 
@@ -295,4 +295,37 @@ select {
 .segmented label:has(input:disabled) {
   color: var(--color-muted);
   cursor: not-allowed;
+}
+
+/*
+ * Meta lists: short facts set in a row ("LHR → JFK", "Sun 14 Feb", "2 travellers"). Each fact is its own item, so a
+ * line wraps between facts. The separating dot is drawn in the gap before each item, never typed: on the first item of
+ * a line it falls outside the list and is clipped, so no line starts or ends with a dot, and screen readers hear a
+ * list, not "dot".
+ */
+.meta-list {
+  --meta-gap: 0.9em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--meta-gap);
+  margin: 0;
+  padding: 0;
+  overflow: clip;
+  list-style: none;
+}
+
+.meta-list > li {
+  position: relative;
+}
+
+.meta-list > li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(var(--meta-gap) / -2 - 1.5px);
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translateY(-50%);
 }
