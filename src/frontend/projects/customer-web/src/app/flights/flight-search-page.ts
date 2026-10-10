@@ -41,8 +41,8 @@ import { CustomerSession } from '../customer-session';
 import { displayLocale } from '../display-locale';
 import { formatMoney } from './flight-format';
 import { FlightResults } from './flight-results';
-import { dayMonth, shortLabel } from './search/calendar';
-import { DateRangePicker } from './search/date-range-picker';
+import { dayMonth, shortLabel } from '../ui/calendar';
+import { DateRangePicker } from '../ui/date-range-picker';
 import { TravellerPicker, type Travellers } from './search/traveller-picker';
 
 /** Mirrors the API's limits (PassengerMix, FlightSearchRequest). The server remains the authority. */
@@ -351,8 +351,8 @@ export class FlightSearchPage {
     );
   }
 
-  /** "LHR → JFK · Sun, 14 Feb – Sun, 21 Feb · 2 travellers · Economy", from the search that was sent. */
-  protected summary(query: SearchQuery): string {
+  /** ["LHR → JFK", "Sun 14 Feb – Sun 21 Feb", "2 travellers", "Economy"], from the search that was sent. */
+  protected summary(query: SearchQuery): string[] {
     const travellers = query.adults + query.children + query.infants;
     const dates = query.returnDate
       ? `${dayMonth(query.departureDate)} – ${dayMonth(query.returnDate)}`
@@ -363,7 +363,7 @@ export class FlightSearchPage {
       dates,
       `${travellers} ${travellers === 1 ? 'traveller' : 'travellers'}`,
       cabin,
-    ].join(' · ');
+    ];
   }
 
   protected modifySearch(): void {

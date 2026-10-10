@@ -48,10 +48,10 @@ const allowances: Record<FareAllowance, { refund: string; change: string } | nul
 };
 
 /**
- * One line of what the fare includes, from what the supplier states: e.g. "1 checked bag (23 kg) · Refundable with a
- * fee · Free changes". Anything the supplier does not state is left out, never guessed.
+ * What the fare includes, from what the supplier states: e.g. ["1 checked bag (23 kg)", "Refundable with a fee",
+ * "Free changes"]. Anything the supplier does not state is left out, never guessed.
  */
-export function fareSummary(fare: FlightFareResponse): string {
+export function fareSummary(fare: FlightFareResponse): string[] {
   const parts: string[] = [];
   if (fare.baggage) {
     const bags = fare.baggage.checkedBags;
@@ -65,5 +65,5 @@ export function fareSummary(fare: FlightFareResponse): string {
   const change = allowances[fare.change];
   if (refund) parts.push(refund.refund);
   if (change) parts.push(change.change);
-  return parts.join(' · ');
+  return parts;
 }
