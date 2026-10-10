@@ -27,7 +27,7 @@ test.describe('customer flight search', () => {
     await expect(page.getByRole('status')).toHaveText('3 flights found.');
     await expect(page.locator('.search-summary')).toContainText('LHR → JFK');
     await expect(results(page).first()).toContainText('LHR');
-    await expect(results(page).first()).toContainText('XTS');
+    await expect(results(page).first()).toContainText('TND');
     await expect(results(page).first()).toContainText('Nonstop');
 
     await expectNoAccessibilityViolations(page);

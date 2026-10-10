@@ -171,7 +171,7 @@ describe('RefundPanel', () => {
       ],
     );
     const money = (amount: number) =>
-      new Intl.NumberFormat(undefined, {
+      new Intl.NumberFormat('en-GB', {
         style: 'currency',
         currency: 'XTS',
         maximumFractionDigits: 20,

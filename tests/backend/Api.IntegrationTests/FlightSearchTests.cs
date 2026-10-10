@@ -33,7 +33,7 @@ public sealed class FlightSearchTests(WebApplicationFactory<Program> factory) : 
         {
             // Money amounts are JSON strings; no supplier offer token is exposed.
             offer!["totalPrice"]!["amount"]!.GetValueKind().ShouldBe(System.Text.Json.JsonValueKind.String);
-            offer["totalPrice"]!["currency"]!.GetValue<string>().ShouldBe("XTS");
+            offer["totalPrice"]!["currency"]!.GetValue<string>().ShouldBe("TND");
             offer.AsObject().ContainsKey("reference").ShouldBeFalse();
             var segment = offer["slices"]!.AsArray().ShouldHaveSingleItem()!["segments"]!.AsArray()[0]!;
             segment["origin"]!.GetValue<string>().ShouldBe("LHR");

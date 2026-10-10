@@ -10,6 +10,12 @@ describe('flight formatting', () => {
     );
   });
 
+  it('formats in British English by default, whatever the browser language', () => {
+    expect(formatMoney({ amount: '540.00', currency: 'TND' })).toBe('TND 540.000'); // the dinar has three decimals; Intl puts a no-break space after the code
+    expect(formatMoney({ amount: '1249.5', currency: 'EUR' })).toBe('€1,249.50');
+    expect(localDate('2027-02-14T23:55:00')).toBe('Sun 14 Feb');
+  });
+
   it('shows local airport times without any time-zone conversion', () => {
     expect(localTime('2027-02-14T23:55:00')).toBe('23:55');
     expect(localDate('2027-02-14T23:55:00', 'en-GB')).toBe('Sun 14 Feb');

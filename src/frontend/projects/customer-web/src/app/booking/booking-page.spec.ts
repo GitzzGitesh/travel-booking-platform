@@ -763,7 +763,7 @@ describe('BookingPage', () => {
     const hint = (fixture.nativeElement as HTMLElement)
       .querySelectorAll('fieldset.traveller')[1]
       .querySelector('.field-error')?.textContent;
-    expect(hint).toMatch(/5 November 2026|November 5, 2026/);
+    expect(hint).toContain('5 November 2026'); // British English, whatever the browser language
   });
 
   // BUG-003: signing out (from the header) takes the booking and the travellers' names off the screen at once.
