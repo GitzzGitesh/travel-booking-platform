@@ -201,7 +201,6 @@ svg.icon {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
 }
 
 /* Badges and chips */
@@ -538,7 +537,7 @@ svg.icon {
       var(--color-canvas) 75%
     )
     0 0 / 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer var(--duration-shimmer) var(--ease-in-out) infinite;
 }
 
 @keyframes shimmer {
@@ -561,11 +560,11 @@ dialog.modal-sheet {
 }
 
 dialog.modal-sheet::backdrop {
-  background: rgb(12 12 13 / 0.45);
+  background: var(--color-backdrop);
 }
 
 dialog.modal-sheet.anchored::backdrop {
-  background: rgb(12 12 13 / 0.12);
+  background: rgb(28 30 33 / 0.12);
 }
 
 dialog.modal-sheet.anchored {
@@ -624,6 +623,11 @@ dialog.modal-sheet.anchored {
   grid-template-rows: auto 1fr;
   padding: 0;
   border-radius: var(--radius-xl);
+}
+
+/* A stay has one code, not a route: its side of the pass is narrower, the stub wider. */
+.search.pass.card:not(:has(.trip-type)) {
+  grid-template-columns: minmax(0, 0.8fr) minmax(19rem, 1.2fr);
 }
 
 .search.pass .trip-type {
@@ -783,6 +787,10 @@ dialog.modal-sheet.anchored {
   .search.pass.card {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto;
+  }
+
+  .search.pass.card:not(:has(.trip-type)) {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .search.pass .stub {

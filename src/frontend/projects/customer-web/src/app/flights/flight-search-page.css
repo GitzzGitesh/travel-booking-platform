@@ -27,7 +27,7 @@ h1 {
   position: relative;
   padding: var(--space-4) var(--space-5) var(--space-7);
   color: var(--color-ink);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
 }
 
 .trip-type {
@@ -296,7 +296,7 @@ h1 {
 .sel-price .amount {
   font-size: var(--text-2xl);
   font-weight: 800;
-  color: var(--color-focus-on-night);
+  color: var(--color-brand-on-night);
   font-stretch: var(--stretch-condensed);
   font-variant-numeric: tabular-nums;
 }

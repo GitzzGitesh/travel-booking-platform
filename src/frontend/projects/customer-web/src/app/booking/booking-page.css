@@ -71,6 +71,13 @@ h1 {
   color: var(--color-on-brand);
 }
 
+/* The end of the sequence: confirmed reads as done, not as a step still to take. */
+.progress li.done[aria-current='step']::before {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: var(--color-on-night);
+}
+
 /* What was booked: labels on the left, everything a label owns on the right (a leg per line). */
 .summary {
   display: grid;

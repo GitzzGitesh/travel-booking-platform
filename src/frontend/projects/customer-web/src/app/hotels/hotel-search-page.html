@@ -235,8 +235,8 @@
                     <button
                       type="button"
                       class="btn select"
-                      [class.btn-primary]="!isSelected"
-                      [class.btn-dark]="isSelected"
+                      [class.btn-outline]="!isSelected"
+                      [class.btn-primary]="isSelected"
                       [attr.aria-pressed]="isSelected"
                       [attr.aria-describedby]="'offer-' + offerIndex + '-price'"
                       [disabled]="savingOfferId() !== null || booking().kind === 'creating'"

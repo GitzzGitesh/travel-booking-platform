@@ -60,7 +60,7 @@ table {
 }
 
 caption {
-  padding-block-end: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
   font-weight: 700;
   text-align: start;
 }
@@ -295,8 +295,8 @@ label {
 }
 
 .mono {
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 0.95em;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
