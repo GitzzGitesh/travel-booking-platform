@@ -7,7 +7,7 @@
       </p>
     </div>
 
-    <form #searchForm class="search card" [formGroup]="form" (ngSubmit)="search()" novalidate>
+    <form #searchForm class="search card pass" [formGroup]="form" (ngSubmit)="search()" novalidate>
       <fieldset class="trip-type">
         <legend class="visually-hidden">Trip type</legend>
         <div class="segmented">
@@ -109,73 +109,78 @@
           </div>
         </div>
 
-        <div class="cell dates">
-          <app-date-range-picker
-            [departure]="form.controls.departureDate.value"
-            [returnDate]="form.controls.returnDate.value"
-            [roundTrip]="form.controls.tripType.value === 'roundTrip'"
-            [min]="today"
-            [departureErrorId]="showError('departureDate') ? 'departureDate-error' : null"
-            [returnErrorId]="
-              showGroupError('returnRequired') || showGroupError('returnBeforeDeparture')
-                ? 'returnDate-error'
-                : null
-            "
-            (departureChange)="setDeparture($event)"
-            (returnChange)="setReturn($event)"
-            (addReturn)="setTripType('roundTrip')"
-          />
-          <div class="errors">
-            @if (showError('departureDate')) {
-              <p class="field-error" id="departureDate-error">Choose a departure date.</p>
-            }
-            @if (showGroupError('returnRequired')) {
-              <p class="field-error" id="returnDate-error">
-                Choose a return date, or switch to one way.
-              </p>
-            } @else if (showGroupError('returnBeforeDeparture')) {
-              <p class="field-error" id="returnDate-error">
-                The return date cannot be before the departure date.
-              </p>
-            }
+        <!-- The boarding pass's stub: when and who, beside where (the route). -->
+        <div class="stub on-night">
+          <div class="cell dates">
+            <app-date-range-picker
+              [departure]="form.controls.departureDate.value"
+              [returnDate]="form.controls.returnDate.value"
+              [roundTrip]="form.controls.tripType.value === 'roundTrip'"
+              [min]="today"
+              [departureErrorId]="showError('departureDate') ? 'departureDate-error' : null"
+              [returnErrorId]="
+                showGroupError('returnRequired') || showGroupError('returnBeforeDeparture')
+                  ? 'returnDate-error'
+                  : null
+              "
+              (departureChange)="setDeparture($event)"
+              (returnChange)="setReturn($event)"
+              (addReturn)="setTripType('roundTrip')"
+            />
+            <div class="errors">
+              @if (showError('departureDate')) {
+                <p class="field-error" id="departureDate-error">Choose a departure date.</p>
+              }
+              @if (showGroupError('returnRequired')) {
+                <p class="field-error" id="returnDate-error">
+                  Choose a return date, or switch to one way.
+                </p>
+              } @else if (showGroupError('returnBeforeDeparture')) {
+                <p class="field-error" id="returnDate-error">
+                  The return date cannot be before the departure date.
+                </p>
+              }
+            </div>
+          </div>
+
+          <div class="cell">
+            <app-traveller-picker
+              [value]="travellers()"
+              [cabins]="cabins"
+              [maxSeated]="maxSeatedPassengers"
+              [invalid]="travellersInvalid()"
+              [errorId]="travellersInvalid() ? 'travellers-error' : null"
+              (valueChange)="setTravellers($event)"
+            />
+            <div class="errors" id="travellers-error">
+              @if (showGroupError('tooManyInfants')) {
+                <p class="field-error">Each infant must travel with an adult.</p>
+              }
+              @if (
+                showGroupError('tooManySeated') || showError('adults') || showError('children')
+              ) {
+                <p class="field-error">
+                  Search for 1 to {{ maxSeatedPassengers }} adults and children, with at least one
+                  adult.
+                </p>
+              }
+            </div>
+          </div>
+
+          <div class="submit-row">
+            <button
+              type="submit"
+              class="btn btn-primary btn-lg"
+              [disabled]="state().kind === 'loading'"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              {{ state().kind === 'loading' ? 'Searching…' : 'Search flights' }}
+            </button>
           </div>
         </div>
-
-        <div class="cell">
-          <app-traveller-picker
-            [value]="travellers()"
-            [cabins]="cabins"
-            [maxSeated]="maxSeatedPassengers"
-            [invalid]="travellersInvalid()"
-            [errorId]="travellersInvalid() ? 'travellers-error' : null"
-            (valueChange)="setTravellers($event)"
-          />
-          <div class="errors" id="travellers-error">
-            @if (showGroupError('tooManyInfants')) {
-              <p class="field-error">Each infant must travel with an adult.</p>
-            }
-            @if (showGroupError('tooManySeated') || showError('adults') || showError('children')) {
-              <p class="field-error">
-                Search for 1 to {{ maxSeatedPassengers }} adults and children, with at least one
-                adult.
-              </p>
-            }
-          </div>
-        </div>
-      </div>
-
-      <div class="submit-row">
-        <button
-          type="submit"
-          class="btn btn-primary btn-lg"
-          [disabled]="state().kind === 'loading'"
-        >
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          {{ state().kind === 'loading' ? 'Searching…' : 'Search flights' }}
-        </button>
       </div>
     </form>
   </div>

@@ -78,7 +78,7 @@ Also:
   Impact:
   Decision:
   ```
-- Prefer the simplest design that is safe. New projects, hosts, infrastructure, libraries, cloud services, agents, or MCP servers require an ADR. The three read-only reviewer agents in `.claude/agents/` belong to the approved foundation and need no ADR unless their tools or authority change.
+- Prefer the simplest design that is safe. New projects, hosts, infrastructure, libraries, cloud services, agents, or MCP servers require an ADR. The three read-only reviewer agents in `.claude/agents/` belong to the approved foundation and need no ADR unless their tools or authority change. The design-phase specialist agents are covered by ADR 0033.
 - Stay within the story's scope. Do not modify unrelated files or reformat untouched code.
 - **Verify before claiming.** Run the relevant build/tests and report the actual output. Never say "should work".
 - Update `docs/progress.md`, and any affected docs/runbooks/ADRs, in the same change.
@@ -90,7 +90,7 @@ Also:
 |---|---|
 | `.claude/rules/` | Focused engineering rules. Global rules load always; path-scoped rules load with matching files |
 | `.claude/skills/` | `travel-domain` (domain reference), `implement-story` (delivery workflow), `production-review` (change review checklist) |
-| `.claude/agents/` | Read-only reviewers: `architecture-reviewer`, `security-reviewer`, `booking-flow-reviewer` |
+| `.claude/agents/` | Read-only reviewers: `architecture-reviewer`, `security-reviewer`, `booking-flow-reviewer`; design-phase specialists (ADR 0033): `design-director`, `customer-experience-designer`, `admin-operations-designer`, `motion-designer`, `design-system-engineer` (read-only) and `ui-qa-specialist` (browser QA, Bash for agent-browser and frontend builds only) |
 | `.claude/hooks/guard-secrets.mjs` | PreToolUse hook that blocks writing secrets or key files |
 | `docs/requirements/` | Scope, non-functional requirements, glossary, open business questions |
 | `docs/architecture/` | Overview, booking/payment lifecycles, provider integration, security, observability |

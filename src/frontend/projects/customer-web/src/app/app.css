@@ -22,36 +22,37 @@
   inset-block-start: var(--space-3);
   inset-inline-start: var(--space-3);
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--color-brand);
   color: var(--color-on-brand);
   font-weight: 700;
 }
 
+/* The carbon band: structure for the whole site, quiet so the itinerary below carries the page. */
 .site-header {
-  --color-focus: #fdba74;
+  --color-focus: var(--color-focus-on-night);
   background: var(--color-night);
   color: var(--color-on-night);
 }
 
 .bar {
   display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  min-height: 68px;
+  align-items: stretch;
+  gap: var(--space-6);
+  min-height: 64px;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  color: #fff;
+  gap: var(--space-3);
+  color: var(--color-on-night);
   text-decoration: none;
 }
 
 .mark {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
 }
 
 .mark rect {
@@ -62,25 +63,35 @@
   fill: var(--color-night);
 }
 
+/* The wordmark in the itinerary's condensed cut. */
 .wordmark {
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  font-stretch: var(--stretch-condensed);
+  letter-spacing: 0.01em;
 }
 
 .wordmark span {
-  margin-inline-start: 0.25em;
-  font-weight: 400;
+  margin-inline-start: 0.2em;
+  font-weight: 500;
   color: var(--color-on-night-muted);
+}
+
+.primary-nav {
+  display: flex;
 }
 
 .primary-nav ul,
 .menu-list {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.primary-nav li {
+  display: flex;
 }
 
 .primary-nav a,
@@ -92,22 +103,41 @@
   gap: var(--space-2);
   min-height: var(--tap);
   padding-inline: var(--space-3);
-  border-radius: var(--radius-pill);
   font-weight: 600;
   text-decoration: none;
 }
 
+/* The current page is marked by an orange rule at the band's lower edge, like a highlighted departure-board row. */
 .primary-nav a {
+  position: relative;
+  color: var(--color-on-night-muted);
+  transition: color var(--duration-quick) var(--ease-out);
+}
+
+.primary-nav a::after {
+  content: '';
+  position: absolute;
+  inset-inline: var(--space-3);
+  inset-block-end: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--color-brand);
+  transform: scaleX(0);
+  transition: transform var(--duration-base) var(--ease-out);
+}
+
+.primary-nav a:hover,
+.primary-nav a.active {
   color: var(--color-on-night);
 }
 
-.primary-nav a.active {
-  background: rgb(249 115 22 / 0.16);
-  color: #fdba74;
+.primary-nav a.active::after {
+  transform: scaleX(1);
 }
 
 .primary-nav .soon-item {
   color: var(--color-on-night-muted);
+  font-weight: 500;
 }
 
 .primary-nav .badge {
@@ -123,20 +153,25 @@
 }
 
 .sign-in {
-  border-color: #52525b;
-  background: transparent;
+  border-color: var(--color-night-2);
+  background: var(--color-night-2);
   color: var(--color-on-night);
+}
+
+.sign-in:hover:not(:disabled) {
+  border-color: var(--color-line-strong);
 }
 
 .menu-button {
   display: none;
   place-items: center;
+  align-self: center;
   width: var(--tap);
   height: var(--tap);
-  border: 1px solid #52525b;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: #fff;
+  border: 1px solid var(--color-night-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-night-2);
+  color: var(--color-on-night);
   cursor: pointer;
 }
 
@@ -153,6 +188,7 @@
 .menu-list .soon-item {
   width: 100%;
   justify-content: space-between;
+  border-radius: var(--radius-sm);
   color: var(--color-ink);
 }
 

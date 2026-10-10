@@ -411,12 +411,30 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - **Run locally:** build with 0 warnings; ProviderContracts 185; ArchitectureTests 27; the payment-state classes 41/41; format clean.
 - **Not run locally:** the full Api integration suite, because a run was stopped for low machine memory. CI runs it.
 - **Payment busy:** the mock's lock wait is configurable (`Integrations:Payments:Mock:LockTimeoutMilliseconds`, default 15 s, done in row 32), and a test holds a payment past it. |
-| 32 | **Review follow-ups: capture limit, webhook rate limit, mock lock wait, operations order query** | **Done (in review).**
+| 32 | **Review follow-ups: capture limit, webhook rate limit, mock lock wait, operations order query** | **Done (#76).**
 - **Capture limit:** a capture whose lookup keeps failing goes to ManualReview 24 hours after *that capture* began, from the attempt's history, instead of from when Orders asked for it. A capture begun again after a review has its own limit. This is the same rule as for voids.
 - **Webhook rate limit (P4):** payment provider notifications have their own per-client policy, `payment-notifications` (default 300 per minute, `RateLimiting:PaymentNotifications`), instead of sharing the anonymous one.
 - **Mock lock wait:** `Integrations:Payments:Mock:LockTimeoutMilliseconds` (1 to 60 000, default 15 000). A test holds a payment's lock from another connection: the waiting call is Unavailable, nothing is done, and the same key succeeds once the payment is free.
 - **Operations order page:** `GET /api/admin/v1/orders/{id}` reads its hotel stays through one Orders query (`OperationsOrderDetailsQuery`), like the customer's page. The endpoint only maps the result.
 - **Tests:** build with 0 warnings; Payments unit 311; Orders unit 180; ArchitectureTests 29; `RateLimitingTests`, `SharedMockPaymentStateTests` and `AdminOrderEndpointTests` 53. |
+| 33 | **Design phase: foundation, customer shell and flight search (design freeze lifted 2026-10-10)** | **In progress.**
+- **Decision:** the product owner lifted the customer-web design freeze and asked for the redesign of both apps. The brief is `docs/architecture/design-system.md`.
+- **Foundation:** shared tokens in `src/frontend/projects/design-system/tokens.css`, imported by each app (apps still never import each other).
+  - Colours: signal orange, carbon and stone, with the contrast of every pair measured.
+  - Type: Archivo, variable on weight and width, self-hosted under the SIL OFL with no new npm package. Condensed numerals carry codes, times and prices.
+  - Motion tokens, and one reduced-motion rule.
+- **Customer shell:** a slimmer carbon header, the current page marked by an orange rule, a condensed wordmark, and tokens in place of hard-coded colours.
+- **Flight search, the boarding pass:**
+  - The airport codes are set large in condensed type, joined by a dashed route line through the swap control.
+  - A perforated carbon stub holds dates, travellers and the search action.
+  - It stacks on tablets and phones, with no horizontal scroll at 390 or 768px.
+  - The "Book with confidence" cards became three ruled statements.
+- **Primitives:**
+  - Buttons and controls lose the pill shape, with token-timed press feedback.
+  - Labels are sentence case, and alerts are toned by their edge.
+  - New: `.alert-success`, `.field-input`, `.field-select`, and the `.on-night` tile utility.
+- **Agents (ADR 0033):** six design-phase specialists: director, customer UX, admin UX, motion, design system (all read-only) and UI QA (agent-browser).
+- **Next:** results and filters, hotels, booking and trips, then admin-web, then motion and QA. |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.
