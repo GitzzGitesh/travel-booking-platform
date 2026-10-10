@@ -1,6 +1,17 @@
+/*
+ * The operations workspace: a carbon navigation rail beside the work (a top bar on narrow screens). Logical properties,
+ * so the layout also works right to left.
+ */
+:host {
+  display: grid;
+  grid-template-columns: 15.5rem minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
 /* Visually hidden until focused; direction-neutral, so it also works in RTL layouts. */
 .skip-link {
   position: absolute;
+  z-index: 10;
   width: 1px;
   height: 1px;
   overflow: hidden;
@@ -12,47 +23,163 @@
   width: auto;
   height: auto;
   clip-path: none;
-  inset-block-start: 1rem;
-  inset-inline-start: 1rem;
+  inset-block-start: var(--space-3);
+  inset-inline-start: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-brand);
+  color: var(--color-on-brand);
+  font-weight: 700;
 }
 
 .site-header {
-  padding: 1rem;
-  border-bottom: 1px solid currentColor;
-}
-
-.brand {
-  font-weight: 600;
-  text-decoration: none;
-  color: inherit;
-}
-
-main {
-  padding: 1rem;
-}
-
-.site-header {
+  --color-focus: var(--color-focus-on-night);
+  position: sticky;
+  inset-block-start: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: var(--space-5);
+  height: 100dvh;
+  padding: var(--space-5) var(--space-3);
+  background: var(--color-night);
+  color: var(--color-on-night);
+}
+
+/* The wordmark in the itinerary's condensed cut, as on the customer site. */
+.brand {
+  padding-inline: var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: 800;
+  font-stretch: var(--stretch-condensed);
+  line-height: 1.1;
+  color: var(--color-on-night);
+  text-decoration: none;
 }
 
 .nav-list {
-  display: flex;
-  gap: 1rem;
+  display: grid;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.nav-list a.active {
+.nav-list a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
   font-weight: 600;
+  color: var(--color-on-night-muted);
+  text-decoration: none;
+  transition:
+    background-color var(--duration-quick) var(--ease-out),
+    color var(--duration-quick) var(--ease-out);
+}
+
+.nav-list a:hover {
+  background: var(--color-night-2);
+  color: var(--color-on-night);
+}
+
+/* The current page: an orange marker on the rail's inner edge. */
+.nav-list a.active {
+  background: var(--color-night-2);
+  color: var(--color-on-night);
+}
+
+.nav-list a.active::before {
+  content: '';
+  position: absolute;
+  inset-block: var(--space-2);
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-brand);
 }
 
 .account {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: auto;
+  padding: var(--space-3);
+  border-block-start: 1px solid var(--color-night-2);
+}
+
+.staff-id {
+  font-size: var(--text-xs);
+  color: var(--color-on-night-muted);
+  overflow-wrap: anywhere;
+}
+
+.account button {
+  justify-self: start;
+  border-color: var(--color-line-on-night);
+  background: transparent;
+  color: var(--color-on-night);
+}
+
+.account button:hover {
+  border-color: var(--color-on-night);
+}
+
+main {
+  min-width: 0;
+  padding: var(--space-6) var(--space-7) var(--space-8);
+}
+
+main:focus {
+  outline: none;
+}
+
+@media (max-width: 1023.98px) {
+  :host {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .site-header {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
+    height: auto;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .brand {
+    padding-inline: 0;
+  }
+
+  .nav-list {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .nav-list a.active::before {
+    inset-block: auto 0;
+    inset-inline: var(--space-3);
+    width: auto;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+  }
+
+  .account {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-block-start: 0;
+    margin-inline-start: auto;
+    padding: 0;
+    border: 0;
+  }
+
+  main {
+    padding: var(--space-5) var(--space-4) var(--space-7);
+  }
 }
