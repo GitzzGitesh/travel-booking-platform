@@ -26,6 +26,7 @@ import { describeProblem, problemType } from '../shared/problems';
 import { ReasonForm, reasonPattern } from '../shared/reason-form';
 import { StaffSession } from '../staff-session';
 import { MoneyPipe } from '../shared/money';
+import { StatusBadge } from '../shared/status';
 
 /** The server's format for amounts (RefundCaseRequest): digits, with up to four decimals. */
 export const amountPattern = /^\d{1,13}(\.\d{1,4})?$/;
@@ -52,7 +53,7 @@ const refundProblems: Record<string, string> = {
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, MoneyPipe, ReasonForm],
+  imports: [DatePipe, MoneyPipe, ReasonForm, StatusBadge],
   selector: 'adm-refund-panel',
   template: `
     <section class="action" aria-labelledby="refunds">
@@ -93,7 +94,7 @@ const refundProblems: Record<string, string> = {
                       }})
                     }
                   </td>
-                  <td>{{ refundCase.status }}</td>
+                  <td><adm-status [value]="refundCase.status" /></td>
                   <td class="mono">{{ refundCase.requestedBy }}</td>
                   <td>{{ refundCase.reason }}</td>
                 </tr>
@@ -244,22 +245,16 @@ const refundProblems: Record<string, string> = {
     </section>
   `,
   styles: `
-    .action {
-      margin-block: 1.5rem;
-      padding: 1rem;
-      border: 1px solid #c8c8c8;
-      border-radius: 4px;
-    }
     .open-form {
       display: grid;
-      gap: 0.5rem;
+      gap: var(--space-2);
       max-width: 40rem;
     }
     .open-form fieldset label {
       display: block;
     }
     .hint {
-      font-size: 0.875rem;
+      font-size: var(--text-sm);
     }
   `,
 })

@@ -49,15 +49,9 @@ const roleChangeProblems: Record<string, string> = {
   selector: 'adm-staff-access',
   templateUrl: './staff-access.html',
   styles: `
-    .action {
-      margin-block: 1.5rem;
-      padding: 1rem;
-      border: 1px solid #c8c8c8;
-      border-radius: 4px;
-    }
     .request-form {
       display: grid;
-      gap: 0.5rem;
+      gap: var(--space-2);
       max-inline-size: 36rem;
     }
     fieldset {

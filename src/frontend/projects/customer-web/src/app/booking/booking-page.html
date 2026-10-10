@@ -32,6 +32,41 @@
   @if (state(); as state) {
     @if (state.kind === 'ready') {
       <h1>Your booking</h1>
+      <!-- A booking is a real sequence: travellers, then payment, then confirmed. -->
+      @let stage =
+        state.order.status === 'Confirmed' || state.order.status === 'PartiallyConfirmed'
+          ? 'confirmed'
+          : payable()
+            ? step()
+            : null;
+      @if (stage) {
+        <ol class="progress" aria-label="Booking progress">
+          <li
+            [class.done]="stage !== 'travellers'"
+            [attr.aria-current]="stage === 'travellers' ? 'step' : null"
+          >
+            Travellers
+            @if (stage !== 'travellers') {
+              <span class="visually-hidden">(done)</span>
+            }
+          </li>
+          <li
+            [class.done]="stage === 'confirmed'"
+            [attr.aria-current]="stage === 'payment' ? 'step' : null"
+          >
+            Payment
+            @if (stage === 'confirmed') {
+              <span class="visually-hidden">(done)</span>
+            }
+          </li>
+          <li
+            [class.done]="stage === 'confirmed'"
+            [attr.aria-current]="stage === 'confirmed' ? 'step' : null"
+          >
+            Confirmed
+          </li>
+        </ol>
+      }
       @if (item(); as item) {
         <dl class="summary card">
           @if (flightLegs().length) {

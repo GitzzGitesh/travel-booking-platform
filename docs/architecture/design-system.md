@@ -33,7 +33,7 @@ each other (ADR 0009).
 | `--color-surface` | `#ffffff` | Surfaces people read or act on. |
 | `--color-line` / `--color-line-strong` | `#d8dad6` / `#8d9189` | Hairlines; strong lines for control boundaries (3.2:1). |
 
-- **Feedback colours** each have a soft tint for backgrounds: success `#1a7f45`, danger `#b42318`, warning text `#8a4b00`, info `#1f5fbf`.
+- **Feedback colours** each have a soft tint for backgrounds: success `#16733f`, danger `#b42318`, warning text `#8a4b00`, info `#1f5fbf`.
 - **Contrast** was measured for every pair in `tokens.css`, which records the ratios.
 
 ## Type

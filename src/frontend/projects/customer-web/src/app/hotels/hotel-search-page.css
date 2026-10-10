@@ -1,8 +1,10 @@
-/* Layout only: the hotel page reuses the flight search and results styles (the customer-web design is frozen). */
+/* Layout only: the hotel page shares the search pass (styles.css) and the flight results styles. */
 .guests {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  justify-content: flex-start;
+  gap: var(--space-3);
   align-items: end;
   border: 0;
   margin: 0;
@@ -10,11 +12,33 @@
 
 .guests label {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .child-age {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: end;
+}
+
+/* A stay: the property name leads, then its address, room and terms as one tight block. */
+.offer .itinerary {
+  align-content: center;
+  gap: var(--space-1);
+}
+
+.offer .slice-label {
+  margin-block-end: var(--space-1);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.offer .itinerary p {
+  color: var(--color-ink-2);
+}
+
+/* The note on prices stands apart from the first stay. */
+.count {
+  margin-block-end: var(--space-2);
 }
