@@ -8,9 +8,9 @@
       </p>
     </div>
 
-    <form class="search card" [formGroup]="form" (ngSubmit)="search()" novalidate>
+    <form class="search card pass" [formGroup]="form" (ngSubmit)="search()" novalidate>
       <div class="fields">
-        <div class="cell">
+        <div class="cell route">
           <div class="tile" [class.invalid]="showError('destination')">
             <label class="field-label" for="destination">Destination</label>
             <input
@@ -39,109 +39,112 @@
           </div>
         </div>
 
-        <div class="cell">
-          <div class="pair">
-            <div class="tile" [class.invalid]="showError('checkIn')">
-              <label class="field-label" for="checkIn">Check-in</label>
-              <input
-                id="checkIn"
-                type="date"
-                formControlName="checkIn"
-                [min]="today"
-                [attr.aria-invalid]="showError('checkIn')"
-                [attr.aria-describedby]="showError('checkIn') ? 'checkIn-error' : null"
-              />
-            </div>
-            <div
-              class="tile"
-              [class.invalid]="
-                showError('checkOut') ||
-                showGroupError('checkOutBeforeCheckIn') ||
-                showGroupError('tooManyNights')
-              "
-            >
-              <label class="field-label" for="checkOut">Check-out</label>
-              <input
-                id="checkOut"
-                type="date"
-                formControlName="checkOut"
-                [min]="form.controls.checkIn.value || today"
-                [attr.aria-invalid]="
+        <!-- The boarding pass's stub: when and who, beside where. -->
+        <div class="stub on-night">
+          <div class="cell">
+            <div class="pair">
+              <div class="tile" [class.invalid]="showError('checkIn')">
+                <label class="field-label" for="checkIn">Check-in</label>
+                <input
+                  id="checkIn"
+                  type="date"
+                  formControlName="checkIn"
+                  [min]="today"
+                  [attr.aria-invalid]="showError('checkIn')"
+                  [attr.aria-describedby]="showError('checkIn') ? 'checkIn-error' : null"
+                />
+              </div>
+              <div
+                class="tile"
+                [class.invalid]="
                   showError('checkOut') ||
                   showGroupError('checkOutBeforeCheckIn') ||
                   showGroupError('tooManyNights')
                 "
-                [attr.aria-describedby]="
-                  showError('checkOut') ||
-                  showGroupError('checkOutBeforeCheckIn') ||
-                  showGroupError('tooManyNights')
-                    ? 'checkOut-error'
-                    : null
-                "
-              />
+              >
+                <label class="field-label" for="checkOut">Check-out</label>
+                <input
+                  id="checkOut"
+                  type="date"
+                  formControlName="checkOut"
+                  [min]="form.controls.checkIn.value || today"
+                  [attr.aria-invalid]="
+                    showError('checkOut') ||
+                    showGroupError('checkOutBeforeCheckIn') ||
+                    showGroupError('tooManyNights')
+                  "
+                  [attr.aria-describedby]="
+                    showError('checkOut') ||
+                    showGroupError('checkOutBeforeCheckIn') ||
+                    showGroupError('tooManyNights')
+                      ? 'checkOut-error'
+                      : null
+                  "
+                />
+              </div>
+            </div>
+            <div class="errors">
+              @if (showError('checkIn')) {
+                <p class="field-error" id="checkIn-error">Choose a check-in date.</p>
+              }
+              @if (showError('checkOut')) {
+                <p class="field-error" id="checkOut-error">Choose a check-out date.</p>
+              } @else if (showGroupError('checkOutBeforeCheckIn')) {
+                <p class="field-error" id="checkOut-error">Check-out must be after check-in.</p>
+              } @else if (showGroupError('tooManyNights')) {
+                <p class="field-error" id="checkOut-error">Stays are 1 to 30 nights.</p>
+              }
             </div>
           </div>
-          <div class="errors">
-            @if (showError('checkIn')) {
-              <p class="field-error" id="checkIn-error">Choose a check-in date.</p>
-            }
-            @if (showError('checkOut')) {
-              <p class="field-error" id="checkOut-error">Choose a check-out date.</p>
-            } @else if (showGroupError('checkOutBeforeCheckIn')) {
-              <p class="field-error" id="checkOut-error">Check-out must be after check-in.</p>
-            } @else if (showGroupError('tooManyNights')) {
-              <p class="field-error" id="checkOut-error">Stays are 1 to 30 nights.</p>
-            }
-          </div>
-        </div>
 
-        <div class="cell">
-          <fieldset class="tile guests">
-            <legend class="field-label">Guests (one room)</legend>
-            <label>
-              <span class="sub">Adults</span>
-              <select formControlName="adults">
-                @for (n of adultOptions; track n) {
-                  <option [ngValue]="n">{{ n }}</option>
-                }
-              </select>
-            </label>
-            @for (age of form.controls.childAges.controls; track $index; let i = $index) {
-              <span class="child-age">
-                <label>
-                  <span class="sub">Child {{ i + 1 }}: age at check-out</span>
-                  <select [formControl]="age">
-                    @for (a of ageOptions; track a) {
-                      <option [ngValue]="a">{{ a }}</option>
-                    }
-                  </select>
-                </label>
-                <button type="button" class="btn btn-ghost btn-sm" (click)="removeChild(i)">
-                  Remove<span class="visually-hidden"> child {{ i + 1 }}</span>
+          <div class="cell">
+            <fieldset class="tile guests">
+              <legend class="field-label">Guests (one room)</legend>
+              <label>
+                <span class="sub">Adults</span>
+                <select formControlName="adults">
+                  @for (n of adultOptions; track n) {
+                    <option [ngValue]="n">{{ n }}</option>
+                  }
+                </select>
+              </label>
+              @for (age of form.controls.childAges.controls; track $index; let i = $index) {
+                <span class="child-age">
+                  <label>
+                    <span class="sub">Child {{ i + 1 }}: age at check-out</span>
+                    <select [formControl]="age">
+                      @for (a of ageOptions; track a) {
+                        <option [ngValue]="a">{{ a }}</option>
+                      }
+                    </select>
+                  </label>
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="removeChild(i)">
+                    Remove<span class="visually-hidden"> child {{ i + 1 }}</span>
+                  </button>
+                </span>
+              }
+              @if (form.controls.childAges.length < maxChildren) {
+                <button type="button" class="btn btn-outline btn-sm" (click)="addChild()">
+                  Add a child
                 </button>
-              </span>
-            }
-            @if (form.controls.childAges.length < maxChildren) {
-              <button type="button" class="btn btn-outline btn-sm" (click)="addChild()">
-                Add a child
-              </button>
-            }
-          </fieldset>
-        </div>
-      </div>
+              }
+            </fieldset>
+          </div>
 
-      <div class="submit-row">
-        <button
-          type="submit"
-          class="btn btn-primary btn-lg"
-          [disabled]="state().kind === 'loading' || booking().kind === 'creating'"
-        >
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          {{ state().kind === 'loading' ? 'Searching…' : 'Search hotels' }}
-        </button>
+          <div class="submit-row">
+            <button
+              type="submit"
+              class="btn btn-primary btn-lg"
+              [disabled]="state().kind === 'loading' || booking().kind === 'creating'"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              {{ state().kind === 'loading' ? 'Searching…' : 'Search hotels' }}
+            </button>
+          </div>
+        </div>
       </div>
     </form>
   </div>
