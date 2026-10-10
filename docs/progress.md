@@ -434,7 +434,37 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
   - Labels are sentence case, and alerts are toned by their edge.
   - New: `.alert-success`, `.field-input`, `.field-select`, and the `.on-night` tile utility.
 - **Agents (ADR 0033):** six design-phase specialists: director, customer UX, admin UX, motion, design system (all read-only) and UI QA (agent-browser).
-- **Next:** results and filters, hotels, booking and trips, then admin-web, then motion and QA. |
+- **Results and hotels (batch 2):**
+  - Flight results lead with the price in condensed numerals; times and codes are set as itinerary type; the route line is dashed.
+  - The offers arrive with one short stagger, which reduced motion turns off.
+  - Hotel search uses the same boarding pass; hotel results lead with the property name.
+- **Booking and trips (batch 3):**
+  - A numbered booking progress list (travellers, payment, confirmed).
+  - The summary alignment is fixed (a round trip's second leg no longer shifts rows), and the booking reference is set like a record locator.
+  - My trips shows each trip as a ticket row.
+- **admin-web (batch 4):**
+  - A carbon navigation rail on the shared tokens, and dense tables.
+  - `<adm-status>` badges in five tones for every state machine value.
+  - The duplicated summary and action styles are now shared, and no hex colours remain in components.
+- **Reviews (design director, UI QA):**
+  - Fixed:
+    - success text on its tint was 4.49:1, a WCAG fail. The new success colour `#16733f` gives 5.3:1;
+    - orange now marks the selected offer, and unselected offers are outlined;
+    - confirmed reads as done in the progress list;
+    - cards carry no shadow (only floating things do);
+    - trip badges are toned, with the misleading row hover removed;
+    - the hotel pass has a narrower route side;
+    - admin: a padded caption, the mono font token, a one-row scrolling nav on phones, and the staff id hidden visually there;
+    - tokens for the backdrop, shimmer, mono font and orange-on-carbon.
+  - QA checked flights, hotels, trips and admin at 360, 768 and 1440px: no horizontal scroll, visible focus with sensible order, reduced motion honoured, and no page errors.
+- **Follow-ups:**
+  - the confirmed itinerary set as type (legs as structured rows, not one sentence);
+  - middle-dot meta strings that specs assert;
+  - one primitive vocabulary across both apps (buttons, badges, alerts, segmented control);
+  - dates and money follow the browser locale while the UI is English (Q2: markets and i18n);
+  - native date inputs on hotels against the custom flight calendar;
+  - a scroll hint for the admin phone nav;
+  - the dev server must be restarted after pulling `design-system/`, because its watcher misses the new folder (hot reload only; builds are fine). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
 - Bind the payment-method token as a string in the public `*Request` and build `PaymentMethodToken` in the handler, so the result is a 400, not a 500.

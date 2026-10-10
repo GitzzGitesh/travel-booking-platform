@@ -59,7 +59,12 @@
               <span class="visually-hidden">(done)</span>
             }
           </li>
-          <li [attr.aria-current]="stage === 'confirmed' ? 'step' : null">Confirmed</li>
+          <li
+            [class.done]="stage === 'confirmed'"
+            [attr.aria-current]="stage === 'confirmed' ? 'step' : null"
+          >
+            Confirmed
+          </li>
         </ol>
       }
       @if (item(); as item) {

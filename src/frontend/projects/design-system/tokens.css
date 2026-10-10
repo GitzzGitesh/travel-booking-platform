@@ -4,7 +4,7 @@
  *
  * Contrast (WCAG 2.2 AA), measured: ink on signal orange 5.1:1 (6.1:1 on hover), accent text on white 5.7:1 and on the
  * canvas 5.1:1, muted text on white 6.4:1, white on carbon 16.7:1, signal orange on carbon 5.1:1, strong lines on
- * white 3.2:1 (component boundaries). White text is never set on orange (3.3:1).
+ * white 3.2:1 (component boundaries), success text on its tint 5.3:1. White text is never set on orange (3.3:1).
  */
 
 /* Archivo (SIL Open Font License 1.1, fonts/OFL.txt): one variable family with weight and width axes. Self-hosted, so
@@ -57,12 +57,14 @@
   --color-night-2: #2a2d31;
   --color-on-night: #ffffff;
   --color-on-night-muted: #b9bdc2;
+  --color-brand-on-night: #ff9a57;
+  --color-backdrop: rgb(28 30 33 / 0.55);
   --color-line-on-night: #7a7f86;
   --color-danger-on-night: #ff9f93;
   --color-success-on-night: #86e0a8;
 
   /* Feedback: each with a soft tint for its background. */
-  --color-success: #1a7f45;
+  --color-success: #16733f;
   --color-success-soft: #e8f5ec;
   --color-danger: #b42318;
   --color-danger-soft: #fdecea;
@@ -78,6 +80,7 @@
   --font-sans:
     'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --stretch-condensed: 72%;
   --stretch-semi: 88%;
 
@@ -123,6 +126,7 @@
   --duration-base: 240ms;
   --duration-enter: 360ms;
   --stagger: 40ms;
+  --duration-shimmer: 1400ms;
 
   --page-max: 1200px;
   --gutter: clamp(1rem, 3vw, 2rem);

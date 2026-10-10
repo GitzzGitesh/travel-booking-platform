@@ -53,7 +53,13 @@ import { orderStatusLabel } from '../booking/order-status';
                     {{ order.items[0]?.product === 'Hotel' ? 'Hotel stay' : 'Flight' }} booked on
                     {{ order.createdAt.slice(0, 10) }}
                   </a>
-                  <span class="badge">{{ statusLabel(order.status) }}</span>
+                  <span
+                    class="badge"
+                    [class.badge-success]="
+                      order.status === 'Confirmed' || order.status === 'PartiallyConfirmed'
+                    "
+                    >{{ statusLabel(order.status) }}</span
+                  >
                 </div>
                 @if (order.items[0]; as item) {
                   @if (item.bookingReference) {
@@ -105,10 +111,6 @@ import { orderStatusLabel } from '../booking/order-status';
       align-items: center;
       gap: var(--space-2) var(--space-6);
       padding: var(--space-4) var(--space-5);
-      transition: border-color var(--duration-quick) var(--ease-out);
-    }
-    .trip:hover {
-      border-color: var(--color-line-strong);
     }
     .trip-main {
       display: grid;
