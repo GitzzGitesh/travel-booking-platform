@@ -269,6 +269,17 @@ h1 {
   box-shadow: var(--shadow-lg);
 }
 
+/* The selection bar answers the choice: it rises into place (transform only, full contrast at once). */
+.selection {
+  transition: transform var(--duration-enter) var(--ease-out);
+}
+
+@starting-style {
+  .selection {
+    transform: translateY(16px);
+  }
+}
+
 .selection.saved {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

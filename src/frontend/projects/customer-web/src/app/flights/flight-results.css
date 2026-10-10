@@ -97,7 +97,8 @@
   list-style: none;
 }
 
-/* The journey's one orchestrated moment: after a search, the flights arrive in order, briefly staggered. */
+/* The journey's one orchestrated moment: after a search, the flights arrive in order, briefly staggered.
+   Transform only, never opacity: a row caught mid-fade fails contrast (axe runs as soon as results render). */
 .offers > li {
   animation: offer-arrive var(--duration-enter) var(--ease-out) both;
 }
@@ -120,8 +121,7 @@
 
 @keyframes offer-arrive {
   from {
-    opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(12px);
   }
 }
 

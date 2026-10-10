@@ -9,6 +9,11 @@
   font-weight: 600;
 }
 
+/* Buttons directly on the page keep their own width (the grid would stretch them). */
+.booking > .btn {
+  justify-self: start;
+}
+
 h1 {
   font-size: var(--text-4xl);
   font-weight: 750;
@@ -106,6 +111,56 @@ h1 {
   font-stretch: var(--stretch-condensed);
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+}
+
+/* A booked leg, set as on the results: departure, the dashed route with its flights, arrival, then the date. */
+.leg-line {
+  display: grid;
+  grid-template-columns: auto minmax(4rem, 14rem) auto;
+  align-items: end;
+  gap: var(--space-1) var(--space-4);
+  inline-size: fit-content;
+}
+
+.leg-point {
+  display: grid;
+}
+
+.leg-end {
+  text-align: end;
+}
+
+.leg-time {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  font-stretch: var(--stretch-condensed);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.leg-code {
+  font-weight: 700;
+  font-stretch: var(--stretch-semi);
+  letter-spacing: 0.04em;
+}
+
+.leg-route {
+  display: grid;
+  justify-items: center;
+  padding-block-end: var(--space-2);
+  border-block-end: 2px dashed var(--color-line-strong);
+}
+
+.leg-flights {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.leg-date {
+  grid-column: 1 / -1;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-muted);
 }
 
 /* The booking reference, set like the record locator on a boarding pass: the thing the traveller keeps. */

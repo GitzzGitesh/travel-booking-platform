@@ -572,6 +572,30 @@ dialog.modal-sheet.anchored {
   margin: 0;
 }
 
+/*
+ * Dialogs answer the action that opened them: a short rise on wide screens, a sheet sliding up on phones. Transform
+ * only, never opacity, so their text is at full contrast from the first frame. Reduced motion ends it at once.
+ */
+dialog.modal-sheet[open] {
+  transition: transform var(--duration-base) var(--ease-out);
+}
+
+@starting-style {
+  dialog.modal-sheet[open] {
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+dialog.modal-sheet[open]::backdrop {
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+@starting-style {
+  dialog.modal-sheet[open]::backdrop {
+    background-color: transparent;
+  }
+}
+
 .sheet-head {
   display: flex;
   align-items: center;
@@ -610,6 +634,12 @@ dialog.modal-sheet.anchored {
     max-height: 90dvh;
     margin: 0;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  @starting-style {
+    dialog.modal-sheet[open] {
+      transform: translateY(100%);
+    }
   }
 }
 
