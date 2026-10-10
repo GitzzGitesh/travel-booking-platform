@@ -34,7 +34,7 @@ import { StatusBadge } from '../shared/status';
         <p role="status">Loading…</p>
       }
       @case ('not-found') {
-        <p class="alert" role="alert">This payment attempt was not found.</p>
+        <p class="alert alert-info" role="alert">This payment attempt was not found.</p>
       }
       @case ('error') {
         <p class="alert alert-error" role="alert">
@@ -89,7 +89,14 @@ import { StatusBadge } from '../shared/status';
       </dl>
 
       @if (message(); as message) {
-        <p class="alert" [class.alert-error]="message.error" role="status">{{ message.text }}</p>
+        <p
+          class="alert"
+          [class.alert-error]="message.error"
+          [class.alert-info]="!message.error"
+          role="status"
+        >
+          {{ message.text }}
+        </p>
       }
 
       @if (attempt.status === 'ManualReview' && session.can('payments.review.resolve')) {

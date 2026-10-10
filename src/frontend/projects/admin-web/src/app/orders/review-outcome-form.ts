@@ -95,7 +95,7 @@ let nextId = 0;
           -.</strong
         >
       }
-      <button type="submit" [disabled]="busy()">Record outcome</button>
+      <button class="btn btn-primary" type="submit" [disabled]="busy()">Record outcome</button>
     </form>
   `,
   styles: `

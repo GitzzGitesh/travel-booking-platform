@@ -49,7 +49,7 @@ export function statusTone(value: string | null | undefined): StatusTone {
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'adm-status',
-  template: `<span class="status" [attr.data-tone]="tone()">{{ value() }}</span>`,
+  template: `<span [class]="'badge badge-' + tone()">{{ value() }}</span>`,
 })
 export class StatusBadge {
   readonly value = input.required<string>();

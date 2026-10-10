@@ -462,9 +462,12 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
   - The confirmed itinerary is set as type: each booked leg reads departure time and code, the dashed route with its flights, arrival, then the date. Screen readers get the same leg as one sentence.
   - The admin phone nav fades at its trailing edge (either direction) to show that it scrolls.
   - CI axe found the admin "Decide" disclosure below the 24px target size (WCAG 2.5.8); `summary` now has a 2rem target.
+- **One primitive vocabulary (follow-up, 2026-10-10):** buttons, badges, alerts and the segmented control moved to `design-system/primitives.css`, shared by both apps.
+  - admin-web now uses the customer names: `.btn` classes on every button (no more bare `button` element styling), state badges are `.badge-{tone}`, plain alerts say `alert-info`, and the queue chooser is a `.segmented` control.
+  - Approving actions are filled, as the brief says: Approve, Approve release and Approve refund (`adm-reason-form primary`); refusing, withdrawing and checking stay outlined.
+  - admin-web keeps its density through `--control-min` and `--alert-padding`.
 - **Follow-ups:**
   - middle-dot meta strings that specs assert;
-  - one primitive vocabulary across both apps (buttons, badges, alerts, segmented control);
   - native date inputs on hotels against the custom flight calendar;
   - the dev server must be restarted after pulling `design-system/`, because its watcher misses the new folder (hot reload only; builds are fine). |
 | 34 | **Interim display: TND prices and English dates (product owner, 2026-10-10)** | **Done.**

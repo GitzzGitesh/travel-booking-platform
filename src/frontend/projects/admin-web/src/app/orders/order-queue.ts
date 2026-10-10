@@ -39,7 +39,7 @@ type QueueStatus = (typeof queues)[number]['status'];
         spellcheck="false"
         maxlength="100"
       />
-      <button type="submit" [disabled]="searching()">Search</button>
+      <button class="btn btn-primary" type="submit" [disabled]="searching()">Search</button>
     </form>
     @if (searchResult(); as result) {
       <section aria-labelledby="search-results">
@@ -69,7 +69,7 @@ type QueueStatus = (typeof queues)[number]['status'];
         }
       </section>
     }
-    <div class="queue-tabs" role="group" aria-label="Queue">
+    <div class="segmented queue-tabs" role="group" aria-label="Queue">
       @for (queue of queues; track queue.status) {
         <button
           type="button"
@@ -133,7 +133,7 @@ type QueueStatus = (typeof queues)[number]['status'];
     @if (loading()) {
       <p role="status">Loading…</p>
     } @else if (nextCursor()) {
-      <button type="button" (click)="loadMore()">Load more</button>
+      <button class="btn btn-outline" type="button" (click)="loadMore()">Load more</button>
     }
   `,
   styles: `
@@ -145,9 +145,6 @@ type QueueStatus = (typeof queues)[number]['status'];
       margin-block-end: var(--space-4);
     }
     .queue-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-2);
       margin-block-end: var(--space-4);
     }
   `,
