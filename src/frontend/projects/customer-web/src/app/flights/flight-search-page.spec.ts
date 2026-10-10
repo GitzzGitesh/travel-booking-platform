@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FlightOfferResponse, FlightSegmentResponse } from '@travel-booking/api-client';
 import { installDialogShim } from '../ui/dialog.testing';
 import { FlightSearchPage } from './flight-search-page';
-import { addDays } from './search/calendar';
+import { addDays } from '../ui/calendar';
 
 const url = '/api/v1/flights/searches';
 const selectUrl = '/api/v1/flights/selected-offers';
@@ -216,8 +216,11 @@ describe('FlightSearchPage', () => {
 
       expect(offerCards().length).toBe(2);
       expect(text()).toContain('2 flights found.');
-      expect($('.search-summary').textContent).toContain('LHR → JFK');
-      expect($('.search-summary').textContent).toContain('3 travellers · Business');
+      const facts = [...element.querySelectorAll('.search-summary li')].map((li) =>
+        li.textContent?.trim(),
+      );
+      expect(facts[0]).toBe('LHR → JFK');
+      expect(facts.slice(2)).toEqual(['3 travellers', 'Business']);
       expect($('.offer .time').textContent).toContain('07:05');
       expect(text()).toContain('Times are local to each airport.');
     });

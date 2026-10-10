@@ -1,4 +1,4 @@
-import { displayLocale } from '../../display-locale';
+import { displayLocale } from '../display-locale';
 
 /**
  * Calendar dates as ISO "yyyy-mm-dd" strings: they compare correctly as strings and are what the API takes.

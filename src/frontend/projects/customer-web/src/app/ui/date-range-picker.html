@@ -1,17 +1,17 @@
 <button
-  #departureTile
+  #startTile
   type="button"
-  id="departureDate"
   class="tile"
   aria-haspopup="dialog"
-  [class.invalid]="departureErrorId() !== null"
-  [attr.aria-describedby]="departureErrorId()"
-  (click)="open('departure')"
+  [id]="startId()"
+  [class.invalid]="startErrorId() !== null"
+  [attr.aria-describedby]="startErrorId()"
+  (click)="open('start')"
 >
-  <span class="field-label">Departure</span>
-  @if (departure()) {
-    <span class="value">{{ dayMonth(departure()) }}</span>
-    <span class="sub">{{ weekdayYear(departure()) }}</span>
+  <span class="field-label">{{ startLabel() }}</span>
+  @if (startDate()) {
+    <span class="value">{{ dayMonth(startDate()) }}</span>
+    <span class="sub">{{ weekdayYear(startDate()) }}</span>
   } @else {
     <span class="value placeholder">Add date</span>
     <span class="sub">Choose a date</span>
@@ -19,25 +19,25 @@
 </button>
 
 <button
-  #returnTile
+  #endTile
   type="button"
-  id="returnDate"
   class="tile"
   aria-haspopup="dialog"
-  [class.inactive]="!roundTrip()"
-  [class.invalid]="returnErrorId() !== null"
-  [attr.aria-describedby]="returnErrorId()"
-  (click)="open('return')"
+  [id]="endId()"
+  [class.inactive]="!withEnd()"
+  [class.invalid]="endErrorId() !== null"
+  [attr.aria-describedby]="endErrorId()"
+  (click)="open('end')"
 >
-  <span class="field-label">Return</span>
+  <span class="field-label">{{ endLabel() }}</span>
   @if (end()) {
     <span class="value">{{ dayMonth(end()) }}</span>
     <span class="sub">{{ weekdayYear(end()) }}</span>
-  } @else if (roundTrip()) {
+  } @else if (withEnd()) {
     <span class="value placeholder">Add date</span>
-    <span class="sub">Choose your return</span>
+    <span class="sub">Choose your {{ endLabel().toLowerCase() }}</span>
   } @else {
-    <span class="value placeholder">Add return</span>
+    <span class="value placeholder">Add {{ endLabel().toLowerCase() }}</span>
     <span class="sub">Optional</span>
   }
 </button>
@@ -51,7 +51,7 @@
 >
   <div class="sheet-head">
     <h2 id="calendar-heading">
-      {{ step() === 'return' ? 'Choose your return date' : 'Choose your departure date' }}
+      Choose your {{ (step() === 'end' ? endLabel() : startLabel()).toLowerCase() }} date
     </h2>
     <button type="button" class="icon-btn" (click)="close()">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -61,22 +61,14 @@
     </button>
   </div>
 
-  @if (roundTrip()) {
+  @if (withEnd()) {
     <div class="steps" role="group" aria-label="Which date to choose">
-      <button
-        type="button"
-        [attr.aria-pressed]="step() === 'departure'"
-        (click)="switchStep('departure')"
-      >
-        <span class="field-label">Departure</span>
+      <button type="button" [attr.aria-pressed]="step() === 'start'" (click)="switchStep('start')">
+        <span class="field-label">{{ startLabel() }}</span>
         {{ start() ? shortLabel(start()) : 'Add date' }}
       </button>
-      <button
-        type="button"
-        [attr.aria-pressed]="step() === 'return'"
-        (click)="switchStep('return')"
-      >
-        <span class="field-label">Return</span>
+      <button type="button" [attr.aria-pressed]="step() === 'end'" (click)="switchStep('end')">
+        <span class="field-label">{{ endLabel() }}</span>
         {{ end() ? shortLabel(end()) : 'Add date' }}
       </button>
     </div>
@@ -128,7 +120,7 @@
                         class="day"
                         [attr.data-date]="date"
                         [attr.tabindex]="date === focused() ? 0 : -1"
-                        [disabled]="date < stepMin()"
+                        [disabled]="unavailable(date)"
                         [attr.aria-pressed]="date === start() || date === end()"
                         [attr.aria-current]="date === min() ? 'date' : null"
                         [attr.aria-label]="dayLabel(date)"

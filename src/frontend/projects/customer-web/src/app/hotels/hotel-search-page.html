@@ -41,48 +41,29 @@
 
         <!-- The boarding pass's stub: when and who, beside where. -->
         <div class="stub on-night">
-          <div class="cell">
-            <div class="pair">
-              <div class="tile" [class.invalid]="showError('checkIn')">
-                <label class="field-label" for="checkIn">Check-in</label>
-                <input
-                  id="checkIn"
-                  type="date"
-                  formControlName="checkIn"
-                  [min]="today"
-                  [attr.aria-invalid]="showError('checkIn')"
-                  [attr.aria-describedby]="showError('checkIn') ? 'checkIn-error' : null"
-                />
-              </div>
-              <div
-                class="tile"
-                [class.invalid]="
-                  showError('checkOut') ||
-                  showGroupError('checkOutBeforeCheckIn') ||
-                  showGroupError('tooManyNights')
-                "
-              >
-                <label class="field-label" for="checkOut">Check-out</label>
-                <input
-                  id="checkOut"
-                  type="date"
-                  formControlName="checkOut"
-                  [min]="form.controls.checkIn.value || today"
-                  [attr.aria-invalid]="
-                    showError('checkOut') ||
-                    showGroupError('checkOutBeforeCheckIn') ||
-                    showGroupError('tooManyNights')
-                  "
-                  [attr.aria-describedby]="
-                    showError('checkOut') ||
-                    showGroupError('checkOutBeforeCheckIn') ||
-                    showGroupError('tooManyNights')
-                      ? 'checkOut-error'
-                      : null
-                  "
-                />
-              </div>
-            </div>
+          <div class="cell dates">
+            <app-date-range-picker
+              [startDate]="form.controls.checkIn.value"
+              [endDate]="form.controls.checkOut.value"
+              [withEnd]="true"
+              [min]="today"
+              startLabel="Check-in"
+              endLabel="Check-out"
+              startId="checkIn"
+              endId="checkOut"
+              [minNights]="1"
+              [maxNights]="maxNights"
+              [startErrorId]="showError('checkIn') ? 'checkIn-error' : null"
+              [endErrorId]="
+                showError('checkOut') ||
+                showGroupError('checkOutBeforeCheckIn') ||
+                showGroupError('tooManyNights')
+                  ? 'checkOut-error'
+                  : null
+              "
+              (startDateChange)="setDate('checkIn', $event)"
+              (endDateChange)="setDate('checkOut', $event)"
+            />
             <div class="errors">
               @if (showError('checkIn')) {
                 <p class="field-error" id="checkIn-error">Choose a check-in date.</p>
@@ -176,7 +157,11 @@
             }
           </h2>
           @if (current.kind === 'results') {
-            <p class="search-summary">{{ summary(current.query, current.nights) }}</p>
+            <ul class="search-summary meta-list">
+              @for (fact of summary(current.query, current.nights); track $index) {
+                <li>{{ fact }}</li>
+              }
+            </ul>
           }
         </div>
         @if (current.kind !== 'loading') {
@@ -211,13 +196,16 @@
                   }
                   <div class="itinerary">
                     <h3 class="slice-label">{{ offer.property.name }}</h3>
-                    <p>
+                    <ul class="meta-list">
                       @if (offer.property.starRating !== null) {
-                        {{ stars(offer.property.starRating) }} ·
+                        <li>{{ stars(offer.property.starRating) }}</li>
                       }
-                      {{ offer.property.addressLine }}
-                    </p>
-                    <p>{{ offer.room }} · {{ board(offer.board) }}</p>
+                      <li>{{ offer.property.addressLine }}</li>
+                    </ul>
+                    <ul class="meta-list">
+                      <li>{{ offer.room }}</li>
+                      <li>{{ board(offer.board) }}</li>
+                    </ul>
                     <p>{{ cancellation(offer.cancellation, offer.property.timeZone) }}</p>
                     @if (offer.feesAtProperty) {
                       <p class="price-note">
