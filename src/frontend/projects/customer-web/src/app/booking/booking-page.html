@@ -72,7 +72,23 @@
           @if (flightLegs().length) {
             <dt>Flights (each airport’s local time)</dt>
             @for (leg of flightLegs(); track $index) {
-              <dd>{{ leg }}</dd>
+              <dd class="leg">
+                <span class="visually-hidden">{{ leg.text }}</span>
+                <span class="leg-line" aria-hidden="true">
+                  <span class="leg-point">
+                    <span class="leg-time">{{ leg.departs }}</span>
+                    <span class="leg-code">{{ leg.from }}</span>
+                  </span>
+                  <span class="leg-route">
+                    <span class="leg-flights">{{ leg.flights }}</span>
+                  </span>
+                  <span class="leg-point leg-end">
+                    <span class="leg-time">{{ leg.arrives }}</span>
+                    <span class="leg-code">{{ leg.to }}</span>
+                  </span>
+                  <span class="leg-date">{{ leg.date }}</span>
+                </span>
+              </dd>
             }
           }
           @if (stay(); as stay) {

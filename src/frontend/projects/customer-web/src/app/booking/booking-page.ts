@@ -174,13 +174,27 @@ export class BookingPage {
   /** The travellers' names once the booking is made (the customer's own order page); empty until read. */
   protected readonly bookedTravellers = signal<readonly string[]>([]);
 
-  /** "LHR → JFK · ZZ202 · Mon 19 Oct, 07:05 – 09:20" per leg: local times at each airport, as booked. */
+  /**
+   * Each leg as booked, local times at each airport: set as the itinerary (times and codes) for the eye, and read as one
+   * sentence ("LHR → JFK · ZZ202 · Mon 19 Oct, 07:05 – 09:20") by assistive technology.
+   */
   protected readonly flightLegs = computed(() =>
     (this.item()?.flight?.legs ?? []).map((leg) => {
       const first = leg.segments[0];
       const last = leg.segments[leg.segments.length - 1];
       const flights = leg.segments.map((s) => s.flightNumber).join(' · ');
-      return `${first.origin} → ${last.destination} · ${flights} · ${localDate(first.departureLocal)}, ${localTime(first.departureLocal)} – ${localTime(last.arrivalLocal)}`;
+      const date = localDate(first.departureLocal);
+      const departs = localTime(first.departureLocal);
+      const arrives = localTime(last.arrivalLocal);
+      return {
+        from: first.origin,
+        to: last.destination,
+        flights,
+        date,
+        departs,
+        arrives,
+        text: `${first.origin} → ${last.destination} · ${flights} · ${date}, ${departs} – ${arrives}`,
+      };
     }),
   );
 
