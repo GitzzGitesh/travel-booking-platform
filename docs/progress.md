@@ -417,7 +417,7 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - **Mock lock wait:** `Integrations:Payments:Mock:LockTimeoutMilliseconds` (1 to 60 000, default 15 000). A test holds a payment's lock from another connection: the waiting call is Unavailable, nothing is done, and the same key succeeds once the payment is free.
 - **Operations order page:** `GET /api/admin/v1/orders/{id}` reads its hotel stays through one Orders query (`OperationsOrderDetailsQuery`), like the customer's page. The endpoint only maps the result.
 - **Tests:** build with 0 warnings; Payments unit 311; Orders unit 180; ArchitectureTests 29; `RateLimitingTests`, `SharedMockPaymentStateTests` and `AdminOrderEndpointTests` 53. |
-| 33 | **Design phase: foundation, customer shell and flight search (design freeze lifted 2026-10-10)** | **In progress.**
+| 33 | **Design phase: foundation, customer journeys, operations workspace and motion (design freeze lifted 2026-10-10)** | **Done (batches 1 to 5); follow-ups below.**
 - **Decision:** the product owner lifted the customer-web design freeze and asked for the redesign of both apps. The brief is `docs/architecture/design-system.md`.
 - **Foundation:** shared tokens in `src/frontend/projects/design-system/tokens.css`, imported by each app (apps still never import each other).
   - Colours: signal orange, carbon and stone, with the contrast of every pair measured.
@@ -457,13 +457,16 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
     - admin: a padded caption, the mono font token, a one-row scrolling nav on phones, and the staff id hidden visually there;
     - tokens for the backdrop, shimmer, mono font and orange-on-carbon.
   - QA checked flights, hotels, trips and admin at 360, 768 and 1440px: no horizontal scroll, visible focus with sensible order, reduced motion honoured, and no page errors.
+- **Motion and polish (batch 5):**
+  - Dialog sheets rise into place (transform only, so axe never measures a half-faded colour); on phones they slide up from the edge. The selection bar rises when an offer is chosen.
+  - The confirmed itinerary is set as type: each booked leg reads departure time and code, the dashed route with its flights, arrival, then the date. Screen readers get the same leg as one sentence.
+  - The admin phone nav fades at its trailing edge (either direction) to show that it scrolls.
+  - CI axe found the admin "Decide" disclosure below the 24px target size (WCAG 2.5.8); `summary` now has a 2rem target.
 - **Follow-ups:**
-  - the confirmed itinerary set as type (legs as structured rows, not one sentence);
   - middle-dot meta strings that specs assert;
   - one primitive vocabulary across both apps (buttons, badges, alerts, segmented control);
   - dates and money follow the browser locale while the UI is English (Q2: markets and i18n);
   - native date inputs on hotels against the custom flight calendar;
-  - a scroll hint for the admin phone nav;
   - the dev server must be restarted after pulling `design-system/`, because its watcher misses the new folder (hot reload only; builds are fine). |
 
 **Preconditions for any payment endpoint** (security review, chunk 2):
