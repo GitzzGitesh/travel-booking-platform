@@ -432,7 +432,7 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 - **Primitives:**
   - Buttons and controls lose the pill shape, with token-timed press feedback.
   - Labels are sentence case, and alerts are toned by their edge.
-  - New: `.alert-success`, `.input`, `.select`, and the `.on-night` tile utility.
+  - New: `.alert-success`, `.field-input`, `.field-select`, and the `.on-night` tile utility.
 - **Agents (ADR 0033):** six design-phase specialists: director, customer UX, admin UX, motion, design system (all read-only) and UI QA (agent-browser).
 - **Next:** results and filters, hotels, booking and trips, then admin-web, then motion and QA. |
 
