@@ -165,15 +165,20 @@
           </div>
 
           <div class="fare">
-            <p class="price">
+            <div class="price">
               <span class="amount tabular" [id]="'offer-' + offerIndex + '-price'">{{
                 formatMoney(offer.totalPrice)
               }}</span>
               <span class="price-note">Total for all travellers</span>
-              @if (fareSummary(offer)) {
-                <span class="price-note">{{ fareSummary(offer) }}</span>
+              @let includes = fareSummary(offer);
+              @if (includes.length) {
+                <ul class="meta-list price-note" aria-label="Fare includes">
+                  @for (fact of includes; track $index) {
+                    <li>{{ fact }}</li>
+                  }
+                </ul>
               }
-            </p>
+            </div>
             <button
               type="button"
               class="btn select"

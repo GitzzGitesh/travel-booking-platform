@@ -38,6 +38,7 @@ import {
   type ProblemDetails,
   type SelectedHotelOfferResponse,
 } from '@travel-booking/api-client';
+import { DateRangePicker } from '../ui/date-range-picker';
 import { CustomerSession } from '../customer-session';
 import { displayLocale } from '../display-locale';
 import { formatMoney } from '../flights/flight-format';
@@ -120,7 +121,7 @@ function stayRules(group: AbstractControl): ValidationErrors | null {
 @Component({
   selector: 'app-hotel-search-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, DateRangePicker],
   templateUrl: './hotel-search-page.html',
   styleUrls: [
     '../flights/flight-search-page.css',
@@ -138,6 +139,7 @@ export class HotelSearchPage {
 
   protected readonly maxAdults = maxAdults;
   protected readonly maxChildren = maxChildren;
+  protected readonly maxNights = maxNights;
   protected readonly adultOptions = Array.from({ length: maxAdults }, (_, i) => i + 1);
   protected readonly ageOptions = Array.from({ length: maxChildAge + 1 }, (_, i) => i);
   protected readonly today = localToday();
@@ -212,6 +214,15 @@ export class HotelSearchPage {
   protected showError(name: 'destination' | 'checkIn' | 'checkOut' | 'adults'): boolean {
     const control = this.form.controls[name];
     return control.invalid && (control.touched || this.submitted());
+  }
+
+  /** A day picked in the calendar; an emptied check-out (a new check-in put it out of range) waits for the next pick. */
+  protected setDate(name: 'checkIn' | 'checkOut', date: string): void {
+    const control = this.form.controls[name];
+    control.setValue(date);
+    if (date) {
+      control.markAsTouched();
+    }
   }
 
   protected showGroupError(key: string): boolean {
@@ -391,8 +402,8 @@ export class HotelSearchPage {
     }
   }
 
-  /** "PAR · 10 Apr – 13 Apr · 3 nights · 2 adults, 1 child", from the search that was sent. */
-  protected summary(query: SearchQuery, nights: number): string {
+  /** ["PAR", "10 Apr – 13 Apr", "3 nights", "2 adults, 1 child"], from the search that was sent. */
+  protected summary(query: SearchQuery, nights: number): string[] {
     const children = query.childAges.length;
     const guests = [`${query.adults} ${query.adults === 1 ? 'adult' : 'adults'}`];
     if (children) {
@@ -403,7 +414,7 @@ export class HotelSearchPage {
       `${shortDate(query.checkIn)} – ${shortDate(query.checkOut)}`,
       `${nights} ${nights === 1 ? 'night' : 'nights'}`,
       guests.join(', '),
-    ].join(' · ');
+    ];
   }
 
   protected board(board: BoardBasis): string {

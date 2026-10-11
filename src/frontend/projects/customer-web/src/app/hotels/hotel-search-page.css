@@ -34,7 +34,8 @@
   color: var(--color-ink);
 }
 
-.offer .itinerary p {
+.offer .itinerary p,
+.offer .itinerary .meta-list {
   color: var(--color-ink-2);
 }
 

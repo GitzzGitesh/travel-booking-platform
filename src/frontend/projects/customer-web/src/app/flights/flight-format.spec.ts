@@ -44,17 +44,17 @@ describe('flight formatting', () => {
         refund: 'AllowedWithFee',
         change: 'Free',
       }),
-    ).toBe('1 checked bag (23 kg) · Refundable with a fee · Free changes');
+    ).toEqual(['1 checked bag (23 kg)', 'Refundable with a fee', 'Free changes']);
     expect(
       fareSummary({
         ...notStated,
         baggage: { checkedBags: 0, cabinBags: 1, checkedBagMaxWeightKg: null },
         refund: 'NotAllowed',
       }),
-    ).toBe('No checked bag · Non-refundable');
+    ).toEqual(['No checked bag', 'Non-refundable']);
   });
 
   it('says nothing about a fare the supplier said nothing about', () => {
-    expect(fareSummary(notStated)).toBe('');
+    expect(fareSummary(notStated)).toEqual([]);
   });
 });

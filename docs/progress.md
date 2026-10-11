@@ -466,9 +466,10 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
   - admin-web now uses the customer names: `.btn` classes on every button (no more bare `button` element styling), state badges are `.badge-{tone}`, plain alerts say `alert-info`, and the queue chooser is a `.segmented` control.
   - Approving actions are filled, as the brief says: Approve, Approve release and Approve refund (`adm-reason-form primary`); refusing, withdrawing and checking stay outlined.
   - admin-web keeps its density through `--control-min` and `--alert-padding`.
+- **Meta lists and one calendar (follow-up, 2026-10-10):**
+  - Typed " · " strings became `.meta-list` (`design-system/primitives.css`): the flight and hotel search summaries, what a fare includes (inside the price block, so phones keep the price and Select on one row), and a stay's rating, address, room and board. A line now wraps between facts, with no dot at either end. The unit specs assert the facts, not the joined string.
+  - Hotel search uses the flight calendar instead of native date inputs. The picker moved to `customer-web/src/app/ui/` with neutral names (start and end, labels, ids, a nights range): check-out is one to 30 nights after check-in, and other days cannot be picked. The page still validates both dates, and the server remains the authority. The hotel unit spec and the hotel E2E journey pick days in the calendar.
 - **Follow-ups:**
-  - middle-dot meta strings that specs assert;
-  - native date inputs on hotels against the custom flight calendar;
   - the dev server must be restarted after pulling `design-system/`, because its watcher misses the new folder (hot reload only; builds are fine). |
 | 34 | **Interim display: TND prices and English dates (product owner, 2026-10-10)** | **Done.**
 - **Prices:** the mock flight and hotel suppliers quote in Tunisian dinars (TND, three decimals) instead of the ISO test code XTS, so every journey shows TND, e.g. "TND 540.000". A display choice for synthetic prices, not a charge decision: Q5 and ADR 0006 still hold for real charges. Nothing converts: amounts keep the currency the API sends.

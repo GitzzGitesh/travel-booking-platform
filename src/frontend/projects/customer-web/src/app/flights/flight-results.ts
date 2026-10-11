@@ -26,7 +26,7 @@ import {
   stopsIn,
 } from './flight-filtering';
 import { fareSummary, formatDuration, formatMoney, localDate, localTime } from './flight-format';
-import { daysBetween } from './search/calendar';
+import { daysBetween } from '../ui/calendar';
 
 /**
  * Flight offers with client-side sorting and filtering of the returned results. Presentational for selection:
@@ -121,7 +121,7 @@ export class FlightResults {
     return operators.length ? `operated by ${operators.join(', ')}` : '';
   }
 
-  protected fareSummary(offer: FlightOfferResponse): string {
+  protected fareSummary(offer: FlightOfferResponse): string[] {
     return fareSummary(offer.fare);
   }
 

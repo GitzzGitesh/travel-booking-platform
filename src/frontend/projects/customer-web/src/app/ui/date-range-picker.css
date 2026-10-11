@@ -134,6 +134,13 @@ td.range-end {
   text-decoration: line-through;
 }
 
+/* A stay's check-in day while its check-out is chosen: still marked, never struck through. */
+.day.selected:disabled {
+  color: #fff;
+  text-decoration: none;
+  cursor: default;
+}
+
 .hint {
   font-size: var(--text-sm);
   color: var(--color-muted);

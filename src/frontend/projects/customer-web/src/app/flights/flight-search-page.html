@@ -113,19 +113,19 @@
         <div class="stub on-night">
           <div class="cell dates">
             <app-date-range-picker
-              [departure]="form.controls.departureDate.value"
-              [returnDate]="form.controls.returnDate.value"
-              [roundTrip]="form.controls.tripType.value === 'roundTrip'"
+              [startDate]="form.controls.departureDate.value"
+              [endDate]="form.controls.returnDate.value"
+              [withEnd]="form.controls.tripType.value === 'roundTrip'"
               [min]="today"
-              [departureErrorId]="showError('departureDate') ? 'departureDate-error' : null"
-              [returnErrorId]="
+              [startErrorId]="showError('departureDate') ? 'departureDate-error' : null"
+              [endErrorId]="
                 showGroupError('returnRequired') || showGroupError('returnBeforeDeparture')
                   ? 'returnDate-error'
                   : null
               "
-              (departureChange)="setDeparture($event)"
-              (returnChange)="setReturn($event)"
-              (addReturn)="setTripType('roundTrip')"
+              (startDateChange)="setDeparture($event)"
+              (endDateChange)="setReturn($event)"
+              (addEnd)="setTripType('roundTrip')"
             />
             <div class="errors">
               @if (showError('departureDate')) {
@@ -241,7 +241,11 @@
             }
           </h2>
           @if (current.kind === 'results') {
-            <p class="search-summary">{{ summary(current.query) }}</p>
+            <ul class="search-summary meta-list">
+              @for (fact of summary(current.query); track $index) {
+                <li>{{ fact }}</li>
+              }
+            </ul>
           }
         </div>
         @if (current.kind !== 'loading') {

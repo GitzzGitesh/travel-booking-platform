@@ -177,8 +177,7 @@ svg.icon {
   box-shadow: inset 0 0 0 1px var(--color-danger);
 }
 
-/* Native fields inside a tile (hotel dates, guest counts): the tile is the field, so they carry no frame of their own. */
-.tile input[type='date'],
+/* Native fields inside a tile (guest counts): the tile is the field, so they carry no frame of their own. */
 .tile select {
   min-height: 32px;
   padding: 0;
