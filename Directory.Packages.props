@@ -10,7 +10,7 @@
   </ItemGroup>
   <ItemGroup Label="Data and caching">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.10.0" />
     <!-- Observability (ADR 0003, ADR 0031): OpenTelemetry (Apache-2.0) and the Azure Monitor exporter (MIT). -->
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
