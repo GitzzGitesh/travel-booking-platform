@@ -4,6 +4,8 @@ _Last updated: 2026-10-09 (Phase 3 complete with mock providers; Phase 4: identi
 
 ## Current phase: 4 — Identity & admin foundation, in progress (Phase 3, the first vertical slice, is complete with mock providers: row 5 below)
 
+> **2026-10-18, dependency fix:** `System.Security.Cryptography.Pkcs` is pinned to 10.0.13 in `Directory.Packages.props` (central transitive pinning). Version 9.0.11 came in through `Microsoft.Data.SqlClient` 6.1.6 and failed the build on advisories GHSA-846f-f764-76mx and GHSA-2fmv-rv2c-59x7 (NU1902/NU1903 as errors). Remove the pin once SqlClient brings a fixed version.
+
 **Q1 answered 2026-09-25: we are merchant of record for flights (Option A).** **Q8 answered 2026-09-26: customers sign in before booking (no guest checkout).** **Q6 answered 2026-09-27: Amadeus is the first production flight supplier (ADR 0019), not yet credentialed or verified.** Hotels (Q1), markets (Q2), currencies and FX (Q5), retention (Q9), fraud (Q10), refund thresholds (Q11) and group or child-only bookings (Q13) stay open. **ADR 0005 was accepted for flights**, since its Q1 gate is now met. **ADR 0006 stays Proposed**: accepting it also fixes the payment provider (Stripe), which depends on Q2 and Q5.
 
 ### Phase 3: plan
